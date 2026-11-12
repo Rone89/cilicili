@@ -23,12 +23,6 @@ extension VideoDetailViewModel {
             cid: cid,
             page: page
         )
-        let historyResumeWarmupTask = historyResumeWarmupTaskBeforePlayerCreation(
-            selectedVariant,
-            cid: cid,
-            page: page,
-            resumeTime: resumeTime
-        )
         scheduleSelectedStartupPackageWarmupAfterFirstFrame(selectedVariant, cid: cid, page: page)
         await waitForStartupPackageWarmupBeforePlayerCreationIfNeeded(
             selectedVariant,
@@ -36,10 +30,10 @@ extension VideoDetailViewModel {
             cid: cid,
             page: page
         )
-        await waitForHistoryResumeWarmupBeforePlayerCreationIfNeeded(
-            historyResumeWarmupTask,
-            selectedVariant: selectedVariant,
+        scheduleHistoryResumeWarmupInBackgroundIfNeeded(
+            selectedVariant,
             cid: cid,
+            page: page,
             resumeTime: resumeTime
         )
         updateStablePlayerViewModelIfNeeded(resumeTimeOverride: resumeTime)
@@ -59,12 +53,15 @@ extension VideoDetailViewModel {
         )
     }
 
-    private func historyResumeWarmupTaskBeforePlayerCreation(
+    /// 恢复位置预热不再阻塞播放器创建：后台预热目标位置数据，完成后仅记录观测。
+    /// 首帧本来就要等恢复位置的数据，预热与播放器取流经 VideoRangeCache 去重共享，
+    /// 旧实现等满 220ms 预算只对极少数缓存命中有益，却让带进度的打开普遍多付 220ms。
+    private func scheduleHistoryResumeWarmupInBackgroundIfNeeded(
         _ selectedVariant: PlayVariant?,
         cid: Int?,
         page: Int?,
         resumeTime: TimeInterval?
-    ) -> Task<Bool, Never>? {
+    ) {
         guard stablePlayerViewModel == nil,
             !isPlaybackInvalidatedForNavigation,
             let cid,
@@ -73,66 +70,51 @@ extension VideoDetailViewModel {
             !selectedVariant.isProgressiveFastStart,
             let resumeTime,
             resumeTime > 0.25
-        else { return nil }
-
-        let bvid = detail.bvid
-        return Task(priority: .userInitiated) { [selectedVariant] in
-            await VideoPreloadCenter.shared.warmVariantAroundSeek(
-                selectedVariant,
-                bvid: bvid,
-                cid: cid,
-                page: page,
-                playbackTime: resumeTime,
-                timeout: Self.historyResumeWarmupPlayerCreationWait
-            )
-        }
-    }
-
-    private func waitForHistoryResumeWarmupBeforePlayerCreationIfNeeded(
-        _ task: Task<Bool, Never>?,
-        selectedVariant: PlayVariant?,
-        cid: Int?,
-        resumeTime: TimeInterval?
-    ) async {
-        guard let task,
-            let selectedVariant,
-            let cid,
-            let resumeTime
         else { return }
 
         let bvid = detail.bvid
         let selectedVariantID = selectedVariant.id
         let startedAt = CACurrentMediaTime()
-        let didWarm = await task.value
-        let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: startedAt)
-        guard !Task.isCancelled,
-            !isPlaybackInvalidatedForNavigation,
-            detail.bvid == bvid,
-            selectedCID == cid,
-            selectedPlayVariant?.id == selectedVariantID
-        else { return }
-
-        PlayerMetricsLog.record(
-            .manifestStage,
-            metricsID: bvid,
-            title: detail.title,
-            message: [
-                "historyResumeWarm=\(didWarm ? "hit" : "timeout")",
-                "target=\(String(format: "%.2fs", resumeTime))",
-                "\(Int(elapsedMilliseconds.rounded()))ms",
-                "budget=\(Int((Self.historyResumeWarmupPlayerCreationWait * 1000).rounded()))ms",
-                "q\(selectedVariant.quality)",
-            ].joined(separator: " ")
-        )
-        guard ResourceLoadingExperiment.isFeatureEnabled(.resumePacketWarmup) else { return }
-        ResourceLoadingDiagnostics.shared.record(
-            didWarm ? .resumeWarmupHit : .resumeWarmupTimeout,
-            durationMilliseconds: Int(elapsedMilliseconds.rounded()),
-            details: [
-                "budget": "\(Int((Self.historyResumeWarmupPlayerCreationWait * 1_000).rounded()))ms",
-                "quality": "q\(selectedVariant.quality)",
-            ]
-        )
+        let budget = Self.historyResumeWarmupPlayerCreationWait
+        Task { @MainActor [weak self, selectedVariant] in
+            let didWarm = await VideoPreloadCenter.shared.warmVariantAroundSeek(
+                selectedVariant,
+                bvid: bvid,
+                cid: cid,
+                page: page,
+                playbackTime: resumeTime,
+                timeout: budget
+            )
+            guard let self,
+                !self.isPlaybackInvalidatedForNavigation,
+                self.detail.bvid == bvid,
+                self.selectedCID == cid,
+                self.selectedPlayVariant?.id == selectedVariantID
+            else { return }
+            let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: startedAt)
+            PlayerMetricsLog.record(
+                .manifestStage,
+                metricsID: bvid,
+                title: self.detail.title,
+                message: [
+                    "historyResumeWarm=\(didWarm ? "hit" : "timeout")",
+                    "mode=background",
+                    "target=\(String(format: "%.2fs", resumeTime))",
+                    "\(Int(elapsedMilliseconds.rounded()))ms",
+                    "budget=\(Int((budget * 1000).rounded()))ms",
+                    "q\(selectedVariant.quality)",
+                ].joined(separator: " ")
+            )
+            guard ResourceLoadingExperiment.isFeatureEnabled(.resumePacketWarmup) else { return }
+            ResourceLoadingDiagnostics.shared.record(
+                didWarm ? .resumeWarmupHit : .resumeWarmupTimeout,
+                durationMilliseconds: Int(elapsedMilliseconds.rounded()),
+                details: [
+                    "budget": "\(Int((budget * 1000).rounded()))ms",
+                    "quality": "q\(selectedVariant.quality)",
+                ]
+            )
+        }
     }
 
     private func waitForStartupPackageWarmupBeforePlayerCreationIfNeeded(
