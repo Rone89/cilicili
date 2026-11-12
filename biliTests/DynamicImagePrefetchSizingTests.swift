@@ -23,7 +23,7 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
         )
 
         XCTAssertEqual(request?.targetPixelSize, 1280)
-        XCTAssertTrue(request?.source.url.absoluteString.contains("/w/1280/") == true)
+        XCTAssertTrue(request?.source.url.absoluteString.contains("@1280w") == true)
     }
 
     @MainActor
@@ -35,7 +35,7 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
         )
 
         XCTAssertEqual(request?.targetPixelSize, 420)
-        XCTAssertTrue(request?.source.url.absoluteString.contains("/w/420/") == true)
+        XCTAssertTrue(request?.source.url.absoluteString.contains("@420w") == true)
     }
 
     @MainActor

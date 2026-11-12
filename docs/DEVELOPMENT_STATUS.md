@@ -750,3 +750,13 @@
 - 本地 Release 构建成功，未签名 IPA SHA-256 `2b84fb02ad6fe3bba6661d1c98f286790fb8eba28e2597fc50a99c8d00b18f29`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (154)，PID 5302。
 - 真机验收待确认：带云端进度视频 url>player 应降至 ~20–30ms、总首帧再省约 200ms（日志 historyResumeWarm mode=background）；恢复位置仍准确。另 AV1 60fps 首帧解码偏重（play>frame 210–586ms）为编解码特性，可用编码偏好设置规避。
 - 本地 `main` 源码提交 `ead01c5`（含 Build 154），基线 `aeba25e`。未推送 GitHub、未跑完整云端 CI。剩余杠杆：首页路径 open>detail ~115ms、url>player 偶发尖峰（评论区布局争用）。
+
+## 2026-11-13 封面清晰度开关 + 封面 URL 修复（CDN 查询语法失效）/ 1.1.4 Build 155
+
+- 功能来源：Ibili 封面清晰度分析（`docs/ibili-cover-clarity-analysis-2026-11-13.md`，源码克隆于 `/Users/rayc/Desktop/ibili-review/Ibili`）。采用合并方案：保留本项目网络自适应尺寸上限（本轮修复后真实生效），新增用户可选 CDN 压缩质量。
+- 重要发现：本项目此前封面/缩略图 URL 使用 `?imageView2/2/w/.../format/webp` 查询语法，实测 hdslb CDN 完全忽略该语法（返回未处理的原始文件，样本 1920×1080 JPEG 199KB），即旧版封面始终按原图下载，`RemoteImageQualityPreference` 的尺寸上限只改 URL 无网络效果。实测后缀语法 `@<w>w_<h>h[_<q>q].webp` 完全生效：480×270 下 q60 15.3KB / q75(默认) 17.6KB / q90 31KB / q100 56KB；`_75q` 与不带 q 字节相同，证实 CDN 默认压缩等级 75。仅宽度后缀 `@<w>w` 亦生效，`_0e`/`_1c` 标志可与质量段叠加。
+- 改动：① `biliImageView2URL` 重写为 `biliResizeSuffixURL`（`BiliModels.swift`）：封面/头像/缩略图改走后缀语法，按清晰度偏好追加 `_<q>q`；② 新增 `RemoteCoverClarityPreference`（`PerformanceServices.swift`）：自动/流畅60/标准75/高清90/原图100，键 `cc.bili.display.coverClarityPreference.v1`，默认自动（不传 q，CDN 默认）；③ `LibraryStore` 增加持久化属性与 setter；④ 设置页「我的 → 显示」新增「封面清晰度」选择器（`MineDisplaySettingsSection.swift`）；⑤ `biliImageCacheIdentityURLString`/`biliImageURLAspectRatio`/`biliImageURLPixelBucket` 支持后缀格式解析（质量数字不参与 identity，同尺寸不同质量共享解码缓存）；⑥ `DynamicPGC` 封面去重改用 `biliImageOriginalURL()` 比较底层源图，避免同图不同尺寸变体判等失效。
+- 缓存影响：URL 格式变更使既有图片缓存键一次性失效，升级后首次浏览重新下载；因尺寸修复生效，实际下载量显著下降（样本：480×270 封面 199KB→15–56KB）。
+- 测试：新增 `RemoteImageURLClarityTests` 11/11 通过（URL 生成、质量段、非 hdslb 护栏、identity 等值、PGC 去重回归）；更新 3 处断言旧 imageView2 格式的预取/尺寸测试断言。全量单元 1288 项：1277 通过、11 失败——3 项为上述旧格式断言（已修并复验通过）；4 项在 main 干净基线同样失败（`DynamicDetailNavigationTests` 3 + `BiliAPIClientRequestContractTests` 1，签名一致，存量问题）；4 项（HLS 计时×2、音频重置、几何循环）子集复跑全过，属负载下抖动。证据 `build/unit-full.xcresult`、原仓库 `build/baseline-subset.xcresult`、`build/verify-subset.xcresult`（复跑 10/10）。构建号误改原仓库 pbxproj 一次，已即时 `checkout --` 还原，原仓库保持干净。
+- 本轮在草稿分支 `analysis/ibili-cover-clarity`（worktree `/Users/rayc/Desktop/ccswift-ibili-analysis`）提交，未合并 main；main 保持 `3a78454` 未动。未推送 GitHub、未跑完整云端 CI。
+- 真机验收待确认（Build 155 装机后）：设置切换封面清晰度，首页/搜索封面细节应有可感变化（原图档最明显）；图片流量应显著下降（尺寸修复生效）；动态帖正文首图不应与封面重复显示。

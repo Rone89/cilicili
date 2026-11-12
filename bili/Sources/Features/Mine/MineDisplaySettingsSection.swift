@@ -102,6 +102,27 @@ struct MineDisplaySettingsSection: View {
             }
             .pickerStyle(.menu)
 
+            Picker(
+                selection: Binding(
+                    get: { libraryStore.remoteCoverClarityPreference },
+                    set: { libraryStore.setRemoteCoverClarityPreference($0) }
+                )
+            ) {
+                ForEach(RemoteCoverClarityPreference.allCases) { preference in
+                    Text(preference.title).tag(preference)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("封面清晰度", systemImage: "camera.filters")
+
+                    Text(libraryStore.remoteCoverClarityPreference.detail)
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .pickerStyle(.menu)
+
             Toggle(isOn: $imageShadowEnabled) {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("图片与视频封面阴影", systemImage: "square.on.square")

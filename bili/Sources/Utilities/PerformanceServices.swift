@@ -4641,6 +4641,76 @@ nonisolated enum RemoteImageQualityPreference: String, CaseIterable, Identifiabl
     }
 }
 
+/// User-selectable CDN compression clarity for remote images. Maps to the
+/// Bilibili `_<q>q` piece of the `i*.hdslb.com` `@<w>w_<h>h[_<q>q].webp`
+/// suffix. `automatic` omits the quality piece so the CDN applies its own
+/// default (currently 75), mirroring the official clients.
+nonisolated enum RemoteCoverClarityPreference: String, CaseIterable, Identifiable, Codable, Sendable {
+    case automatic
+    case smooth
+    case standard
+    case high
+    case original
+
+    static let storageKey = "cc.bili.display.coverClarityPreference.v1"
+    static let defaultValue: RemoteCoverClarityPreference = .automatic
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic:
+            return "自动"
+        case .smooth:
+            return "流畅 60"
+        case .standard:
+            return "标准 75"
+        case .high:
+            return "高清 90"
+        case .original:
+            return "原图 100"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .automatic:
+            return "跟随 B 站默认压缩等级，与官方客户端观感一致。"
+        case .smooth:
+            return "压缩最多、最省流量，封面细节略有损失。"
+        case .standard:
+            return "与 B 站默认压缩等级相同的均衡画质。"
+        case .high:
+            return "更高压缩质量，封面文字和小细节更清晰。"
+        case .original:
+            return "接近原图的压缩质量，流量和缓存占用最大。"
+        }
+    }
+
+    /// Bilibili CDN quality digit; `nil` requests the CDN default.
+    var quality: Int? {
+        switch self {
+        case .automatic:
+            return nil
+        case .smooth:
+            return 60
+        case .standard:
+            return 75
+        case .high:
+            return 90
+        case .original:
+            return 100
+        }
+    }
+
+    static func stored(in userDefaults: UserDefaults = .standard) -> RemoteCoverClarityPreference {
+        guard let rawValue = userDefaults.string(forKey: storageKey),
+            let preference = RemoteCoverClarityPreference(rawValue: rawValue)
+        else { return defaultValue }
+        return preference
+    }
+}
+
 nonisolated struct RemoteImageSource: Hashable, Sendable {
     let url: URL
     let fallbackURL: URL?

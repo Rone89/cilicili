@@ -55,6 +55,6 @@ final class HomeFeedImagePrefetchPolicyTests: XCTestCase {
         let source = try XCTUnwrap(profile.source(for: "https://i0.hdslb.com/bfs/archive/example.jpg"))
 
         XCTAssertEqual(profile.targetPixelSize, 432)
-        XCTAssertTrue(source.url.absoluteString.contains("/w/432/h/272/"))
+        XCTAssertTrue(source.url.absoluteString.contains("@432w_272h"))
     }
 }
