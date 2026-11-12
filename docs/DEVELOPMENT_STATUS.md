@@ -720,3 +720,12 @@
 
 - 本地 `main` 构建基线 `6478479`，包含展开箭头提交 `0f8f855`。1.1.4 (151) 真机 Release 构建成功，日志 `build/logs/title-chevron-device.log`。
 - 已覆盖安装至 RCe2027 并启动，PID 62632。箭头点按和展开效果待真机目视验收。
+
+## 2026-11-12 全屏旋转画面偏移修复 / 1.1.4 Build 152
+
+- 修复 issue #66：进入全屏或旋转后画面缩成竖屏比例并偏位（报告为"漂到左下角"），与 HEVC/AV1 编码无关。参考外部 PR #69 的思路并加旋转过渡门控；PR #69 保持开放、未合并。
+- 根因：AVPlayerLayer 的 frame 只在协调器离散回调时赋值；若最后一次赋值落在旋转前几何上，且 SwiftUI 宿主布局提案没跟上旋转，播放层就永久停在旧尺寸。关 AV1 重开"看起来正常"是清晰度切换换绑 ViewModel 顺带触发完整布局，不是编码器问题。
+- 两处改动：`VideoSurfaceContainerView.applyVideoSurfaceLayout()` 新增 `synchronizePlayerLayerFrames()`，每次布局把 drawable 下所有 AVPlayerLayer 对齐到 drawable bounds，作为与回调时机无关的兜底；`VideoDetailShellSurfaceHost.layoutSubviews()` 新增 `reconcileSwappedFullscreenBounds()`，仅在旋转转场结束且宿主尺寸恰为窗口宽高互换值时以 window.bounds 纠正自身 frame，转场结束订阅强制一次布局保证触发。不打断进行中的旋转动画；内联小窗不满足互换判据。
+- 新增 2 项回归测试（陈旧协调器写入的重同步；门控宿主纠正与内联不误伤），反向验证确认无修复时失败。VideoDetailSurfaceHostTests 8/8、扩展播放回归 8 类 175/175 通过（Xcode 27.1、iPhone 18 Pro Max / iOS 27.0、共享 Xcode-27 缓存）。证据 `build/logs/build152-fullscreen-layer-sync.xcresult`、`build152-negative-check.xcresult`、`build152-extended-regression.xcresult`。
+- 本地 Release 构建成功，未签名 IPA SHA-256 `4534e7e70a6ad3f168efbe18a7d816f71ecf48e29899b2d2c51ee9825d99024c`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (152)，PID 4219。真机验收待确认：横竖屏反复切换、全屏进出画面应铺满无偏移，旋转过渡应保持平滑。
+- 本地 `main` 源码提交 `b0c3f1d`（含 Build 152），基线 `631c6f8`。未推送 GitHub、未跑完整云端 CI；issue #66 报告者设备（iPhone 16 / iOS 26、全能签环境）的验证待跟进。
