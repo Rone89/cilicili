@@ -164,14 +164,20 @@ extension RootTabView {
         guard !video.bvid.isEmpty, !video.bvid.hasPrefix("av") else { return }
         guard !video.isPGCEpisode else { return }
         guard recentPlaybackPreloadGate.shouldBeginPreload(for: video.bvid) else { return }
-        Task {
-            let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
-                for: video.bvid,
-                isEnabled: dependencies.libraryStore.isPlaybackAutoOptimizationEnabled
-            )
-            let preferredQuality = dependencies.libraryStore.effectivePreferredVideoQuality
-            let cdnPreference = dependencies.libraryStore.effectivePlaybackCDNPreference
-            let api = dependencies.api
+        // View 上下文里 Task { } 会继承 MainActor：预取链若留在主线程会被
+        // 导航 push 与详情页构建（实测 ~115ms）饿住，取流请求与页面激活同时
+        // 才起跑，预取完全失去提前量。先在主线程取齐 MainActor 隔离的输入，
+        // 再用 detached 任务让 playurl / 云端历史请求立即在全局执行器起跑。
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            for: video.bvid,
+            isEnabled: dependencies.libraryStore.isPlaybackAutoOptimizationEnabled
+        )
+        let preferredQuality = dependencies.libraryStore.effectivePreferredVideoQuality
+        let cdnPreference = dependencies.libraryStore.effectivePlaybackCDNPreference
+        let api = dependencies.api
+        let allowsCloudHistoryPrefetch = video.aid.map { $0 > 0 } == true
+            && !dependencies.libraryStore.incognitoModeEnabled
+        Task.detached(priority: .userInitiated) {
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
                 preferredQuality: preferredQuality,
                 cdnPreference: cdnPreference,
@@ -180,7 +186,7 @@ extension RootTabView {
             await VideoPreloadCenter.shared.prioritizePlayback(for: video)
             // 云端历史与 playurl 并行预取：详情页启动时加入同一任务，
             // 不再让历史接口垫在首帧关键路径上。
-            if let aid = video.aid, aid > 0, !dependencies.libraryStore.incognitoModeEnabled {
+            if allowsCloudHistoryPrefetch, let aid = video.aid {
                 await VideoPreloadCenter.shared.prefetchCloudHistoryProgress(aid: aid, api: api)
             }
             await VideoPreloadCenter.shared.preloadPlayInfo(

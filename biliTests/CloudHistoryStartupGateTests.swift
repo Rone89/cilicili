@@ -48,9 +48,21 @@ final class CloudHistoryStartupGateTests: XCTestCase {
             return history
         }
 
+        let start = CACurrentMediaTime()
         let redirected = await vm.prepareHistoryResumeBeforeApplyingPlayURL(emptyPlayURLData(), cid: cid)
+        let elapsed = CACurrentMediaTime() - start
 
         XCTAssertFalse(redirected)
+        XCTAssertLessThan(
+            elapsed, 0.5,
+            "A fast history response must never stretch the startup gate."
+        )
+        // 门控的核心性质是"不阻塞 + 恢复最终生效"。快历史通常在门内写入
+        // pending，主线程拥塞时可能走晚到校正路径，两者都必须在短时间内生效。
+        let deadline = ContinuousClock.now + .seconds(2)
+        while vm.pendingPlaybackHistoryResumeTime == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertEqual(vm.pendingPlaybackHistoryResumeTime, 300)
         XCTAssertEqual(vm.pendingPlaybackHistoryResumeCID, cid)
     }
