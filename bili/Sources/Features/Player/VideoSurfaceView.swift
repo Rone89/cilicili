@@ -489,7 +489,28 @@ final class VideoSurfaceContainerView: UIView {
             installNativePlayerViewControllerIfPossible()
             applyNativePlayerLayout()
         }
+        synchronizePlayerLayerFrames()
         drawableView.setNeedsLayout()
+    }
+
+    /// 容器尺寸变化时当帧把 AVPlayerLayer 对齐到 drawable 的实际 bounds。
+    ///
+    /// 播放层此前只由 AVPlayerLayoutCoordinator 在特定时机设置 frame：若最后一次
+    /// 赋值发生在旧几何上（旋转／全屏换绑竞态），后续布局不会再回调协调器，播放层
+    /// 就永久停在旧尺寸上，表现为画面按竖屏比例居中、偏位。这里在每次 surface 布局
+    /// 时做一次尺寸校正，作为与调用时机无关的兜底。
+    private func synchronizePlayerLayerFrames() {
+        guard drawableView.bounds.width > 1, drawableView.bounds.height > 1 else { return }
+        guard let sublayers = drawableView.layer.sublayers, !sublayers.isEmpty else { return }
+        let target = CGRect(origin: .zero, size: drawableView.bounds.size)
+        for case let playerLayer as AVPlayerLayer in sublayers {
+            guard playerLayer.frame != target else { continue }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            playerLayer.frame = target
+            playerLayer.setNeedsLayout()
+            CATransaction.commit()
+        }
     }
 
     private func scheduleDeferredBoundSurfaceLayoutRefresh(for viewModel: PlayerStateViewModel? = nil) {

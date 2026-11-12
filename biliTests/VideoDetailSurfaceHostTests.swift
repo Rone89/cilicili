@@ -316,6 +316,108 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
         XCTAssertFalse(third.isTerminated)
     }
 
+    func testPlayerLayerFrameResyncsAfterStaleCoordinatorWrite() async throws {
+        let player = makePlayer()
+        let surface = VideoSurfaceContainerView()
+        surface.configureBoundsRefresh(for: player)
+        surface.setPlayerViewModel(player, prefersNativePlaybackControls: false)
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        defer {
+            surface.detachPlayerSurface()
+            player.stop()
+        }
+        surface.frame = CGRect(x: 0, y: 0, width: 402, height: 226)
+        surface.setNeedsLayout()
+        surface.layoutIfNeeded()
+        let layer = try XCTUnwrap(surface.drawableView.layer.sublayers?.compactMap { $0 as? AVPlayerLayer }.first)
+        XCTAssertEqual(layer.frame.size, CGSize(width: 402, height: 226))
+
+        surface.frame.size = CGSize(width: 874, height: 402)
+        surface.setNeedsLayout()
+        surface.layoutIfNeeded()
+        let resizeDeadline = ContinuousClock.now + .seconds(2)
+        while layer.frame.size != surface.drawableView.bounds.size, ContinuousClock.now < resizeDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(layer.frame.size, CGSize(width: 874, height: 402))
+        // Let any pending deferred refresh drain before injecting the stale frame.
+        try await Task.sleep(for: .milliseconds(30))
+
+        // Simulate a coordinator write that landed on the pre-rotation geometry:
+        // bounds are already final, so no bounds-change callback will fire again.
+        layer.frame = CGRect(x: 0, y: 0, width: 402, height: 226)
+        surface.setNeedsLayout()
+        surface.layoutIfNeeded()
+        XCTAssertEqual(
+            layer.frame,
+            CGRect(origin: .zero, size: surface.drawableView.bounds.size),
+            "Every surface layout pass must resync stale AVPlayerLayer frames without waiting for a coordinator callback."
+        )
+    }
+
+    func testShellHostReconcilesSwappedFullscreenBoundsOnlyAfterTransition() async throws {
+        let dependencies = AppDependencies()
+        let detail = try makeDetail(dependencies: dependencies)
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(dependencies.libraryStore)
+        let player = makePlayer()
+        let coordinator = PlaybackRotationCoordinator()
+        let host = makeShellHost(player: player, detail: detail, dependencies: dependencies,
+                                 runtime: runtime, rotationCoordinator: coordinator)
+        let parent = UIViewController()
+        parent.loadViewIfNeeded()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = parent
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previousWindow?.makeKey() }
+        parent.view.addSubview(host)
+        host.attach(to: parent)
+        defer {
+            host.tearDown()
+            host.removeFromSuperview()
+            player.stop()
+        }
+        let windowSize = window.bounds.size
+        XCTAssertNotEqual(windowSize.width, windowSize.height, "Probe needs a non-square window.")
+        let staleSize = CGSize(width: windowSize.height, height: windowSize.width)
+
+        // SwiftUI proposal lagged behind the rotation: host keeps the swapped size.
+        host.frame = CGRect(origin: .zero, size: staleSize)
+        coordinator.beginSystemTransition(toLandscape: true)
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(host.bounds.size, staleSize, "Reconciliation must not interrupt an in-flight rotation transition.")
+
+        _ = coordinator.finishSystemTransition(toLandscape: true, currentOrientation: .landscapeRight)
+        let reconcileDeadline = ContinuousClock.now + .seconds(2)
+        while host.bounds.size != windowSize, ContinuousClock.now < reconcileDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(host.frame, CGRect(origin: .zero, size: windowSize),
+                       "After the transition ends the host must reconcile to the real window bounds.")
+
+        // A stale proposal re-applied after the transition is corrected by the
+        // next layout pass alone, without another transition event.
+        host.frame.size = staleSize
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(host.bounds.size, windowSize)
+
+        // Inline player sizes never satisfy the swapped-size criterion.
+        let inlineSize = CGSize(width: windowSize.width, height: 226)
+        host.frame.size = inlineSize
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(host.bounds.size, inlineSize, "Inline layout must not be rewritten by the fullscreen reconciliation.")
+
+        host.frame.size = windowSize
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(host.bounds.size, windowSize)
+    }
+
     private func makeDetail(dependencies: AppDependencies) throws -> VideoDetailViewModel {
         let video = try JSONDecoder.bili.decode(VideoItem.self,
             from: Data(#"{"bvid":"BVQualityTransitionProbe","title":"Quality transition probe","cid":1}"#.utf8))
@@ -325,9 +427,10 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
     }
 
     private func makeShellHost(player: PlayerStateViewModel, detail: VideoDetailViewModel,
-                               dependencies: AppDependencies, runtime: VideoDetailRuntimeSettingsStore) -> VideoDetailShellSurfaceHost {
+                               dependencies: AppDependencies, runtime: VideoDetailRuntimeSettingsStore,
+                               rotationCoordinator: PlaybackRotationCoordinator = PlaybackRotationCoordinator()) -> VideoDetailShellSurfaceHost {
         VideoDetailShellSurfaceHost(playerViewModel: player, detailViewModel: detail,
-            dependencies: dependencies, runtimeSettings: runtime, rotationCoordinator: PlaybackRotationCoordinator(),
+            dependencies: dependencies, runtimeSettings: runtime, rotationCoordinator: rotationCoordinator,
             onShowMoreControls: { _ in }, onDismissMoreControls: {}, onRequestFullscreen: {}, onExitFullscreen: {},
             onToggleDanmaku: {}, onShowDanmakuSettings: {})
     }

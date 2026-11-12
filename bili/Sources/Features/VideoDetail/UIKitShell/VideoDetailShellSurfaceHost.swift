@@ -178,9 +178,19 @@ final class VideoDetailShellSurfaceHost: UIView {
         rotationCoordinator.$isSystemRotationTransitioning
             .removeDuplicates()
             .sink { [weak self] isTransitioning in
-                guard isTransitioning else { return }
-                Task { @MainActor [weak self] in
-                    self?.state.requestPlaybackControlsHideForRotation()
+                if isTransitioning {
+                    Task { @MainActor [weak self] in
+                        self?.state.requestPlaybackControlsHideForRotation()
+                    }
+                } else {
+                    // 转场结束后强制一次布局：若 SwiftUI 提案仍停在旋转前尺寸，
+                    // bounds 不会再变化，layoutSubviews 的互换判据纠正需要这次
+                    // 主动布局才有机会执行。
+                    Task { @MainActor [weak self] in
+                        guard let self, !self.isTornDown else { return }
+                        self.setNeedsLayout()
+                        self.layoutIfNeeded()
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -194,12 +204,34 @@ final class VideoDetailShellSurfaceHost: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        reconcileSwappedFullscreenBounds()
 #if DEBUG
         guard bounds != lastReportedDiagnosticOverlayBounds else { return }
         guard overlayHostingController.view.bounds.size == bounds.size else { return }
         lastReportedDiagnosticOverlayBounds = bounds
         state.playerViewModel.onVideoDetailPlaybackDiagnosticLayoutEvent?(.overlayGeometry)
 #endif
+    }
+
+    /// 旋转后宿主尺寸若恰好是旋转前窗口的宽高互换值，说明 SwiftUI 的布局提案没跟上
+    /// 旋转，播放表面会停在竖屏全屏尺寸上（画面按竖屏比例居中、偏位）。此处以窗口
+    /// 真实尺寸为准纠正自身 frame。仅在转场结束后执行，避免打断正在进行的旋转动画；
+    /// 转场结束由 isSystemRotationTransitioning 订阅强制一次布局保证必然触发。
+    /// 内联小窗尺寸不满足宽高互换判据，不会被误伤。
+    private func reconcileSwappedFullscreenBounds() {
+        guard !rotationCoordinator.isTransitioning else { return }
+        guard let window else { return }
+        let windowSize = window.bounds.size
+        guard windowSize.width > 1, windowSize.height > 1 else { return }
+        let currentSize = bounds.size
+        let isSwapped = abs(currentSize.width - windowSize.height) <= 1
+            && abs(currentSize.height - windowSize.width) <= 1
+        guard isSwapped, currentSize != windowSize else { return }
+        guard let superview else { return }
+        let target = superview.convert(window.bounds, from: window)
+        guard frame != target else { return }
+        layer.removeAllAnimations()
+        frame = target
     }
 
     func attach(to parent: UIViewController) {
