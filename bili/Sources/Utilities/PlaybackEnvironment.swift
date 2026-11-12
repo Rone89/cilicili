@@ -138,6 +138,19 @@ nonisolated struct PlaybackEnvironment: Sendable {
         }
     }
 
+    /// 启动链路内等待云端历史进度的上限。超时先出帧，历史晚到再校正，
+    /// 避免 /x/v2/history 的残余耗时垫在首帧关键路径上。
+    nonisolated var preferredCloudHistoryStartupGrace: UInt64 {
+        switch networkClass {
+        case .wifi:
+            return 150_000_000
+        case .unknown:
+            return 120_000_000
+        case .cellular, .constrained:
+            return 80_000_000
+        }
+    }
+
     nonisolated var diagnosticSummary: String {
         let networkTitle: String
         switch networkClass {

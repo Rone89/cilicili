@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 extension VideoDetailViewModel {
     func prepareHistoryResumeBeforeApplyingPlayURL(_ data: PlayURLData, cid: Int) async -> Bool {
@@ -106,11 +107,33 @@ extension VideoDetailViewModel {
         guard let task = cloudHistoryResumeTask,
               cloudHistoryResumeTaskAid == aid
         else { return }
-        let history = await task.value
+        // 限时等待：预算内拿到历史就按原语义恢复；拿不到先放行启动链路，
+        // 历史晚到后再校正，避免 /x/v2/history 垫在首帧关键路径上。
+        let grace = PlaybackEnvironment.current.preferredCloudHistoryStartupGrace
+        let finishedInTime = await PendingTaskDeadline.finishes(task, within: grace)
         if cloudHistoryResumeTaskAid == aid {
             cloudHistoryResumeTask = nil
             cloudHistoryResumeTaskAid = nil
         }
+        if finishedInTime {
+            let history = await task.value
+            applyResolvedCloudHistory(history, currentCID: currentCID, bvid: bvid)
+        } else {
+            PlayerMetricsLog.logger.info(
+                "cloudHistoryResumeDeferred graceMs=\(grace / 1_000_000) aid=\(aid, privacy: .public)"
+            )
+            Task { @MainActor [weak self] in
+                let history = await task.value
+                self?.applyLateCloudHistory(history, currentCID: currentCID, bvid: bvid)
+            }
+        }
+    }
+
+    private func applyResolvedCloudHistory(
+        _ history: VideoHistoryProgress?,
+        currentCID: Int,
+        bvid: String
+    ) {
         guard let history,
               !Task.isCancelled,
               !isPlaybackInvalidatedForNavigation,
@@ -130,6 +153,72 @@ extension VideoDetailViewModel {
         }
     }
 
+    /// 历史晚到校正：播放器已创建时只校正同一分 P，且用户未手动 seek、
+    /// 尚未看过历史位置才跳转；播放器未创建时写入正常待恢复路径。
+    private func applyLateCloudHistory(
+        _ history: VideoHistoryProgress?,
+        currentCID: Int,
+        bvid: String
+    ) {
+        guard let history,
+              !isPlaybackInvalidatedForNavigation,
+              detail.bvid == bvid,
+              selectedCID == currentCID
+        else { return }
+        let targetCID = matchingHistoryCID(history.lastPlayCid) ?? currentCID
+        let resumeTime = history.resumeTime(
+            duration: historyResumeDurationHint,
+            minimumProgress: playbackHistoryResumeMinimumProgress
+        )
+        guard let player = stablePlayerViewModel, !player.isTerminated else {
+            if let resumeTime {
+                setPendingPlaybackHistoryResumeTime(resumeTime, cid: targetCID)
+            }
+            if targetCID != currentCID {
+                selectedCID = targetCID
+                Task { @MainActor [weak self] in
+                    await self?.loadPlayURL()
+                }
+            }
+            return
+        }
+        guard targetCID == currentCID,
+              let resumeTime,
+              player.lastUserSeekAt == nil,
+              player.currentTime < resumeTime
+        else {
+            PlayerMetricsLog.logger.info(
+                "cloudHistoryLateResumeSkipped bvid=\(bvid, privacy: .public) targetCID=\(targetCID) currentCID=\(currentCID)"
+            )
+            return
+        }
+        Task { @MainActor [weak self, weak player] in
+            // 播放器可能仍在准备：有界等待首帧后复查护栏再校正。
+            let deadline = ContinuousClock.now + .seconds(2)
+            while let player,
+                  !player.isTerminated,
+                  !player.hasPresentedPlayback,
+                  ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard let self,
+                  let player,
+                  !player.isTerminated,
+                  !self.isPlaybackInvalidatedForNavigation,
+                  self.detail.bvid == bvid,
+                  self.selectedCID == currentCID,
+                  player.lastUserSeekAt == nil,
+                  player.currentTime < resumeTime
+            else { return }
+            let duration = player.duration ?? self.historyResumeDurationHint ?? 0
+            guard duration > 0 else { return }
+            player.seek(to: min(max(resumeTime / duration, 0), 1))
+            PlayerMetricsLog.logger.info(
+                "cloudHistoryLateResumeApplied bvid=\(bvid, privacy: .public) target=\(resumeTime, format: .fixed(precision: 2))"
+            )
+        }
+    }
+
     func beginCloudHistoryResumeFetchIfNeeded() {
         guard playbackOptions.resumesPlaybackHistory else { return }
         guard manuallySelectedPageCID == nil else { return }
@@ -144,8 +233,9 @@ extension VideoDetailViewModel {
         cloudHistoryResumeTask?.cancel()
         cloudHistoryResumeTaskAid = aid
         let api = api
-        cloudHistoryResumeTask = Task(priority: .utility) {
-            try? await api.fetchVideoHistoryProgress(aid: aid)
+        // 加入 tap 时启动的共享预取；取消本页包装任务不会取消共享请求。
+        cloudHistoryResumeTask = Task(priority: .userInitiated) {
+            await VideoPreloadCenter.shared.cloudHistoryProgress(for: aid, api: api)
         }
     }
 

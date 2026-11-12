@@ -178,6 +178,11 @@ extension RootTabView {
                 playbackAdaptationProfile: playbackAdaptationProfile
             )
             await VideoPreloadCenter.shared.prioritizePlayback(for: video)
+            // 云端历史与 playurl 并行预取：详情页启动时加入同一任务，
+            // 不再让历史接口垫在首帧关键路径上。
+            if let aid = video.aid, aid > 0, !dependencies.libraryStore.incognitoModeEnabled {
+                await VideoPreloadCenter.shared.prefetchCloudHistoryProgress(aid: aid, api: api)
+            }
             await VideoPreloadCenter.shared.preloadPlayInfo(
                 video,
                 api: api,

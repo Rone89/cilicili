@@ -41,6 +41,8 @@ actor VideoPreloadCenter {
     private let maxRelatedStartupPackageWarmupTraceCount = 32
     private let mediaWarmupTTL: TimeInterval = 120
     private let maxMediaWarmupCount = 32
+    private let cloudHistoryResultTTL: TimeInterval = 120
+    private let maxCloudHistoryResultCount = 32
     private var defaultPreferredQuality: Int?
     private var defaultTargetPreferredQuality: Int?
     private var tasks: [String: Task<PlayURLData?, Never>] = [:]
@@ -54,6 +56,8 @@ actor VideoPreloadCenter {
     private var bvidPlayInfoTaskPreferredQualities: [String: Int?] = [:]
     private var bvidPlayInfoCache: [String: CachedPlayURL] = [:]
     private var mediaWarmupTasks: [String: Task<Void, Never>] = [:]
+    private var cloudHistoryTasks: [Int: Task<VideoHistoryProgress?, Never>] = [:]
+    private var cloudHistoryResults: [Int: CachedCloudHistoryProgress] = [:]
     private var activeOrder: [String] = []
     private var playURLCache: [String: CachedPlayURL] = [:]
     private var detailCache: [String: CachedVideoDetail] = [:]
@@ -1244,6 +1248,69 @@ actor VideoPreloadCenter {
             }
         }
         return nil
+    }
+
+    // MARK: - Cloud history prefetch
+
+    /// tap 时与 playurl 预取并行启动云端历史进度请求，详情页启动链路加入同一任务，
+    /// 避免历史接口在取流完成后才串行等待。
+    func prefetchCloudHistoryProgress(aid: Int, api: BiliAPIClient) {
+        prefetchCloudHistoryProgress(aid: aid) {
+            try? await api.fetchVideoHistoryProgress(aid: aid)
+        }
+    }
+
+    func prefetchCloudHistoryProgress(
+        aid: Int,
+        fetch: @escaping @Sendable () async -> VideoHistoryProgress?
+    ) {
+        guard aid > 0 else { return }
+        guard cloudHistoryTasks[aid] == nil else { return }
+        if let cached = cloudHistoryResults[aid],
+           CACurrentMediaTime() - cached.at < cloudHistoryResultTTL {
+            return
+        }
+        cloudHistoryTasks[aid] = Task(priority: .userInitiated) { [weak self] in
+            let progress = await fetch()
+            await self?.finishCloudHistoryPrefetch(aid: aid, progress: progress)
+            return progress
+        }
+    }
+
+    func cloudHistoryProgress(for aid: Int, api: BiliAPIClient) async -> VideoHistoryProgress? {
+        await cloudHistoryProgress(for: aid) {
+            try? await api.fetchVideoHistoryProgress(aid: aid)
+        }
+    }
+
+    func cloudHistoryProgress(
+        for aid: Int,
+        fetch: @escaping @Sendable () async -> VideoHistoryProgress?
+    ) async -> VideoHistoryProgress? {
+        guard aid > 0 else { return nil }
+        if let cached = cloudHistoryResults[aid],
+           CACurrentMediaTime() - cached.at < cloudHistoryResultTTL {
+            return cached.data
+        }
+        if let task = cloudHistoryTasks[aid] {
+            return await task.value
+        }
+        prefetchCloudHistoryProgress(aid: aid, fetch: fetch)
+        guard let task = cloudHistoryTasks[aid] else { return nil }
+        return await task.value
+    }
+
+    private func finishCloudHistoryPrefetch(aid: Int, progress: VideoHistoryProgress?) {
+        cloudHistoryTasks[aid] = nil
+        // 失败不缓存，下次打开重试；成功短 TTL 缓存，重复打开免请求。
+        guard let progress else { return }
+        cloudHistoryResults[aid] = CachedCloudHistoryProgress(data: progress, at: CACurrentMediaTime())
+        if cloudHistoryResults.count > maxCloudHistoryResultCount {
+            let oldest = cloudHistoryResults.min { $0.value.at < $1.value.at }
+            if let oldest {
+                cloudHistoryResults[oldest.key] = nil
+            }
+        }
     }
 
     func cachedDetail(for bvid: String) -> VideoItem? {
@@ -3526,6 +3593,11 @@ actor VideoPreloadCenter {
     private struct CachedRelatedVideos {
         let videos: [VideoItem]
         let date: Date
+    }
+
+    private struct CachedCloudHistoryProgress {
+        let data: VideoHistoryProgress
+        let at: CFTimeInterval
     }
 
     private nonisolated static func warmAsset(url: URL) async -> Bool {
