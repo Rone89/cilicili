@@ -750,3 +750,13 @@
 - 本地 Release 构建成功，未签名 IPA SHA-256 `2b84fb02ad6fe3bba6661d1c98f286790fb8eba28e2597fc50a99c8d00b18f29`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (154)，PID 5302。
 - 真机验收待确认：带云端进度视频 url>player 应降至 ~20–30ms、总首帧再省约 200ms（日志 historyResumeWarm mode=background）；恢复位置仍准确。另 AV1 60fps 首帧解码偏重（play>frame 210–586ms）为编解码特性，可用编码偏好设置规避。
 - 本地 `main` 源码提交 `ead01c5`（含 Build 154），基线 `aeba25e`。未推送 GitHub、未跑完整云端 CI。剩余杠杆：首页路径 open>detail ~115ms、url>player 偶发尖峰（评论区布局争用）。
+
+## 2026-11-13 Build 154 验收 + 启动 P1（tap 预取脱离主 actor）/ 1.1.4 Build 155
+
+- Build 154 验收（14 会话）：恢复位置预热后台化生效，带进度视频 url>player 从 245–260ms 降至 14–76ms，日志确认 historyResumeWarm mode=background；本批整体偏慢为环境因素（华为云 08c 慢窗口、API 501–1038ms、WBI playurl 单次 592–830ms），恶劣窗口网页兜底竞速正常救场（邓紫棋 817ms 交付）。
+- 侦察发现（P1 根因）：tap 时预取零提前量——playURLPending owner/joined 等待几乎相等（页面与预取同时到达 API），4 个无本地历史会话付满 150ms 云端历史门控。根因是 `beginPlaybackPreload` 在 SwiftUI View 内 `Task { }` 继承 MainActor，整条预取链被导航 push 与详情页构建（~115ms 主线程工作）饿住，playurl 与历史请求都在页面激活时才发出。
+- P1 修复（`RootTabViewActions.swift`）：MainActor 隔离的输入（适配档位、偏好画质、CDN 偏好、隐身判断）提前到调用线程读取，预取链改 `Task.detached(priority: .userInitiated)`，playurl 与云端历史请求立即在全局执行器起跑。
+- 测试：门控快路径用例在模拟器主线程拥塞下暴露竞速脆弱性（2/3 失败、复跑 3/3 通过，非功能回归），已加固为断言本质性质（门不阻塞 + 恢复最终生效）；加固后回归 3 类 56/56 通过。证据 `build/logs/build155-detached-preload.xcresult`、`build155-gate-retest.xcresult`、`build155-gate-hardened.xcresult`。
+- 本地 Release 构建成功，未签名 IPA SHA-256 `45e390f892084577ef10ae373fb32972cfa18c2af2813f5f7d880374534d2e98`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (155)，PID 6290。
+- 真机验收待确认：首页打开的 playURL 阶段应出现竞速提前量（页面加入时取流已部分完成，playURL < 竞速全程）、无本地历史会话的门控开销收窄；总首帧预期再省 80–115ms。观察方式：日志 playURLPending joined 偏移、playURL 与 race 差值。
+- 本地 `main` 源码提交 `2a067c9`（含 Build 155），基线 `3a78454`。未推送 GitHub、未跑完整云端 CI。
