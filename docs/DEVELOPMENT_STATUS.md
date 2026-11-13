@@ -786,4 +786,7 @@
 - 用户真机验收图片改动通过（"可以没问题"），授权并入 main。合并时 main 已前进至 `b46feb7`，非快进；冲突仅 `project.pbxproj`（构建号）与本文件（文末记录），代码文件（启动 P1 的 `RootTabViewActions.swift`/`CloudHistoryStartupGateTests.swift` 与图片改动）互不重叠、自动合并干净。
 - 解决：构建号统一升 **157**（代表启动 P1 + 图片清晰度合体，消除 155/156 撞号）；本文件保留两条线全部历史记录。合并提交见 main。
 - 合并后需重新构建并装机：此前手机装的是草稿 156（仅图片改动，不含启动 P1），Build 157 才同时含两者。
-- 合并后全量测试：1292 项，1287 通过、5 失败——4 项 main 存量（`DynamicDetailNavigationTests` 3 + `BiliAPIClientRequestContractTests` 1，签名一致）+ 1 项几何循环计时抖动（`testProductionSurfaceAcrossTwentyGeometryCycles`，单独复跑 2.350s 通过）。启动 P1 新增门控测试与图片清晰度测试均通过，合并零新增失败。证据 `build/merge-157-unit.xcresult`、`build/merge-157-flaky.xcresult`。Release 157 构建与装机结论见后续补记。
+- 合并后全量测试：1292 项，1287 通过、5 失败——4 项 main 存量（`DynamicDetailNavigationTests` 3 + `BiliAPIClientRequestContractTests` 1，签名一致）+ 1 项几何循环计时抖动（`testProductionSurfaceAcrossTwentyGeometryCycles`，单独复跑 2.350s 通过）。启动 P1 新增门控测试与图片清晰度测试均通过，合并零新增失败。证据 `build/merge-157-unit.xcresult`、`build/merge-157-flaky.xcresult`。
+- 本地 Release 构建成功，未签名 IPA SHA-256 `34755b812b3265a82cdd1a876b18dc45825faeb0054a17ead18f8b9c2a98d4e5`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (157)。合并提交 `0779cad`（main），父提交 `b46feb7`（主线启动 P1）与 `b56adad`（草稿图片）。
+- 验收：图片清晰度改动用户已真机验收通过（"可以没问题"）；启动 P1 真机验收待确认（首页打开 playURL 阶段应出现竞速提前量、无本地历史会话门控开销收窄，日志 playURLPending joined 偏移）。未推送 GitHub、未跑完整云端 CI。
+- 收尾：草稿分支 `analysis/ibili-cover-clarity` 与 worktree `/Users/rayc/Desktop/ccswift-ibili-analysis` 已完成使命，内容全部并入 main，可按需清理（未自动删除）。
