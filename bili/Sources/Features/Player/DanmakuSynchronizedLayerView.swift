@@ -187,7 +187,6 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private var timeJumpObserver: NSObjectProtocol?
     private var synchronizedLayer: AVSynchronizedLayer?
     private var containerLayer: CALayer?
-    private var sourceItems: [DanmakuItem] = []
     private var sortedItems: [DanmakuItem] = []
     private var cursor = 0
     private var laneAllocator = DanmakuSyncLaneAllocator(laneCount: 14)
@@ -260,32 +259,54 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         let previousParameters = layoutParameters
         self.configuration = configuration
         isLoadSheddingValue = configuration.isLoadShedding
-        sourceItems = configuration.isEnabled ? configuration.items : []
-        PlayerMetricsLog.logger.info(
-            "danmakuSync apply enabled=\(configuration.isEnabled, privacy: .public) hasPresented=\(configuration.hasPresentedPlayback, privacy: .public) items=\(self.sourceItems.count, privacy: .public) window=\(Int(self.bounds.width))x\(Int(self.bounds.height)) player=\(self.playbackPlayer != nil, privacy: .public) syncInstalled=\(self.synchronizedLayer != nil, privacy: .public)"
-        )
-
-        guard configuration.isEnabled, configuration.hasPresentedPlayback else {
-            updateRenderingActivity()
-            return
-        }
 
         let parameters = resolveLayoutParameters(for: configuration)
-        if parameters != previousParameters {
+        let parametersChanged = parameters != previousParameters
+        if parametersChanged {
             layoutParameters = parameters
             rebuildAllocatorIfNeeded(parameters: parameters)
         }
         applyContainerOpacity(parameters: parameters)
-        let sorted = sourceItems.sorted { $0.time < $1.time }
-        if sorted != sortedItems {
-            sortedItems = sorted
+
+        guard configuration.isEnabled, configuration.hasPresentedPlayback else {
+            sortedItems = []
             restartSchedulingAtPlaybackTime()
+            updateRenderingActivity()
+            return
+        }
+
+        // 窗口滑动（每 8s 重算 + 状态变化）走增量合并：飞行中子弹保留，
+        // 不清场。全量重放仅限首次、泳道几何变化与禁用切换。
+        let incoming = configuration.items.sorted { $0.time < $1.time }
+        let merged = Self.mergedById(current: sortedItems, incoming: incoming)
+        let itemsChanged = merged != sortedItems
+        sortedItems = merged
+
+        if parametersChanged || sortedItems.isEmpty {
+            restartSchedulingAtPlaybackTime()
+        } else if itemsChanged {
+            positionCursor(at: resolvedPlaybackTime())
         } else if synchronizedLayer == nil {
             updateRenderingActivity()
-        } else {
-            scheduleLayoutResynchronization()
         }
         updateRenderingActivity()
+    }
+
+    /// 按 id 去重的增量合并（当前集合保留，新窗口物品并入），保持时间序。
+    nonisolated static func mergedById(
+        current: [DanmakuItem],
+        incoming: [DanmakuItem]
+    ) -> [DanmakuItem] {
+        var seen = Set<String>()
+        var merged: [DanmakuItem] = []
+        merged.reserveCapacity(current.count + incoming.count)
+        for item in current where seen.insert(item.id).inserted {
+            merged.append(item)
+        }
+        for item in incoming where seen.insert(item.id).inserted {
+            merged.append(item)
+        }
+        return merged.sorted { $0.time < $1.time }
     }
 
     func synchronizePlaybackTime(_ time: TimeInterval, force: Bool) {

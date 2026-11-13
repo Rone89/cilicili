@@ -41,6 +41,8 @@ struct UITestDanmakuSyncFixtureView: View {
             )
             host.apply(configuration: configuration)
             danmakuSyncProbeLog.info("probe configured items=\(items.count, privacy: .public)")
+            var windowRevision = 1
+            let allItems = items
             timeObserver = player.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 1, preferredTimescale: 10),
                 queue: .main
@@ -48,8 +50,27 @@ struct UITestDanmakuSyncFixtureView: View {
                 let seconds = time.seconds
                 Task { @MainActor in
                     host.synchronizePlaybackTime(seconds)
+                    // 模拟生产链路的窗口滑动：每秒重发窗口切片，验证飞行中弹幕跨窗口存活。
+                    windowRevision += 1
+                    let windowed = allItems.filter { abs($0.time - seconds) < 10 }
+                    let configuration = DanmakuOverlayConfiguration(
+                        items: windowed,
+                        itemsRevision: windowRevision,
+                        currentTime: seconds,
+                        isPlaying: true,
+                        playbackRate: 1,
+                        isEnabled: true,
+                        hasPresentedPlayback: true,
+                        isLoadShedding: false,
+                        settings: DanmakuSettings(danmakuKit: .init(displayArea: .full)),
+                        topInset: 28,
+                        bottomInset: 84
+                    )
+                    host.apply(configuration: configuration)
                     if let syncView = host.debugActiveRenderer as? DanmakuSynchronizedLayerView {
-                        danmakuSyncProbeLog.info("probe t=\(String(format: "%.1f", seconds), privacy: .public) \(syncView.debugLayerSummary, privacy: .public)")
+                        danmakuSyncProbeLog.info(
+                            "probe t=\(String(format: "%.1f", seconds), privacy: .public) windowed=\(windowed.count, privacy: .public) \(syncView.debugLayerSummary, privacy: .public)"
+                        )
                     }
                 }
             }
