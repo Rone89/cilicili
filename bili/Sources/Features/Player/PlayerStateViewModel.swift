@@ -405,6 +405,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     var onNextTrackRequested: (@MainActor () -> Void)?
     var onPreviousTrackRequested: (@MainActor () -> Void)?
     var restoreUserInterfaceForPictureInPictureStop: (() async -> Bool)?
+    /// 弹幕同步层后端的媒体时钟宿主；引擎不支持（直播/测试桩）时为 nil。
+    var danmakuSyncPlayer: AVPlayer? {
+        engine.danmakuSyncPlayer
+    }
+
 #if DEBUG
     var onVideoDetailPlaybackDiagnosticSurfaceEvent: (@MainActor (VideoDetailPlaybackDiagnosticSurfaceEvent) -> Void)?
     var onVideoDetailPlaybackDiagnosticLayoutEvent: (@MainActor (VideoDetailPlaybackDiagnosticLayoutEvent) -> Void)?
@@ -417,10 +422,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         engine.debugPlayerIdentity
     }
 
-    /// 弹幕同步层后端的媒体时钟宿主；引擎不支持（直播/测试桩）时为 nil。
-    var danmakuSyncPlayer: AVPlayer? {
-        engine.danmakuSyncPlayer
-    }
 
     var debugAVPlayerItemIdentity: ObjectIdentifier? {
         engine.debugPlayerItemIdentity
