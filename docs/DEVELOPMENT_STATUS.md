@@ -801,3 +801,13 @@
 - 本地 Release 构建成功，未签名 IPA SHA-256 `a46c24257db654604ee48ff4c27513e5c68f9e7b9f34eda89868dc0b245fba13`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (158)，PID 12462。
 - 待用户复测：重点开几个缓存命中视频（看过的、秒开的），导出日志看 urlPlayerApply/urlPlayerCreate 分段，定位 ~170ms 尖峰落在 historyGate/variants/prebuild/create 哪段还是纯调度争用，再决定修法。
 - 本地 `main` 提交 `543ec4c`（含 Build 158），基线 `3826c55`。未推送 GitHub、未跑完整云端 CI。
+
+## 2026-11-13 Build 158 分段验收 + 候选②恢复位置 CDN 对冲 / 1.1.4 Build 159
+
+- Build 158 分段验收（9 个新会话）：8 个打开 284–423ms（中位 377ms），仅 1 个冷启动慢例 1.08s。分段计时证实建播放器本身仅 create=11–31ms、wall≈create（几乎无插队）——前轮担心的"建播放器是重活"不成立。157 那批 NVIDIA/Tabe 的 ~170ms url>player 尖峰确认为页面出现期间歇性主线程争用，本批全是热开屏未复现（158 纯日志未改行为，尖峰非被修复而是未触发）。启动管线已榨干，剩余主要是导航 ~70–130ms + AV1 解码/首帧数据 ~120–290ms（编解码特性）。
+- 候选②根因（代码证实）：`isStartupCriticalMediaPath`（AVPlayerHLSBridgeEngine.swift）启动 CDN 对冲只覆盖 init/segment-0/segment-1（从头播）；恢复位置取 segment-N 不享受对冲，慢 CDN 带进度打开单源硬等 → play>frame 719–985ms。
+- 候选②实现：每个 LocalHLSBridge 独占 LocalHLSProxyServer（按视频隔离）。新增线程安全 `startupMediaHedgeState`（默认开启），`shouldHedgeStartupRange` 在启动期内对任意媒体段（isMediaSegmentPath：/segment-*.m4s）对冲；引擎 `reportFirstFrameIfPossible`（视频+音频两路径）首帧后调 `endStartupMediaHedge()` 关闭，正常播放中段恢复原非对冲行为。复用现有 streamHedgedStartupRange 竞速（首成功赢、取消其余）；保守播放与单 URL 源不变。
+- 测试：HLS 代理/传输/range + 启动回归 6 类 91/91 通过。证据 `build/logs/build159-resume-hedge.xcresult`。
+- 本地 Release 构建成功，未签名 IPA SHA-256 `e2282e0aeb50a21d3f7e7c28e7d54748a07513c8bfafc2c321e1d8b29c23f36e`；18pm 证书重签成功，首次无线安装遇连接瞬断（CoreDeviceError 4000），重试 devicectl install 成功，启动 1.1.4 (159)，PID 12605。
+- 待用户复测：慢 CDN（华为云 08c）下带进度打开，play>frame 应明显下降（恢复段触发 startupHedge 竞速，日志可见 segment-N 的 startupHedge winner）；从头播与正常播放中段行为不变。
+- 本地 `main` 提交 `4e825e3`（含 Build 159），基线 `0975de8`。未推送 GitHub、未跑完整云端 CI。
