@@ -2941,6 +2941,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                   player.rate > 0 || player.timeControlStatus == .playing
             else { return }
             didReportFirstFrame = true
+            hlsBridge?.endStartupMediaHedge()
             cancelTerminalStallWatchdog()
             cancelFirstFrameWatchdog()
             removePeriodicTimeObserver()
@@ -2960,6 +2961,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard (isBaseLayerReady && hasFreshBaseVideoFrame) || isNativeHDRLayerReady
         else { return }
         didReportFirstFrame = true
+        hlsBridge?.endStartupMediaHedge()
         cancelTerminalStallWatchdog()
         cancelFirstFrameWatchdog()
         removePeriodicTimeObserver()
@@ -4026,6 +4028,10 @@ struct LocalHLSBridge: Sendable {
 
     nonisolated func requestCountSnapshot() -> (total: Int, manifests: Int) {
         server.requestCountSnapshot()
+    }
+
+    nonisolated func endStartupMediaHedge() {
+        server.endStartupMediaHedge()
     }
 
     nonisolated func remoteDownloadSnapshot() -> (bytes: Int, active: Int, peak: Int) {
@@ -8075,6 +8081,15 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
     nonisolated(unsafe) private var isClosed = false
     nonisolated(unsafe) private var totalRequestCount = 0
     nonisolated(unsafe) private var manifestRequestCount = 0
+    // 启动期（首帧前）让任意媒体段（含恢复位置 segment-N）都享受 CDN 对冲；
+    // 首帧后关闭，正常播放中段不再对冲。代理按 bridge 实例隔离，标志天然按视频 scoped。
+    nonisolated private let startupMediaHedgeState = OSAllocatedUnfairLock(initialState: true)
+    nonisolated var isStartupMediaHedgeActive: Bool {
+        startupMediaHedgeState.withLock { $0 }
+    }
+    nonisolated func endStartupMediaHedge() {
+        startupMediaHedgeState.withLock { $0 = false }
+    }
 
     nonisolated private init(
         headers: [String: String],
@@ -8732,14 +8747,23 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         }
     }
 
+    nonisolated private static func isMediaSegmentPath(_ path: String) -> Bool {
+        path.contains("/segment-") && path.hasSuffix(".m4s")
+    }
+
     nonisolated private static func shouldHedgeStartupRange(
         path: String,
         sourceURLCount: Int,
-        environment: PlaybackEnvironment
+        environment: PlaybackEnvironment,
+        startupMediaHedgeActive: Bool
     ) -> Bool {
-        sourceURLCount > 1
-            && isStartupCriticalMediaPath(path)
-            && !environment.shouldPreferConservativePlayback
+        guard sourceURLCount > 1,
+              !environment.shouldPreferConservativePlayback
+        else { return false }
+        // 从头播的 init/seg0/seg1 始终对冲；启动期内（首帧前）恢复位置等
+        // 任意媒体段也对冲，避免慢 CDN 下带进度打开单源硬等。
+        return isStartupCriticalMediaPath(path)
+            || (startupMediaHedgeActive && isMediaSegmentPath(path))
     }
 
     nonisolated private static func slowStartupAvoidanceReason(path: String, elapsedMilliseconds: Double) -> String {
@@ -8939,7 +8963,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         if Self.shouldHedgeStartupRange(
             path: request.path,
             sourceURLCount: canonicalURLs.count,
-            environment: environment
+            environment: environment,
+            startupMediaHedgeActive: isStartupMediaHedgeActive
         ) {
             #if DEBUG
             RecoveryRangeTaskContext.current?.record("rangeTaskUnreserved", fields: ["transport": "hedgedStreaming"])
