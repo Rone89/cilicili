@@ -838,3 +838,13 @@
 - 本地 Release 构建成功（首次 Release 失败为上述 DEBUG 块问题；修正后 SHA-256 `2cbaa95d7a90fb771b026a62d086107f2ed8af5bb0646f40cd3070c496349120`）。注意：首次失败时签名脚本曾把残留 159 包装机，已用修正后包重装覆盖。18pm 证书重签安装 RCe2027 并启动 1.1.4 (160)，PID 14644。
 - 真机验收待确认：弹幕正常滚动/暂停冻结/seek 重同步/倍速正确、清晰度切换后弹幕延续、HDR 视频下表现、弹幕设置（密度/透明度/字号/类型开关）生效；开发者诊断可切回 DanmakuKit/Metal 对比。预期收益：弹幕可见时主线程零逐帧绘制、CPU/耗电下降。
 - 本地 `main` 提交 `05bb39f` + `3fec141`（含 Build 160），基线 `1656587`。按用户新开发节奏：未推送 GitHub，等待用户验收满意后授权推送。
+
+## 2026-11-14 P1 真机验收反馈修复（弹幕全无）/ 1.1.4 Build 161
+
+- 用户验收反馈：Build 160 横竖屏均无弹幕。模拟器复现定位（诊断日志 + 探针夹具页）确认两个缺陷：
+- 缺陷 1（根因）：`attachPlaybackPlayer` 只定义在 `DanmakuOverlayRendering` 协议扩展而非协议要求——通过 `(any DanmakuOverlayRendering)` 存在体调用时 Swift 静态分发到扩展默认空实现，同步层视图的挂播放器/装同步层链路在生产中从未执行；单测直接调视图方法绕过了存在体，因此单测通过而生产失败。修复：升级为协议要求（扩展默认保留，DanmakuKit/Metal 仍为 no-op）。
+- 缺陷 2：后端缺 `didMoveToWindow` 重触发——视图挂窗前 isRenderingActive 为 false，install/apply 均不排程，进窗后无人重新激活，排程观察器永不添加。修复：覆写 `didMoveToWindow` 重跑 updateRenderingActivity（对齐 Ibili 画布）。
+- 验证手段：新增 DEBUG 探针夹具页 `--ui-test-fixture danmakuSync`（真实 AVPlayer + 本地生成视频 + 宿主链路），模拟器截图确认弹幕滚动、媒体时钟同步正确；运行期日志确认 installed → tick → active 计数推进。单测直调路径无法暴露存在体分发缺陷，探针页为关键定位手段。
+- 弹幕全套 + 表面 + 启动门控回归 74/74 通过（build161-sync-fix.xcresult）。本地 Release 构建成功，IPA SHA-256 `bbe48fcb44e872f8deb0d2518cdfbfe230fd0acd7d6539c90fadeed8dc88c89f`；18pm 证书重签安装 RCe2027 并启动 1.1.4 (161)，PID 14914。
+- 待用户真机验收：弹幕应恢复可见（同步层后端驱动）；横竖屏、清晰度切换、弹幕设置均需确认；开发者诊断可切回 DanmakuKit/Metal。
+- 本地 `main` 提交 `3327ecd`（含 Build 161），基线 `28614aa` + 启动专项记录。按新功能节奏：未推送 GitHub，等待用户满意后授权。
