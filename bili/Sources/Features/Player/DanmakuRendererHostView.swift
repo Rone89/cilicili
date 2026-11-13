@@ -64,6 +64,7 @@ final class DanmakuRendererHostView: UIView {
     private var danmakuKitStageSourceSize: CGSize?
     private(set) var usesMetal = false
     private(set) var usesSynchronizedLayer = false
+    var debugActiveRenderer: (UIView & DanmakuOverlayRendering)? { renderer }
     var isLoadSheddingValue: Bool { renderer?.isLoadSheddingValue ?? false }
     #if DEBUG
     var debugDiagnostics: DanmakuRendererDiagnostics? { didSet { configureDebugRenderer() } }

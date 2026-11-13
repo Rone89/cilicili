@@ -20,33 +20,53 @@ struct DanmakuSyncLaneAllocator {
         bottomFreeAt = Array(repeating: 0, count: staticCount)
     }
 
-    mutating func reserveScrollingLane(at startTime: Double, duration: Double) -> Int {
-        let lane = Self.availableLane(in: scrollingFreeAt, at: startTime)
+    mutating func reserveScrollingLane(
+        at startTime: Double,
+        duration: Double,
+        allowsOverlap: Bool
+    ) -> Int? {
+        if let lane = scrollingFreeAt.firstIndex(where: { $0 <= startTime }) {
+            scrollingFreeAt[lane] = startTime + duration * 0.45
+            return lane
+        }
+        guard allowsOverlap else { return nil }
+        let lane = Self.earliestFreeLane(in: scrollingFreeAt)
         scrollingFreeAt[lane] = startTime + duration * 0.45
         return lane
     }
 
-    mutating func reserveTopLane(at startTime: Double, duration: Double) -> Int {
-        Self.reserveStaticLane(in: &topFreeAt, at: startTime, duration: duration)
+    mutating func reserveTopLane(
+        at startTime: Double,
+        duration: Double,
+        allowsOverlap: Bool
+    ) -> Int? {
+        Self.reserveStaticLane(in: &topFreeAt, at: startTime, duration: duration, allowsOverlap: allowsOverlap)
     }
 
-    mutating func reserveBottomLane(at startTime: Double, duration: Double) -> Int {
-        Self.reserveStaticLane(in: &bottomFreeAt, at: startTime, duration: duration)
+    mutating func reserveBottomLane(
+        at startTime: Double,
+        duration: Double,
+        allowsOverlap: Bool
+    ) -> Int? {
+        Self.reserveStaticLane(in: &bottomFreeAt, at: startTime, duration: duration, allowsOverlap: allowsOverlap)
     }
 
-    private static func availableLane(in pool: [Double], at startTime: Double) -> Int {
-        if let lane = pool.firstIndex(where: { $0 <= startTime }) {
-            return lane
-        }
-        return pool.indices.min(by: { pool[$0] < pool[$1] }) ?? 0
+    private static func earliestFreeLane(in pool: [Double]) -> Int {
+        pool.indices.min(by: { pool[$0] < pool[$1] }) ?? 0
     }
 
     private static func reserveStaticLane(
         in pool: inout [Double],
         at startTime: Double,
-        duration: Double
-    ) -> Int {
-        let lane = availableLane(in: pool, at: startTime)
+        duration: Double,
+        allowsOverlap: Bool
+    ) -> Int? {
+        if let lane = pool.firstIndex(where: { $0 <= startTime }) {
+            pool[lane] = startTime + duration
+            return lane
+        }
+        guard allowsOverlap else { return nil }
+        let lane = Self.earliestFreeLane(in: pool)
         pool[lane] = startTime + duration
         return lane
     }
@@ -95,6 +115,8 @@ final class DanmakuSyncBulletLayer: CALayer {
         contentLayer.contents = image
         shouldRasterize = false
     }
+
+    var contentLayerContentsPresent: Bool { contentLayer.contents != nil }
 
     func prepareForReuse() {
         removeAllAnimations()
@@ -189,6 +211,28 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     var isSyncLayerInstalled: Bool { synchronizedLayer != nil }
     var activeDanmakuCount: Int { activeEntries.count }
     var pooledLayerCount: Int { layerPool.count }
+
+    /// 诊断：同步层/容器/首个活动子弹的 frame、opacity、contents 状态。
+    var debugLayerSummary: String {
+        let bullet = activeEntries.first?.layer
+        let bulletFrame = bullet?.frame ?? .zero
+        let bulletOpacity = bullet?.opacity ?? -1
+        let hasContents = bullet?.contentLayerContentsPresent ?? false
+        let presentationFrame = bullet?.presentation()?.frame ?? .zero
+        let animationKeys = (bullet?.animationKeys() ?? []).joined(separator: ",")
+        return [
+            "syncFrame=\(synchronizedLayer?.frame ?? .zero)",
+            "containerFrame=\(containerLayer?.frame ?? .zero)",
+            "bounds=\(bounds)",
+            "active=\(activeEntries.count)",
+            "bulletFrame=\(bulletFrame)",
+            "presentationFrame=\(presentationFrame)",
+            "bulletOpacity=\(bulletOpacity)",
+            "bulletContents=\(hasContents)",
+            "animKeys=\(animationKeys)",
+            "playerTime=\(String(format: "%.2f", resolvedPlaybackTime()))",
+        ].joined(separator: " ")
+    }
 
     private let textCache = NSCache<NSString, DanmakuSyncCachedText>()
 
@@ -452,15 +496,23 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         let endTime = startTime + duration
         guard endTime > currentTime - Self.recycleGrace else { return }
 
-        let lane: Int
+        let allowsOverlap = configuration.settings.danmakuKit.allowsDanmakuOverlap
+        let lane: Int?
         switch mode {
         case .scroll:
-            lane = laneAllocator.reserveScrollingLane(at: startTime, duration: duration)
+            lane = laneAllocator.reserveScrollingLane(
+                at: startTime, duration: duration, allowsOverlap: allowsOverlap
+            )
         case .top:
-            lane = laneAllocator.reserveTopLane(at: startTime, duration: duration)
+            lane = laneAllocator.reserveTopLane(
+                at: startTime, duration: duration, allowsOverlap: allowsOverlap
+            )
         case .bottom:
-            lane = laneAllocator.reserveBottomLane(at: startTime, duration: duration)
+            lane = laneAllocator.reserveBottomLane(
+                at: startTime, duration: duration, allowsOverlap: allowsOverlap
+            )
         }
+        guard let lane else { return }
 
         let bulletLayer = dequeueLayer()
         let cached = cachedText(for: item, configuration: configuration)
@@ -588,6 +640,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             recycleLayer(entry.layer)
         }
         activeEntries.removeAll()
+        // 全量回收后泳道占用账本必须清零：若保留 freeAt，已回收子弹会以幽灵
+        // 占位挡住重物化（resync 后画面清空），参数变化重建分配器则会放新弹幕
+        // 叠上仍在飞的旧弹幕。重放按时间序确定性还原泳道。
+        laneAllocator = DanmakuSyncLaneAllocator(
+            laneCount: max(1, layoutParameters?.scrollLaneCount ?? 14)
+        )
     }
 
     private func recycleLayer(_ layer: DanmakuSyncBulletLayer) {
@@ -655,7 +713,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             scale: settings.danmakuKit.fontScale,
             weight: .regular
         )
-        let laneHeight = max(CGFloat(settings.danmakuKit.trackHeight), font.lineHeight)
+        let laneHeight = max(CGFloat(settings.danmakuKit.trackHeight), font.lineHeight + 8)
         let scrollRegionHeight = contentFrame.height * CGFloat(settings.danmakuKit.displayArea.fraction)
         let scrollLaneCount = max(1, Int(scrollRegionHeight / laneHeight))
         let staticLaneCount = max(2, scrollLaneCount / 3)

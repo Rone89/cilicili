@@ -16,6 +16,7 @@ struct UITestDanmakuSyncFixtureView: View {
         let player: AVPlayer
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
         private var timeObserver: Any?
+        private var endObserver: NSObjectProtocol?
         private let probeLog = Logger(subsystem: "cc.bili", category: "DanmakuSyncProbe")
 
         init() {
@@ -34,9 +35,9 @@ struct UITestDanmakuSyncFixtureView: View {
                 isEnabled: true,
                 hasPresentedPlayback: true,
                 isLoadShedding: false,
-                settings: .default,
-                topInset: 48,
-                bottomInset: 72
+                settings: DanmakuSettings(danmakuKit: .init(displayArea: .full)),
+                topInset: 28,
+                bottomInset: 84
             )
             host.apply(configuration: configuration)
             danmakuSyncProbeLog.info("probe configured items=\(items.count, privacy: .public)")
@@ -47,7 +48,19 @@ struct UITestDanmakuSyncFixtureView: View {
                 let seconds = time.seconds
                 Task { @MainActor in
                     host.synchronizePlaybackTime(seconds)
-                    danmakuSyncProbeLog.info("probe t=\(String(format: "%.1f", seconds), privacy: .public)")
+                    if let syncView = host.debugActiveRenderer as? DanmakuSynchronizedLayerView {
+                        danmakuSyncProbeLog.info("probe t=\(String(format: "%.1f", seconds), privacy: .public) \(syncView.debugLayerSummary, privacy: .public)")
+                    }
+                }
+            }
+            endObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { [weak player] _ in
+                Task { @MainActor [weak player] in
+                    player?.seek(to: .zero)
+                    player?.play()
                 }
             }
             player.play()
@@ -56,17 +69,17 @@ struct UITestDanmakuSyncFixtureView: View {
         static func makeProbeItems() -> [DanmakuItem] {
             let colors: [UInt32] = [0xFFFFFF, 0x55D6FF, 0xFFD6E7, 0xB7FF8A]
             var items: [DanmakuItem] = []
-            for index in 0..<30 {
+            for index in 0..<45 {
                 let mode: Int
-                if index % 7 == 0 {
+                if index % 9 == 0 {
                     mode = 5
-                } else if index % 7 == 3 {
+                } else if index % 9 == 4 {
                     mode = 4
                 } else {
                     mode = 1
                 }
-                let time = Double(index) * 2 + 0.5
-                let text = "同步层探针弹幕 \(index) 🐶 ABC 123"
+                let time = Double(index % 45) * 0.55 + 0.4
+                let text = "同步层探针弹幕 \(index) 🐶 ABC 123 密集压力测试"
                 items.append(DanmakuItem(
                     id: "probe-\(index)",
                     time: time,
@@ -145,6 +158,7 @@ struct UITestDanmakuSyncFixtureView: View {
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
             }
+            endObserver.map { NotificationCenter.default.removeObserver($0) }
             player.pause()
             host.stop()
         }

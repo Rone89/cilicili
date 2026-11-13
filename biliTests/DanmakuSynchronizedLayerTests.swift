@@ -10,29 +10,41 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
 
     func testLaneAllocatorReusesScrollingLaneAtFortyFivePercent() {
         var allocator = DanmakuSyncLaneAllocator(laneCount: 3)
-        let first = allocator.reserveScrollingLane(at: 0, duration: 10)
+        let first = allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: true)
         XCTAssertEqual(first, 0)
         // 45% 处（4.5s）泳道 0 即可复用；2s 处尚未到 → 选泳道 1。
-        XCTAssertEqual(allocator.reserveScrollingLane(at: 2, duration: 10), 1)
-        XCTAssertEqual(allocator.reserveScrollingLane(at: 4.6, duration: 10), 0)
+        XCTAssertEqual(allocator.reserveScrollingLane(at: 2, duration: 10, allowsOverlap: true), 1)
+        XCTAssertEqual(allocator.reserveScrollingLane(at: 4.6, duration: 10, allowsOverlap: true), 0)
+        // 已占用泳道返回 nil 由调用方决定丢弃或重叠回退。
     }
 
-    func testLaneAllocatorNeverDropsWhenAllLanesBusy() {
+    func testLaneAllocatorOverlapFallbackStaysInBoundsWhenAllLanesBusy() {
         var allocator = DanmakuSyncLaneAllocator(laneCount: 2)
-        _ = allocator.reserveScrollingLane(at: 0, duration: 10)
-        _ = allocator.reserveScrollingLane(at: 0, duration: 10)
-        // 全忙时选最早空闲的一条，永不返回越界或丢弃。
-        let overflow = allocator.reserveScrollingLane(at: 0, duration: 10)
-        XCTAssertTrue((0..<2).contains(overflow))
+        _ = allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: true)
+        _ = allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: true)
+        // 允许重叠时全忙选最早空闲的一条，永不返回越界。
+        let overflow = allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: true)
+        XCTAssertNotNil(overflow)
+        XCTAssertTrue((0..<2).contains(overflow!))
+    }
+
+    func testOverlapDisabledSkipsWhenAllLanesBusy() {
+        var allocator = DanmakuSyncLaneAllocator(laneCount: 2)
+        XCTAssertNotNil(allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: false))
+        XCTAssertNotNil(allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: false))
+        // 泳道占满且不允许重叠时丢弃新弹幕，而不是叠上去。
+        XCTAssertNil(allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: false))
+        // 允许重叠时回退最早空闲泳道（旧行为）。
+        XCTAssertNotNil(allocator.reserveScrollingLane(at: 0, duration: 10, allowsOverlap: true))
     }
 
     func testStaticLanesUseFullDurationAndIndependentPools() {
         var allocator = DanmakuSyncLaneAllocator(laneCount: 3)
-        XCTAssertEqual(allocator.reserveTopLane(at: 0, duration: 4), 0)
-        XCTAssertEqual(allocator.reserveTopLane(at: 1, duration: 4), 1)
+        XCTAssertEqual(allocator.reserveTopLane(at: 0, duration: 4, allowsOverlap: true), 0)
+        XCTAssertEqual(allocator.reserveTopLane(at: 1, duration: 4, allowsOverlap: true), 1)
         // 顶部泳道占满 4s；底部泳道独立记账，不受顶部影响。
-        XCTAssertEqual(allocator.reserveBottomLane(at: 1, duration: 4), 0)
-        XCTAssertEqual(allocator.reserveTopLane(at: 4.1, duration: 4), 0)
+        XCTAssertEqual(allocator.reserveBottomLane(at: 1, duration: 4, allowsOverlap: true), 0)
+        XCTAssertEqual(allocator.reserveTopLane(at: 4.1, duration: 4, allowsOverlap: true), 0)
     }
 
     // MARK: Host selection
