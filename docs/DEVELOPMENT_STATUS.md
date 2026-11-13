@@ -760,3 +760,12 @@
 - 测试：新增 `RemoteImageURLClarityTests` 11/11 通过（URL 生成、质量段、非 hdslb 护栏、identity 等值、PGC 去重回归）；更新 3 处断言旧 imageView2 格式的预取/尺寸测试断言。全量单元 1288 项：1277 通过、11 失败——3 项为上述旧格式断言（已修并复验通过）；4 项在 main 干净基线同样失败（`DynamicDetailNavigationTests` 3 + `BiliAPIClientRequestContractTests` 1，签名一致，存量问题）；4 项（HLS 计时×2、音频重置、几何循环）子集复跑全过，属负载下抖动。证据 `build/unit-full.xcresult`、原仓库 `build/baseline-subset.xcresult`、`build/verify-subset.xcresult`（复跑 10/10）。构建号误改原仓库 pbxproj 一次，已即时 `checkout --` 还原，原仓库保持干净。
 - 本轮在草稿分支 `analysis/ibili-cover-clarity`（worktree `/Users/rayc/Desktop/ccswift-ibili-analysis`）提交，未合并 main；main 保持 `3a78454` 未动。未推送 GitHub、未跑完整云端 CI。
 - 真机验收待确认（Build 155 装机后）：设置切换封面清晰度，首页/搜索封面细节应有可感变化（原图档最明显）；图片流量应显著下降（尺寸修复生效）；动态帖正文首图不应与封面重复显示。
+
+## 2026-11-13 图片设置合并为单一「图片清晰度」旋钮（更易懂）/ 1.1.4 Build 156
+
+- 用户反馈两个图片选项（图片质量=尺寸、封面清晰度=压缩）难懂；查证 PiliPlus（桌面 `PiliPlus-2.0.9.2`，其「图片质量」实为压缩百分比，默认 10）与 Ibili 都只给用户一个旋钮。经用户选择，合并为一个「图片清晰度」档位。
+- 更正前轮一处不准确表述：本项目视频封面早已"贴屏"——`AdaptiveVideoCoverImage`（DesignSystem）用 GeometryReader 量真实渲染尺寸×displayScale 走 fitting 路径按像素要图，与 Ibili 同思路；`VideoCardDisplayModel.coverURL` 的 480×270 只是兜底。故"尺寸贴屏是未做的第二步"不成立，主表面已实现；未贴屏的仅次要表面（直播/私信/收藏/头像/UP 空间），本轮未处理。详见分析文档第 9 节。
+- 改动：① 新增统一档位 `RemoteImageClarityPreset`（`PerformanceServices.swift`）：自动/省流/高清/原图，每档同时驱动 `sizePreference`（尺寸上限策略）与 `quality`（CDN 压缩 q）。映射：自动→.automatic+nil；省流→.dataSaver(560)+60；高清→.high(2600)+90；原图→.high(2600)+100。键 `cc.bili.display.imageClarityPreset.v1`。② `RemoteImageQualityPreference.effectiveMaximumPixelLength` 静态入口改读统一档位 sizePreference（实例尺寸逻辑保留为内部引擎）；`biliResizeSuffixURL` 改读统一档位 quality。③ 移除独立 `RemoteCoverClarityPreference`。④ LibraryStore 与设置页各只剩一个属性/选择器（「图片清晰度」，icon photo）。⑤ `stored()` 含一次性迁移：统一键缺失时回退旧尺寸键（high→高清、dataSaver→省流、automatic/balanced→自动）；LibraryStore init 落盘迁移值。
+- 测试：`RemoteImageURLClarityTests` 重写为统一档位 17/17 通过（含 q 映射、尺寸映射、省流尺寸上限、迁移、统一键优先、URL 生成、identity、PGC 去重）；`DynamicImagePrefetchSizingTests` 改用统一档位键。全量单元 1292 项：1287 通过、5 失败——4 项为 main 存量（DynamicDetailNavigationTests 3 + BiliAPIClientRequestContractTests 1，签名一致）；1 项启动竞速计时测试单独复跑通过（0.772s），属负载抖动。本次重构零新增失败。证据 `build/unit-full-156.xcresult`、`build/clarity-merge-test2.xcresult`、`build/flaky-recheck.xcresult`。
+- 本轮在草稿分支 `analysis/ibili-cover-clarity` 提交，未合并 main；main 保持 `3a78454` 未动。未推送 GitHub、未跑完整云端 CI。
+- 真机验收待确认（Build 156 装机后）：设置「我的 → 显示」只剩一个「图片清晰度」（自动/省流/高清/原图），切换后封面大小与细节同时变化；自动档仍随网络/电量调节；旧版选过省流/高清的用户升级后档位应保留（迁移）。

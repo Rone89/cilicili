@@ -159,8 +159,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
-    @Published private(set) var remoteImageQualityPreference: RemoteImageQualityPreference
-    @Published private(set) var remoteCoverClarityPreference: RemoteCoverClarityPreference
+    @Published private(set) var remoteImageClarityPreset: RemoteImageClarityPreset
     @Published private(set) var videoCoverBadgeShadowOpacity: Double
     @Published private(set) var videoCoverBottomScrimEnabled: Bool
     @Published private(set) var showsVideoCoverDurationBadges: Bool
@@ -249,8 +248,7 @@ final class LibraryStore: ObservableObject {
         "cc.bili.videoDetail.actionButtonStyle.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
     private static let liquidGlassStylePreferenceKey = AppLiquidGlassStylePreference.storageKey
-    private static let remoteImageQualityPreferenceKey = RemoteImageQualityPreference.storageKey
-    private static let remoteCoverClarityPreferenceKey = RemoteCoverClarityPreference.storageKey
+    private static let remoteImageClarityPresetKey = RemoteImageClarityPreset.storageKey
     private static let videoCoverBadgeShadowOpacityKey = VideoCoverBadgeShadow.storageKey
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
@@ -693,8 +691,10 @@ final class LibraryStore: ObservableObject {
         self.liquidGlassStylePreference = AppLiquidGlassStylePreference(
             storedRawValue: userDefaults.string(forKey: Self.liquidGlassStylePreferenceKey)
         )
-        self.remoteImageQualityPreference = RemoteImageQualityPreference.stored(in: userDefaults)
-        self.remoteCoverClarityPreference = RemoteCoverClarityPreference.stored(in: userDefaults)
+        let clarityPreset = RemoteImageClarityPreset.stored(in: userDefaults)
+        self.remoteImageClarityPreset = clarityPreset
+        // Persist the migrated value so the one-time legacy fallback settles.
+        userDefaults.set(clarityPreset.rawValue, forKey: Self.remoteImageClarityPresetKey)
         self.videoCoverBadgeShadowOpacity = VideoCoverBadgeShadow.normalized(
             userDefaults.object(forKey: Self.videoCoverBadgeShadowOpacityKey) as? Double
                 ?? VideoCoverBadgeShadow.defaultOpacity
@@ -1405,14 +1405,9 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(preference.rawValue, forKey: Self.liquidGlassStylePreferenceKey)
     }
 
-    func setRemoteImageQualityPreference(_ preference: RemoteImageQualityPreference) {
-        remoteImageQualityPreference = preference
-        userDefaults.set(preference.rawValue, forKey: Self.remoteImageQualityPreferenceKey)
-    }
-
-    func setRemoteCoverClarityPreference(_ preference: RemoteCoverClarityPreference) {
-        remoteCoverClarityPreference = preference
-        userDefaults.set(preference.rawValue, forKey: Self.remoteCoverClarityPreferenceKey)
+    func setRemoteImageClarityPreset(_ preset: RemoteImageClarityPreset) {
+        remoteImageClarityPreset = preset
+        userDefaults.set(preset.rawValue, forKey: Self.remoteImageClarityPresetKey)
     }
 
     func setVideoCoverBadgeShadowOpacity(_ opacity: Double) {

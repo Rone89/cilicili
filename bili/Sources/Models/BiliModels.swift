@@ -7257,7 +7257,7 @@ nonisolated extension String {
     private func biliResizeSuffixURL(dimensions: String) -> String {
         let base = biliImageBaseURL()
         var suffix = "@\(dimensions)"
-        if let quality = RemoteCoverClarityPreference.stored().quality {
+        if let quality = RemoteImageClarityPreset.stored().quality {
             suffix += "_\(quality)q"
         }
         return "\(base)\(suffix).webp"

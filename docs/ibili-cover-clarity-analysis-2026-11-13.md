@@ -84,3 +84,17 @@ ccswift 已有 `RemoteImageQualityPreference`（bili/Sources/Utilities/Performan
 - "设置变更 → contentVersion → 网格重配置"的失效技巧。
 - hdslb host + 图片扩展名的护栏判断（防第三方图床 URL 被误改）。
 - 预取时用与卡片渲染完全相同的 targetPointSize + quality，保证预取的 URL 与正式加载的 URL 一致从而命中缓存。
+
+## 9. 落地结果与更正（Build 155–156）
+
+**更正第 7 节一处不准确表述**：ccswift 的视频封面其实早已"贴屏"。首页/动态/紧凑卡片/故事媒体等所有视频封面都经 `AdaptiveVideoCoverImage`（DesignSystem）渲染，它用 `GeometryReader` 量出卡片真实渲染尺寸（或 fixedSize）× `displayScale`，走 `biliCoverThumbnailURL(fitting:scale:maximumPixelLength:)` 按像素要图，与 Ibili 同思路。第 7 节表格里"固定档位 480×270"只是 `VideoCardDisplayModel.coverURL` 的兜底备用值，并非实际渲染路径。因此"Ibili 尺寸贴屏比我们强、是我们没做的第二步"这一说法不成立——主表面已实现。仍未贴屏的只是次要表面（直播卡片、私信图片、收藏列表、头像、UP 主空间），价值较低，未在本轮处理。
+
+**Build 155**：修复 CDN 语法（`?imageView2/...` 被 hdslb 忽略→改 `@w_h[_q]q.webp` 后缀），并首次引入压缩清晰度选项。
+
+**Build 156（本轮，用户要求"更易懂"）**：把两个旋钮合并为一个「图片清晰度」档位 `RemoteImageClarityPreset`（自动/省流/高清/原图），每档同时驱动尺寸上限（`sizePreference`）与压缩 q（`quality`）：
+- 自动 → sizePreference .automatic（网络/电量/发热自适应）+ q nil（CDN 默认 75）
+- 省流 → .dataSaver（560px）+ q 60
+- 高清 → .high（2600px）+ q 90
+- 原图 → .high（2600px）+ q 100
+
+`RemoteImageQualityPreference.effectiveMaximumPixelLength` 静态入口改读统一档位的 sizePreference；`biliResizeSuffixURL` 改读统一档位的 quality；移除独立的 `RemoteCoverClarityPreference`；LibraryStore 与设置页各只剩一个属性/选择器。`stored()` 含一次性迁移：统一键缺失时回退旧尺寸键（high→高清、dataSaver→省流、automatic/balanced→自动）。尺寸贴屏机制（AdaptiveVideoCoverImage）不变，统一档位只影响其上限与压缩。

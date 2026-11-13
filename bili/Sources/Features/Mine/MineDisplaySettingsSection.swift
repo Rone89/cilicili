@@ -83,39 +83,18 @@ struct MineDisplaySettingsSection: View {
 
             Picker(
                 selection: Binding(
-                    get: { libraryStore.remoteImageQualityPreference },
-                    set: { libraryStore.setRemoteImageQualityPreference($0) }
+                    get: { libraryStore.remoteImageClarityPreset },
+                    set: { libraryStore.setRemoteImageClarityPreset($0) }
                 )
             ) {
-                ForEach(RemoteImageQualityPreference.allCases) { preference in
-                    Text(preference.title).tag(preference)
+                ForEach(RemoteImageClarityPreset.allCases) { preset in
+                    Text(preset.title).tag(preset)
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("图片质量", systemImage: "photo")
+                    MineSettingsLabel("图片清晰度", systemImage: "photo")
 
-                    Text(libraryStore.remoteImageQualityPreference.detail)
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .pickerStyle(.menu)
-
-            Picker(
-                selection: Binding(
-                    get: { libraryStore.remoteCoverClarityPreference },
-                    set: { libraryStore.setRemoteCoverClarityPreference($0) }
-                )
-            ) {
-                ForEach(RemoteCoverClarityPreference.allCases) { preference in
-                    Text(preference.title).tag(preference)
-                }
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("封面清晰度", systemImage: "camera.filters")
-
-                    Text(libraryStore.remoteCoverClarityPreference.detail)
+                    Text(libraryStore.remoteImageClarityPreset.detail)
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
