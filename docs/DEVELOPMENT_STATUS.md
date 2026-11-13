@@ -812,3 +812,12 @@
 - 真机验收通过（6 会话，全为华为云 08c 带进度打开）：totalFirstFrame 212–417ms（中位 258ms），play>frame 77–237ms（修复前同场景 719–985ms）。同视频前后对比：海陆空 1240→333ms、三阳 738→212ms、黄仁勋 640→262ms、齐鲁 768→218ms、ning 658→253ms。日志确认恢复段触发 startupHedge 竞速（winner=08c/hwb，first=77–193ms）；三阳一例对冲后台跑 1652ms 但播放器经预热缓存 77ms 出帧，验证播放器不被对冲总时长拖住。
 - 启动专项目标达成：典型首帧从 744–1140ms 降至 ~250–280ms，慢 CDN 带进度从 1.4s+ 降至 212–417ms。四杠杆（历史门控/预热不阻塞/预取抢跑/恢复段对冲）全部落地验证。剩余仅导航动画 ~75–120ms（SwiftUI 固有）与 AV1 解码（设置可改 HEVC），不再动代码。
 - 本地 `main` 提交 `4e825e3`（含 Build 159），基线 `0975de8`。未推送 GitHub、未跑完整云端 CI。
+
+## 2026-11-13 推送备份 + 完整云端 CI 验收（启动专项收尾）
+
+- 用户授权推送备份 + 完整云端 CI。本地 main 快进推送至 GitHub（`8a2456e..28614aa`，22 个提交，含启动四杠杆 + 图片清晰度合并 + 全部文档）。远端无独有提交，干净快进。
+- 推送触发完整 iOS CI（run 43407498508）：Xcode 26 unsigned Release 成功；单元测试 job 失败；UI 矩阵（matrix.suite）因单测失败被门禁跳过。
+- 单测失败用例去重 6 个，**全部为存量/环境依赖，零新增**：DynamicDetailNavigationTests×3、BiliAPIClientRequestContractTests.testMainComments×1、DeterministicAVPlayerTransportTests.testQueuedPlayingObservationsCannotOverrideSynchronousPause×1、AVPlayerStartupPathOptimizationExperimentTests.testStartupPackagePrebuildReturnsImmediatelyWhenWarmupWaitIsZero×1（网络环境依赖）。
+- 关键核实：曾疑似与候选②相关的 DeterministicAVPlayerTransportTests 传输用例，在改动前基线 CI（2026-11-09 run 42599226175，早于全部启动工作）以相同方式失败，确认为存量；该用例本地 Build 159 回归通过，CI 失败属 Xcode 26 + 负载抖动。Nov 9 基线另含 PlayerFormalPlaybackConfigurationTests.testSeekDeadline 一例本轮已通过（抖动）。
+- 结论：完整云端 CI 确认本轮 22 个提交零新增失败。云端 UI 矩阵被存量单测失败门禁跳过（非本轮引入）；UI/播放回归此前已本地定向覆盖。启动专项至此收尾，成果已备份。
+- 本地 `main` 与远端同步于 `28614aa`。
