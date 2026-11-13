@@ -66,7 +66,10 @@ nonisolated struct DynamicPGC: Decodable, Hashable, Sendable {
     func bodyImages(from images: [DynamicImageItem]) -> [DynamicImageItem] {
         images.filter { image in
             guard let url = image.normalizedURL else { return false }
-            return url.biliImageCacheIdentityURLString() != cover?.biliImageCacheIdentityURLString()
+            // Compare the underlying picture, not the cache identity: the
+            // cover and the body image may carry different resize or clarity
+            // variants of the same source.
+            return url.biliImageOriginalURL() != cover?.biliImageOriginalURL()
         }
     }
 }

@@ -7093,7 +7093,7 @@ nonisolated extension String {
         }
 
         let size = RemoteImageQualityPreference.effectiveThumbnailSize(width: width, height: height)
-        return normalized.biliImageView2URL(width: size.width, height: size.height)
+        return normalized.biliResizeSuffixURL(dimensions: "\(size.width)w_\(size.height)h")
     }
 
     func biliCoverThumbnailURL(
@@ -7114,7 +7114,7 @@ nonisolated extension String {
         }
 
         let pixelSize = max(48, size)
-        return normalized.biliImageView2URL(width: pixelSize, height: pixelSize)
+        return normalized.biliResizeSuffixURL(dimensions: "\(pixelSize)w_\(pixelSize)h")
     }
 
     func biliImageThumbnailURL(maxSide: Int = 1080) -> String {
@@ -7124,7 +7124,7 @@ nonisolated extension String {
         }
 
         let pixelSize = min(RemoteImageQualityPreference.effectiveMaximumPixelLength(maxSide), 4096)
-        return "\(normalized.biliImageBaseURL())?imageView2/2/w/\(pixelSize)/format/webp"
+        return normalized.biliResizeSuffixURL(dimensions: "\(pixelSize)w")
     }
 
     func biliImageOriginalURL() -> String {
@@ -7161,7 +7161,8 @@ nonisolated extension String {
            let suffix = normalized.range(of: #"@\d+w_\d+h_0e\.webp$"#, options: .regularExpression) {
             return "\(base)#fit\(normalized[suffix])"
         }
-        guard normalized.contains("imageView2") else {
+        guard normalized.contains("imageView2")
+            || normalized.range(of: #"@\d+w"#, options: .regularExpression) != nil else {
             return base
         }
 
@@ -7187,6 +7188,7 @@ nonisolated extension String {
     var biliImageURLAspectRatio: Double? {
         let normalized = normalizedBiliURL()
         let candidates = [
+            #"(?i)@(\d{2,5})w_(\d{2,5})h"#,
             #"(?i)[@_/?&](?:w|width)[_=/:-]?(\d{2,5}).{0,18}(?:h|height)[_=/:-]?(\d{2,5})"#,
             #"(?i)[@_/?&](?:h|height)[_=/:-]?(\d{2,5}).{0,18}(?:w|width)[_=/:-]?(\d{2,5})"#
         ]
@@ -7215,7 +7217,8 @@ nonisolated extension String {
     }
 
     var biliImageURLPixelBucket: Int? {
-        let pieces = normalizedBiliURL().split(separator: "/")
+        let normalized = normalizedBiliURL()
+        let pieces = normalized.split(separator: "/")
         var pixelLengths = [Int]()
         for index in pieces.indices {
             let key = pieces[index].lowercased()
@@ -7227,14 +7230,37 @@ nonisolated extension String {
             else { continue }
             pixelLengths.append(value)
         }
+        // Suffix form (`base@480w_270h_75q.webp`): parse the resize digits
+        // after '@'. Path-segment parsing above cannot see them.
+        if let suffixStart = normalized.firstIndex(of: "@") {
+            let suffix = String(normalized[normalized.index(after: suffixStart)...])
+            if let widthRange = suffix.range(of: #"(\d{2,5})w"#, options: .regularExpression),
+                let value = Int(suffix[widthRange].dropLast()), value > 0 {
+                pixelLengths.append(value)
+            }
+            if let heightRange = suffix.range(of: #"(\d{2,5})h"#, options: .regularExpression),
+                let value = Int(suffix[heightRange].dropLast()), value > 0 {
+                pixelLengths.append(value)
+            }
+        }
         guard let maxSide = pixelLengths.max() else { return nil }
         let bucket = 160
         return ((maxSide + bucket - 1) / bucket) * bucket
     }
 
-    private func biliImageView2URL(width: Int, height: Int) -> String {
+    /// Builds the resize suffix URL the hdslb CDN actually honors:
+    /// `<base>@<w>w_<h>h[_<q>q].webp`. The `?imageView2/...` query form this
+    /// used to emit is ignored by the CDN, which returned the untouched
+    /// original — see docs/ibili-cover-clarity-analysis-2026-11-13.md.
+    /// The quality piece follows the user's cover-clarity preference; `nil`
+    /// lets the CDN apply its default.
+    private func biliResizeSuffixURL(dimensions: String) -> String {
         let base = biliImageBaseURL()
-        return "\(base)?imageView2/2/w/\(width)/h/\(height)/format/webp"
+        var suffix = "@\(dimensions)"
+        if let quality = RemoteImageClarityPreset.stored().quality {
+            suffix += "_\(quality)q"
+        }
+        return "\(base)\(suffix).webp"
     }
 
     private static func biliThumbnailPixelLength(

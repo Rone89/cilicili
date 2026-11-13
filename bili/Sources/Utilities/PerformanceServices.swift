@@ -4598,7 +4598,7 @@ nonisolated enum RemoteImageQualityPreference: String, CaseIterable, Identifiabl
     }
 
     static func effectiveMaximumPixelLength(_ requested: Int) -> Int {
-        stored().effectiveMaximumPixelLength(requested)
+        RemoteImageClarityPreset.stored().sizePreference.effectiveMaximumPixelLength(requested)
     }
 
     func effectiveMaximumPixelLength(_ requested: Int) -> Int {
@@ -4638,6 +4638,99 @@ nonisolated enum RemoteImageQualityPreference: String, CaseIterable, Identifiabl
             max(1, Int((Double(width) * ratio).rounded())),
             max(1, Int((Double(height) * ratio).rounded()))
         )
+    }
+}
+
+/// Single user-facing control for remote-image quality. Each preset drives
+/// BOTH the download size cap (`sizePreference`) and the Bilibili CDN
+/// compression digit (`quality`, the `_<q>q` piece of the
+/// `@<w>w_<h>h[_<q>q].webp` suffix). `automatic` keeps the network/battery/
+/// thermal size adaptation and lets the CDN apply its default compression
+/// (currently 75). This replaces the former separate "图片质量" (size) and
+/// "封面清晰度" (compression) pickers with one understandable knob.
+nonisolated enum RemoteImageClarityPreset: String, CaseIterable, Identifiable, Codable, Sendable {
+    case automatic
+    case dataSaver
+    case high
+    case original
+
+    static let storageKey = "cc.bili.display.imageClarityPreset.v1"
+    static let defaultValue: RemoteImageClarityPreset = .automatic
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic:
+            return "自动"
+        case .dataSaver:
+            return "省流"
+        case .high:
+            return "高清"
+        case .original:
+            return "原图"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .automatic:
+            return "按网络和电量自动调节，兼顾清晰与流量。推荐大多数情况使用。"
+        case .dataSaver:
+            return "更小的图、更强的压缩，最省流量，适合流量紧张时。"
+        case .high:
+            return "更大的图、更少的压缩，画面更清晰，适合 Wi-Fi。"
+        case .original:
+            return "接近原图的画质，最清晰，流量和缓存占用最大。"
+        }
+    }
+
+    /// Size-cap strategy reused from the former image-quality preference.
+    var sizePreference: RemoteImageQualityPreference {
+        switch self {
+        case .automatic:
+            return .automatic
+        case .dataSaver:
+            return .dataSaver
+        case .high, .original:
+            return .high
+        }
+    }
+
+    /// Bilibili CDN quality digit; `nil` requests the CDN default.
+    var quality: Int? {
+        switch self {
+        case .automatic:
+            return nil
+        case .dataSaver:
+            return 60
+        case .high:
+            return 90
+        case .original:
+            return 100
+        }
+    }
+
+    static func stored(in userDefaults: UserDefaults = .standard) -> RemoteImageClarityPreset {
+        if let rawValue = userDefaults.string(forKey: storageKey),
+            let preset = RemoteImageClarityPreset(rawValue: rawValue) {
+            return preset
+        }
+        // One-time migration from the former size-only preference so existing
+        // users keep their choice. The short-lived compression-only key is
+        // intentionally not migrated (it never shipped on main).
+        if let legacy = userDefaults.string(forKey: RemoteImageQualityPreference.storageKey),
+            let legacyPreference = RemoteImageQualityPreference(rawValue: legacy) {
+            switch legacyPreference {
+            case .automatic, .balanced:
+                return .automatic
+            case .dataSaver:
+                return .dataSaver
+            case .high:
+                return .high
+            }
+        }
+        return defaultValue
     }
 }
 

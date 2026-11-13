@@ -760,3 +760,30 @@
 - 本地 Release 构建成功，未签名 IPA SHA-256 `45e390f892084577ef10ae373fb32972cfa18c2af2813f5f7d880374534d2e98`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (155)，PID 6290。
 - 真机验收待确认：首页打开的 playURL 阶段应出现竞速提前量（页面加入时取流已部分完成，playURL < 竞速全程）、无本地历史会话的门控开销收窄；总首帧预期再省 80–115ms。观察方式：日志 playURLPending joined 偏移、playURL 与 race 差值。
 - 本地 `main` 源码提交 `2a067c9`（含 Build 155），基线 `3a78454`。未推送 GitHub、未跑完整云端 CI。
+
+## 2026-11-13 封面清晰度开关 + 封面 URL 修复（CDN 查询语法失效）/ 1.1.4 Build 155
+
+- 功能来源：Ibili 封面清晰度分析（`docs/ibili-cover-clarity-analysis-2026-11-13.md`，源码克隆于 `/Users/rayc/Desktop/ibili-review/Ibili`）。采用合并方案：保留本项目网络自适应尺寸上限（本轮修复后真实生效），新增用户可选 CDN 压缩质量。
+- 重要发现：本项目此前封面/缩略图 URL 使用 `?imageView2/2/w/.../format/webp` 查询语法，实测 hdslb CDN 完全忽略该语法（返回未处理的原始文件，样本 1920×1080 JPEG 199KB），即旧版封面始终按原图下载，`RemoteImageQualityPreference` 的尺寸上限只改 URL 无网络效果。实测后缀语法 `@<w>w_<h>h[_<q>q].webp` 完全生效：480×270 下 q60 15.3KB / q75(默认) 17.6KB / q90 31KB / q100 56KB；`_75q` 与不带 q 字节相同，证实 CDN 默认压缩等级 75。仅宽度后缀 `@<w>w` 亦生效，`_0e`/`_1c` 标志可与质量段叠加。
+- 改动：① `biliImageView2URL` 重写为 `biliResizeSuffixURL`（`BiliModels.swift`）：封面/头像/缩略图改走后缀语法，按清晰度偏好追加 `_<q>q`；② 新增 `RemoteCoverClarityPreference`（`PerformanceServices.swift`）：自动/流畅60/标准75/高清90/原图100，键 `cc.bili.display.coverClarityPreference.v1`，默认自动（不传 q，CDN 默认）；③ `LibraryStore` 增加持久化属性与 setter；④ 设置页「我的 → 显示」新增「封面清晰度」选择器（`MineDisplaySettingsSection.swift`）；⑤ `biliImageCacheIdentityURLString`/`biliImageURLAspectRatio`/`biliImageURLPixelBucket` 支持后缀格式解析（质量数字不参与 identity，同尺寸不同质量共享解码缓存）；⑥ `DynamicPGC` 封面去重改用 `biliImageOriginalURL()` 比较底层源图，避免同图不同尺寸变体判等失效。
+- 缓存影响：URL 格式变更使既有图片缓存键一次性失效，升级后首次浏览重新下载；因尺寸修复生效，实际下载量显著下降（样本：480×270 封面 199KB→15–56KB）。
+- 测试：新增 `RemoteImageURLClarityTests` 11/11 通过（URL 生成、质量段、非 hdslb 护栏、identity 等值、PGC 去重回归）；更新 3 处断言旧 imageView2 格式的预取/尺寸测试断言。全量单元 1288 项：1277 通过、11 失败——3 项为上述旧格式断言（已修并复验通过）；4 项在 main 干净基线同样失败（`DynamicDetailNavigationTests` 3 + `BiliAPIClientRequestContractTests` 1，签名一致，存量问题）；4 项（HLS 计时×2、音频重置、几何循环）子集复跑全过，属负载下抖动。证据 `build/unit-full.xcresult`、原仓库 `build/baseline-subset.xcresult`、`build/verify-subset.xcresult`（复跑 10/10）。构建号误改原仓库 pbxproj 一次，已即时 `checkout --` 还原，原仓库保持干净。
+- 本轮在草稿分支 `analysis/ibili-cover-clarity`（worktree `/Users/rayc/Desktop/ccswift-ibili-analysis`）提交，未合并 main；main 保持 `3a78454` 未动。未推送 GitHub、未跑完整云端 CI。
+- 真机验收待确认（Build 155 装机后）：设置切换封面清晰度，首页/搜索封面细节应有可感变化（原图档最明显）；图片流量应显著下降（尺寸修复生效）；动态帖正文首图不应与封面重复显示。
+
+## 2026-11-13 图片设置合并为单一「图片清晰度」旋钮（更易懂）/ 1.1.4 Build 156
+
+- 用户反馈两个图片选项（图片质量=尺寸、封面清晰度=压缩）难懂；查证 PiliPlus（桌面 `PiliPlus-2.0.9.2`，其「图片质量」实为压缩百分比，默认 10）与 Ibili 都只给用户一个旋钮。经用户选择，合并为一个「图片清晰度」档位。
+- 更正前轮一处不准确表述：本项目视频封面早已"贴屏"——`AdaptiveVideoCoverImage`（DesignSystem）用 GeometryReader 量真实渲染尺寸×displayScale 走 fitting 路径按像素要图，与 Ibili 同思路；`VideoCardDisplayModel.coverURL` 的 480×270 只是兜底。故"尺寸贴屏是未做的第二步"不成立，主表面已实现；未贴屏的仅次要表面（直播/私信/收藏/头像/UP 空间），本轮未处理。详见分析文档第 9 节。
+- 改动：① 新增统一档位 `RemoteImageClarityPreset`（`PerformanceServices.swift`）：自动/省流/高清/原图，每档同时驱动 `sizePreference`（尺寸上限策略）与 `quality`（CDN 压缩 q）。映射：自动→.automatic+nil；省流→.dataSaver(560)+60；高清→.high(2600)+90；原图→.high(2600)+100。键 `cc.bili.display.imageClarityPreset.v1`。② `RemoteImageQualityPreference.effectiveMaximumPixelLength` 静态入口改读统一档位 sizePreference（实例尺寸逻辑保留为内部引擎）；`biliResizeSuffixURL` 改读统一档位 quality。③ 移除独立 `RemoteCoverClarityPreference`。④ LibraryStore 与设置页各只剩一个属性/选择器（「图片清晰度」，icon photo）。⑤ `stored()` 含一次性迁移：统一键缺失时回退旧尺寸键（high→高清、dataSaver→省流、automatic/balanced→自动）；LibraryStore init 落盘迁移值。
+- 测试：`RemoteImageURLClarityTests` 重写为统一档位 17/17 通过（含 q 映射、尺寸映射、省流尺寸上限、迁移、统一键优先、URL 生成、identity、PGC 去重）；`DynamicImagePrefetchSizingTests` 改用统一档位键。全量单元 1292 项：1287 通过、5 失败——4 项为 main 存量（DynamicDetailNavigationTests 3 + BiliAPIClientRequestContractTests 1，签名一致）；1 项启动竞速计时测试单独复跑通过（0.772s），属负载抖动。本次重构零新增失败。证据 `build/unit-full-156.xcresult`、`build/clarity-merge-test2.xcresult`、`build/flaky-recheck.xcresult`。
+- 本轮在草稿分支 `analysis/ibili-cover-clarity` 提交，未合并 main；main 保持 `3a78454` 未动。未推送 GitHub、未跑完整云端 CI。
+- 真机验收待确认（Build 156 装机后）：设置「我的 → 显示」只剩一个「图片清晰度」（自动/省流/高清/原图），切换后封面大小与细节同时变化；自动档仍随网络/电量调节；旧版选过省流/高清的用户升级后档位应保留（迁移）。
+
+## 2026-11-13 合并启动 P1 与图片清晰度两条线 / 1.1.4 Build 157
+
+- 背景：草稿分支 `analysis/ibili-cover-clarity`（图片 CDN 修复 + 统一清晰度旋钮，自称 Build 155/156）与主线并行推进；主线期间落了启动 P1（tap 预取脱离主 actor，`2a067c9`，自称 Build 155）。两条线各自用了 155，构建号撞号。
+- 用户真机验收图片改动通过（"可以没问题"），授权并入 main。合并时 main 已前进至 `b46feb7`，非快进；冲突仅 `project.pbxproj`（构建号）与本文件（文末记录），代码文件（启动 P1 的 `RootTabViewActions.swift`/`CloudHistoryStartupGateTests.swift` 与图片改动）互不重叠、自动合并干净。
+- 解决：构建号统一升 **157**（代表启动 P1 + 图片清晰度合体，消除 155/156 撞号）；本文件保留两条线全部历史记录。合并提交见 main。
+- 合并后需重新构建并装机：此前手机装的是草稿 156（仅图片改动，不含启动 P1），Build 157 才同时含两者。
+- 合并后全量测试：1292 项，1287 通过、5 失败——4 项 main 存量（`DynamicDetailNavigationTests` 3 + `BiliAPIClientRequestContractTests` 1，签名一致）+ 1 项几何循环计时抖动（`testProductionSurfaceAcrossTwentyGeometryCycles`，单独复跑 2.350s 通过）。启动 P1 新增门控测试与图片清晰度测试均通过，合并零新增失败。证据 `build/merge-157-unit.xcresult`、`build/merge-157-flaky.xcresult`。Release 157 构建与装机结论见后续补记。
