@@ -14,6 +14,8 @@ struct UITestFixtureRootView: View {
             #if DEBUG
             case .danmakuBenchmark:
                 NavigationStack { DanmakuRendererBenchmarkView() }
+            case .danmakuSync:
+                UITestDanmakuSyncFixtureView()
             case .searchScroll:
                 UITestSearchScrollFixtureView(api: dependencies.api)
             case .rootTabScroll:

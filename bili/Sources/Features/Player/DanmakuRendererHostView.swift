@@ -1,4 +1,5 @@
 import AVFoundation
+import OSLog
 import UIKit
 
 /// 弹幕渲染后端选择。synchronizedLayer 需要 VM 暴露的 AVPlayer 才能挂
@@ -31,10 +32,13 @@ protocol DanmakuOverlayRendering: AnyObject {
     func synchronizePlaybackTime(_ time: TimeInterval, force: Bool)
     func setLayoutTransitioning(_ transitioning: Bool)
     func stop()
+    /// 必须是协议要求而非仅扩展方法：存在体（any DanmakuOverlayRendering）
+    /// 调用时扩展方法会静态分发到默认空实现，具体类型的实现不会被执行。
+    func attachPlaybackPlayer(_ player: AVPlayer?)
 }
 
 extension DanmakuOverlayRendering {
-    /// 仅 AVSynchronizedLayer 后端需要；其余后端保持 no-op。
+    /// 仅 AVSynchronizedLayer 后端有实际实现；DanmakuKit/Metal 保持空操作。
     func attachPlaybackPlayer(_ player: AVPlayer?) {}
 }
 
@@ -114,6 +118,9 @@ final class DanmakuRendererHostView: UIView {
                 renderer = DanmakuKitOverlayView(frame: bounds)
             }
             forwardPlaybackPlayerToRenderer()
+            PlayerMetricsLog.logger.info(
+                "danmakuSync host selected preference=\(String(describing: preference), privacy: .public) name=\(self.rendererName, privacy: .public) player=\(self.playbackPlayer != nil, privacy: .public)"
+            )
         }
         guard let renderer, rendererChanged else { return }
         #if DEBUG

@@ -1,4 +1,5 @@
 import AVFoundation
+import OSLog
 import UIKit
 
 // MARK: - Timeline lane allocator
@@ -176,6 +177,13 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private var isTransitioning = false
     private(set) var isLoadSheddingValue = false
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        // 挂窗前 install/apply 时 isRenderingActive 为 false（无窗口），进入窗口后
+        // 必须重触发，否则排程观察器永远不会添加，弹幕整体不可见。
+        updateRenderingActivity()
+    }
+
     // MARK: Test hooks（@testable 使用）
 
     var isSyncLayerInstalled: Bool { synchronizedLayer != nil }
@@ -209,6 +217,9 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         self.configuration = configuration
         isLoadSheddingValue = configuration.isLoadShedding
         sourceItems = configuration.isEnabled ? configuration.items : []
+        PlayerMetricsLog.logger.info(
+            "danmakuSync apply enabled=\(configuration.isEnabled, privacy: .public) hasPresented=\(configuration.hasPresentedPlayback, privacy: .public) items=\(self.sourceItems.count, privacy: .public) window=\(Int(self.bounds.width))x\(Int(self.bounds.height)) player=\(self.playbackPlayer != nil, privacy: .public) syncInstalled=\(self.synchronizedLayer != nil, privacy: .public)"
+        )
 
         guard configuration.isEnabled, configuration.hasPresentedPlayback else {
             updateRenderingActivity()
@@ -325,6 +336,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         layer.addSublayer(syncLayer)
         synchronizedLayer = syncLayer
         containerLayer = container
+        PlayerMetricsLog.logger.info("danmakuSync installed")
 
         timeJumpObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemTimeJumped,
