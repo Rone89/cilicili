@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 
 extension VideoDetailViewModel {
     func warmCachedPlayInfoIfAvailable() {
@@ -41,15 +42,23 @@ extension VideoDetailViewModel {
     ) async {
         let bvid = detail.bvid
         guard isCurrentPlaybackContext(bvid: bvid, cid: cid, page: page) else { return }
+        let applyStageStart = CACurrentMediaTime()
         if let cid,
            await prepareHistoryResumeBeforeApplyingPlayURL(data, cid: cid) {
             await loadPlayURL()
             return
         }
+        let afterHistoryGate = CACurrentMediaTime()
         currentPlayURLData = data
         applyVideoListenAudioVariants(from: data)
         let variants = sortedPlayVariants(playVariants(from: data))
         guard let appliedState = applyPlayableVariantState(variants: variants, source: source) else { return }
+        let afterVariantSelection = CACurrentMediaTime()
+        PlayerMetricsLog.record(
+            .manifestStage,
+            metricsID: bvid,
+            message: "urlPlayerApply historyGate=\(Int((afterHistoryGate - applyStageStart) * 1000))ms variants=\(Int((afterVariantSelection - afterHistoryGate) * 1000))ms source=\(source)"
+        )
         guard isCurrentPlaybackContext(bvid: bvid, cid: cid, page: page) else { return }
         if stablePlayerViewModel == nil {
             guard isCurrentPlaybackContext(bvid: bvid, cid: cid, page: page)

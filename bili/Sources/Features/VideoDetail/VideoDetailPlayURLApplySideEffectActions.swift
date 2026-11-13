@@ -16,6 +16,7 @@ extension VideoDetailViewModel {
         page: Int?
     ) async {
         guard !isPlaybackInvalidatedForNavigation else { return }
+        let postStageStart = CACurrentMediaTime()
         let resumeTime = consumePendingPlaybackHistoryResumeTime(for: cid)
         await scheduleSelectedStartupPackageWarmupBeforeFirstFrame(
             selectedVariant,
@@ -23,6 +24,7 @@ extension VideoDetailViewModel {
             cid: cid,
             page: page
         )
+        let afterEarlyWarmup = CACurrentMediaTime()
         scheduleSelectedStartupPackageWarmupAfterFirstFrame(selectedVariant, cid: cid, page: page)
         await waitForStartupPackageWarmupBeforePlayerCreationIfNeeded(
             selectedVariant,
@@ -30,6 +32,7 @@ extension VideoDetailViewModel {
             cid: cid,
             page: page
         )
+        let afterPrebuildWait = CACurrentMediaTime()
         scheduleHistoryResumeWarmupInBackgroundIfNeeded(
             selectedVariant,
             cid: cid,
@@ -37,6 +40,12 @@ extension VideoDetailViewModel {
             resumeTime: resumeTime
         )
         updateStablePlayerViewModelIfNeeded(resumeTimeOverride: resumeTime)
+        let afterPlayerCreate = CACurrentMediaTime()
+        PlayerMetricsLog.record(
+            .manifestStage,
+            metricsID: detail.bvid,
+            message: "urlPlayerCreate earlyWarm=\(Int((afterEarlyWarmup - postStageStart) * 1000))ms prebuild=\(Int((afterPrebuildWait - afterEarlyWarmup) * 1000))ms create=\(Int((afterPlayerCreate - afterPrebuildWait) * 1000))ms wall=\(Int((afterPlayerCreate - postStageStart) * 1000))ms"
+        )
         playURLState = .loaded
         warmSelectedVariantAfterFirstFrameIfNeeded(selectedVariant, cid: cid, page: page)
         scheduleAutomaticCDNRecommendationAfterFirstFrameIfNeeded(
