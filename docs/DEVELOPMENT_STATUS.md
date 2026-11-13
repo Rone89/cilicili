@@ -809,5 +809,6 @@
 - 候选②实现：每个 LocalHLSBridge 独占 LocalHLSProxyServer（按视频隔离）。新增线程安全 `startupMediaHedgeState`（默认开启），`shouldHedgeStartupRange` 在启动期内对任意媒体段（isMediaSegmentPath：/segment-*.m4s）对冲；引擎 `reportFirstFrameIfPossible`（视频+音频两路径）首帧后调 `endStartupMediaHedge()` 关闭，正常播放中段恢复原非对冲行为。复用现有 streamHedgedStartupRange 竞速（首成功赢、取消其余）；保守播放与单 URL 源不变。
 - 测试：HLS 代理/传输/range + 启动回归 6 类 91/91 通过。证据 `build/logs/build159-resume-hedge.xcresult`。
 - 本地 Release 构建成功，未签名 IPA SHA-256 `e2282e0aeb50a21d3f7e7c28e7d54748a07513c8bfafc2c321e1d8b29c23f36e`；18pm 证书重签成功，首次无线安装遇连接瞬断（CoreDeviceError 4000），重试 devicectl install 成功，启动 1.1.4 (159)，PID 12605。
-- 待用户复测：慢 CDN（华为云 08c）下带进度打开，play>frame 应明显下降（恢复段触发 startupHedge 竞速，日志可见 segment-N 的 startupHedge winner）；从头播与正常播放中段行为不变。
+- 真机验收通过（6 会话，全为华为云 08c 带进度打开）：totalFirstFrame 212–417ms（中位 258ms），play>frame 77–237ms（修复前同场景 719–985ms）。同视频前后对比：海陆空 1240→333ms、三阳 738→212ms、黄仁勋 640→262ms、齐鲁 768→218ms、ning 658→253ms。日志确认恢复段触发 startupHedge 竞速（winner=08c/hwb，first=77–193ms）；三阳一例对冲后台跑 1652ms 但播放器经预热缓存 77ms 出帧，验证播放器不被对冲总时长拖住。
+- 启动专项目标达成：典型首帧从 744–1140ms 降至 ~250–280ms，慢 CDN 带进度从 1.4s+ 降至 212–417ms。四杠杆（历史门控/预热不阻塞/预取抢跑/恢复段对冲）全部落地验证。剩余仅导航动画 ~75–120ms（SwiftUI 固有）与 AV1 解码（设置可改 HEVC），不再动代码。
 - 本地 `main` 提交 `4e825e3`（含 Build 159），基线 `0975de8`。未推送 GitHub、未跑完整云端 CI。
