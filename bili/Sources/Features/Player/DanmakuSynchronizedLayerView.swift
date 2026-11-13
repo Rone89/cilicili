@@ -192,6 +192,9 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private var laneAllocator = DanmakuSyncLaneAllocator(laneCount: 14)
     private var activeEntries: [SyncActiveEntry] = []
     private var layerPool: [DanmakuSyncBulletLayer] = []
+    // 已物化且光标仍在其后方的物品 id：防止合并重排后光标回落导致重复物化
+    //（重复体占满 maximumActiveCount 配额，新弹幕停止进场）。
+    private var materializedAheadIds: Set<String> = []
     private var lastObservedPlaybackTime: Double?
     private var layoutResynchronizationWork: DispatchWorkItem?
     private var lastLayoutSize: CGSize = .zero
@@ -454,6 +457,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         let now = resolvedPlaybackTime()
         lastObservedPlaybackTime = now
         recycleAllActiveLayers()
+        materializedAheadIds.removeAll()
         positionCursor(at: now)
         scheduleItems(through: now + Self.schedulingLookAhead, currentTime: now)
     }
@@ -461,6 +465,9 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private func resynchronizePresentation(at explicitTime: Double? = nil) {
         guard synchronizedLayer != nil, bounds.width > 0, bounds.height > 0 else { return }
         let now = explicitTime ?? resolvedPlaybackTime()
+        // 时间轴跳变（seek/循环）= 全量回收 + 重放，已物化记录一并清空，
+        // 否则重放窗口内的物品全部被去重集合挡住，弹幕从此消失。
+        materializedAheadIds.removeAll()
         lastObservedPlaybackTime = now
         recycleAllActiveLayers()
         positionCursor(at: now)
@@ -484,6 +491,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             let item = sortedItems[cursor]
             cursor += 1
             guard DanmakuRenderPolicy.supports(item, settings: configuration.settings) else { continue }
+            guard !materializedAheadIds.contains(item.id) else { continue }
             guard activeEntries.count < maximumActiveCount else { return }
             materialize(
                 item,
@@ -491,6 +499,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
                 configuration: configuration,
                 currentTime: currentTime
             )
+            materializedAheadIds.insert(item.id)
         }
     }
 
