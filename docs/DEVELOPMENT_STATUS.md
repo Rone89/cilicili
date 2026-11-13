@@ -828,3 +828,13 @@
 - 建议保留 ccswift 的底部「详情 / 评论」和写评论入口，以及详情下接推荐的结构。优先验证 UP 主名称与关注入口、暂停折叠后的「继续播放」可读性。章节跳转和竖视频高度上限可分别做后续方案验证。
 - 已验证范围：源码路径与布局条件。未构建、运行或执行测试，两款 App 的同机画面、手势和任务耗时未做真机对照。待用户选定方向后再用同一组视频验证。
 - 工作区仅更新本交接文档，未修改应用代码、未创建提交。当前分支 `main`，HEAD `1656587`。
+
+## 2026-11-13 播放页对比借鉴清单启动 / P1 弹幕同步层后端 / 1.1.4 Build 160
+
+- 新功能专项（用户授权按借鉴清单开发；新功能成果仅提交本地 main，用户满意验收后才推送）。两个 Explore 代理完成 Ibili 与本项目播放页结构对比：Ibili 以 AVKit 原生控制 + 少代码取胜，本项目以功能深度 + RenderStore 状态隔离取胜；确定 P1 弹幕同步层（收益最大）、P2 路由级播放会话缓存、P3 共享代理监听器、P4 周期观察器时钟为借鉴清单。
+- P1 实现：新增 `DanmakuSynchronizedLayerView`（Player/DanmakuSynchronizedLayerView.swift，约 700 行）——弹幕动画挂 `AVSynchronizedLayer(playerItem:)` 媒体时间轴，beginTime 直接使用媒体时间，暂停/seek/倍速由 Core Animation 呈现；子弹为 128 池位图 CALayer + NSCache（768 条/24MB）CoreText/表情富文本位图（复用 DanmakuKitTextCellModel.render，开放为 internal）；时间轴泳道分配器移植 Ibili 永不丢弃语义（滚动 45% 复用、静态全时长、最早空闲回退）；0.25s 周期观察器仅做物化/回收（2s 前瞻、1.25s seek 重同步阈值、TimeJumped 监听）；逐动画 preferredFrameRateRange 复用 MetalDanmakuFrameRatePolicy 与 DanmakuRenderPolicy 降载策略。
+- 接线：渲染器选择升级为 `DanmakuRendererPreference`（synchronizedLayer/danmakuKit/metal），宿主新增 setPlaybackPlayer 转发 + 协议默认 no-op `attachPlaybackPlayer`；引擎协议新增 `danmakuSyncPlayer: AVPlayer?`（默认 nil，AVPlayerHLSBridgeEngine 返回 player，VM 暴露同名访问器——首版误放 DEBUG 块导致 Release 编译失败，已移出）；VideoDetailDanmakuOverlay 计算偏好（诊断强制 > 同步层实验[需引擎暴露播放器，直播自动回退] > Metal 实验 > DanmakuKit）；LibraryStore 新增默认开启的 `danmakuSynchronizedLayerRendererEnabled` 开关与「我的→开发者诊断」切换。
+- 测试：新增 DanmakuSynchronizedLayerTests 6 项（泳道 45%/全时长/永不丢弃、宿主三偏好选择、attach+apply 物化 2 条、禁用拆除回收）；调试期修复 Release DEBUG 块误置、基准视图与两测试文件旧 metalEnabled 调用点、测试裸 AVPlayer 无 currentItem 问题。弹幕全套 + 表面 + 启动门控回归 74/74 通过（build160-sync-danmaku9.xcresult）。
+- 本地 Release 构建成功（首次 Release 失败为上述 DEBUG 块问题；修正后 SHA-256 `2cbaa95d7a90fb771b026a62d086107f2ed8af5bb0646f40cd3070c496349120`）。注意：首次失败时签名脚本曾把残留 159 包装机，已用修正后包重装覆盖。18pm 证书重签安装 RCe2027 并启动 1.1.4 (160)，PID 14644。
+- 真机验收待确认：弹幕正常滚动/暂停冻结/seek 重同步/倍速正确、清晰度切换后弹幕延续、HDR 视频下表现、弹幕设置（密度/透明度/字号/类型开关）生效；开发者诊断可切回 DanmakuKit/Metal 对比。预期收益：弹幕可见时主线程零逐帧绘制、CPU/耗电下降。
+- 本地 `main` 提交 `05bb39f` + `3fec141`（含 Build 160），基线 `1656587`。按用户新开发节奏：未推送 GitHub，等待用户验收满意后授权推送。
