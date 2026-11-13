@@ -106,6 +106,20 @@ struct MineDeveloperDiagnosticsView: View {
             }
             .accessibilityIdentifier("mine.experiments.metalDanmaku")
 
+            Toggle(isOn: Binding(
+                get: { libraryStore.danmakuSynchronizedLayerRendererEnabled },
+                set: { libraryStore.setDanmakuSynchronizedLayerRendererEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("弹幕同步层渲染（省电）", systemImage: "clock.badge.checkmark")
+                    Text("弹幕动画直接挂 AVSynchronizedLayer 媒体时间轴，暂停/拖动/倍速由系统驱动，主线程不再逐帧绘制。优先于 Metal 实验；直播与不支持的场景自动回退。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.danmakuSynchronizedLayer")
+
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },

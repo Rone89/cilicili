@@ -110,7 +110,7 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         defer { host.stop(); diagnostics.stop() }
         host.setLogicalCanvasSize(host.bounds.size)
-        host.selectRenderer(metalEnabled: false)
+        host.selectRenderer(preference: false ? .metal : .danmakuKit)
         host.layoutIfNeeded()
         let child = try XCTUnwrap(host.subviews.first as? DanmakuKitOverlayView)
         child.layoutIfNeeded()
@@ -137,7 +137,7 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         defer { host.stop() }
         host.setLogicalCanvasSize(host.bounds.size)
-        host.selectRenderer(metalEnabled: true)
+        host.selectRenderer(preference: true ? .metal : .danmakuKit)
         guard host.usesMetal else { throw XCTSkip("Metal unavailable") }
         host.layoutIfNeeded()
         let child = try XCTUnwrap(host.subviews.first as? MetalDanmakuView)
@@ -183,7 +183,7 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
     func testHostWithoutCanvasOverrideFollowsBoundsAndRejectsInvalidSizes() throws {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         defer { host.stop() }
-        host.selectRenderer(metalEnabled: false)
+        host.selectRenderer(preference: false ? .metal : .danmakuKit)
         let child = try XCTUnwrap(host.subviews.first)
         host.frame.size.height = 220
         host.layoutIfNeeded()
@@ -201,13 +201,13 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 220))
         defer { host.stop() }
         host.setLogicalCanvasSize(CGSize(width: 390, height: 600))
-        host.selectRenderer(metalEnabled: false)
+        host.selectRenderer(preference: false ? .metal : .danmakuKit)
         let previous = try XCTUnwrap(host.subviews.first)
-        host.selectRenderer(metalEnabled: true)
+        host.selectRenderer(preference: true ? .metal : .danmakuKit)
         XCTAssertNil(previous.superview)
         XCTAssertEqual(host.subviews.count, 1)
         XCTAssertEqual(host.subviews.first?.frame, CGRect(x: 0, y: 0, width: 390, height: 600))
-        host.selectRenderer(metalEnabled: false)
+        host.selectRenderer(preference: false ? .metal : .danmakuKit)
         XCTAssertEqual(host.subviews.count, 1)
         XCTAssertTrue(host.subviews.first is DanmakuKitOverlayView)
         XCTAssertEqual(host.subviews.first?.frame.size.height, 600)
@@ -236,7 +236,7 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         defer { host.stop(); diagnostics.stop() }
         host.debugDiagnostics = diagnostics
         host.setLogicalCanvasSize(CGSize(width: 900, height: 500))
-        host.selectRenderer(metalEnabled: false)
+        host.selectRenderer(preference: false ? .metal : .danmakuKit)
         host.layoutIfNeeded()
         let child = try XCTUnwrap(host.subviews.first as? DanmakuKitOverlayView)
         child.layoutIfNeeded()
@@ -400,12 +400,12 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
     func testHostSwitchHasExactlyOneRendererAndOffRestoresDanmakuKit() async throws {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 900, height: 400))
         defer { host.stop() }
-        host.selectRenderer(metalEnabled: false)
+        host.selectRenderer(preference: false ? .metal : .danmakuKit)
         host.apply(configuration: configuration(items: items(count: 10)))
         XCTAssertEqual(host.subviews.count, 1)
         XCTAssertTrue(host.subviews.first is DanmakuKitOverlayView)
         let previous = WeakView(host.subviews.first)
-        host.selectRenderer(metalEnabled: true)
+        host.selectRenderer(preference: true ? .metal : .danmakuKit)
         XCTAssertNil(previous.value?.superview)
         // Core Animation may retain the retired layer until its transaction drains.
         let releaseLimit = ContinuousClock.now.advanced(by: .seconds(1))
@@ -420,7 +420,7 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertFalse(metal.metalView.isOpaque)
         XCTAssertEqual(metal.metalView.clearColor.alpha, 0)
         XCTAssertFalse(metal.isUserInteractionEnabled)
-        host.selectRenderer(metalEnabled: false)
+        host.selectRenderer(preference: false ? .metal : .danmakuKit)
         XCTAssertTrue(metal.metalView.isPaused)
         XCTAssertEqual(metal.debugActiveCount, 0)
         XCTAssertEqual(host.subviews.count, 1)

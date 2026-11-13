@@ -1,4 +1,13 @@
+import AVFoundation
 import UIKit
+
+/// 弹幕渲染后端选择。synchronizedLayer 需要 VM 暴露的 AVPlayer 才能挂
+/// AVSynchronizedLayer；无播放器（直播间等）时上层负责回退到 kit/metal。
+enum DanmakuRendererPreference: Equatable {
+    case synchronizedLayer
+    case danmakuKit
+    case metal
+}
 
 struct DanmakuOverlayConfiguration {
     let items: [DanmakuItem]
@@ -24,6 +33,11 @@ protocol DanmakuOverlayRendering: AnyObject {
     func stop()
 }
 
+extension DanmakuOverlayRendering {
+    /// 仅 AVSynchronizedLayer 后端需要；其余后端保持 no-op。
+    func attachPlaybackPlayer(_ player: AVPlayer?) {}
+}
+
 extension DanmakuKitOverlayView: DanmakuOverlayRendering {
     func apply(configuration c: DanmakuOverlayConfiguration) {
         apply(items: c.items, itemsRevision: c.itemsRevision, currentTime: c.currentTime,
@@ -37,13 +51,15 @@ extension DanmakuKitOverlayView: DanmakuOverlayRendering {
 /// it never loads data or touches AVPlayer / PlayerItem.
 final class DanmakuRendererHostView: UIView {
     private var renderer: (UIView & DanmakuOverlayRendering)?
-    private var requestedMetal: Bool?
+    private var requestedPreference: DanmakuRendererPreference?
+    private var playbackPlayer: AVPlayer?
     private var logicalCanvasSize: CGSize?
     private var videoAspectRatio: CGFloat?
     private var isTransitioning = false
     private var danmakuKitStageTransitionActive = false
     private var danmakuKitStageSourceSize: CGSize?
     private(set) var usesMetal = false
+    private(set) var usesSynchronizedLayer = false
     var isLoadSheddingValue: Bool { renderer?.isLoadSheddingValue ?? false }
     #if DEBUG
     var debugDiagnostics: DanmakuRendererDiagnostics? { didSet { configureDebugRenderer() } }
@@ -72,34 +88,60 @@ final class DanmakuRendererHostView: UIView {
     required init?(coder: NSCoder) { nil }
     isolated deinit { renderer?.stop() }
 
-    func selectRenderer(metalEnabled: Bool) {
-        let rendererChanged = renderer == nil || requestedMetal != metalEnabled
+    func selectRenderer(preference: DanmakuRendererPreference) {
+        let rendererChanged = renderer == nil || requestedPreference != preference
         if rendererChanged {
             renderer?.stop()
             renderer?.removeFromSuperview()
             renderer = nil
-            requestedMetal = metalEnabled
+            requestedPreference = preference
             danmakuKitStageTransitionActive = false
             danmakuKitStageSourceSize = nil
-            if metalEnabled, let metal = MetalDanmakuView.make() {
-                renderer = metal
-                usesMetal = true
-            } else {
+            usesMetal = false
+            usesSynchronizedLayer = false
+            switch preference {
+            case .synchronizedLayer:
+                renderer = DanmakuSynchronizedLayerView(frame: bounds)
+                usesSynchronizedLayer = true
+            case .metal:
+                if let metal = MetalDanmakuView.make() {
+                    renderer = metal
+                    usesMetal = true
+                } else {
+                    renderer = DanmakuKitOverlayView(frame: bounds)
+                }
+            case .danmakuKit:
                 renderer = DanmakuKitOverlayView(frame: bounds)
-                usesMetal = false
             }
+            forwardPlaybackPlayerToRenderer()
         }
-        guard let renderer else { return }
-        guard rendererChanged else { return }
+        guard let renderer, rendererChanged else { return }
         #if DEBUG
         (renderer as? MetalDanmakuView)?.debugMaximumActiveCount = debugMaximumActiveCount
         (renderer as? DanmakuKitOverlayView)?.debugMaximumActiveCount = debugMaximumActiveCount
         configureDebugRenderer()
-        (debugDiagnostics ?? .shared).rendererType = usesMetal ? "Metal" : (metalEnabled ? "DanmakuKit (Metal unavailable)" : "DanmakuKit")
+        (debugDiagnostics ?? .shared).rendererType = rendererName
         #endif
         addSubview(renderer)
         layoutRenderer()
         renderer.setLayoutTransitioning(isTransitioning)
+    }
+
+    private var rendererName: String {
+        if usesSynchronizedLayer { return "AVSynchronizedLayer" }
+        if usesMetal { return "Metal" }
+        return "DanmakuKit"
+    }
+
+    /// 同步层后端需要 AVPlayer 挂 AVSynchronizedLayer；其余后端忽略。
+    func setPlaybackPlayer(_ player: AVPlayer?) {
+        guard playbackPlayer !== player else { return }
+        playbackPlayer = player
+        forwardPlaybackPlayerToRenderer()
+    }
+
+    private func forwardPlaybackPlayerToRenderer() {
+        renderer?.attachPlaybackPlayer(playbackPlayer)
     }
 
     /// Only the host follows the visible window. The child keeps its track coordinates.
@@ -122,7 +164,7 @@ final class DanmakuRendererHostView: UIView {
 
     private func layoutRenderer() {
         guard let renderer else { return }
-        if !usesMetal,
+        if renderer is DanmakuKitOverlayView,
            danmakuKitStageTransitionActive,
            let sourceSize = danmakuKitStageSourceSize {
             let viewport = DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: videoAspectRatio)
@@ -149,9 +191,9 @@ final class DanmakuRendererHostView: UIView {
         renderer?.synchronizePlaybackTime(time, force: force)
     }
     func setLayoutTransitioning(_ transitioning: Bool) {
-        if !usesMetal, let renderer {
+        if let kitRenderer = renderer as? DanmakuKitOverlayView {
             if transitioning, !danmakuKitStageTransitionActive {
-                let size = renderer.bounds.size
+                let size = kitRenderer.bounds.size
                 danmakuKitStageSourceSize = size.width > 0 && size.height > 0
                     ? size
                     : (logicalCanvasSize ?? bounds.size)
@@ -164,12 +206,12 @@ final class DanmakuRendererHostView: UIView {
                 // its single end-of-transition synchronization.
                 danmakuKitStageTransitionActive = false
                 danmakuKitStageSourceSize = nil
-                renderer.transform = .identity
+                kitRenderer.transform = .identity
                 layoutRenderer()
             } else if transitioning {
                 layoutRenderer()
             }
-            renderer.setLayoutTransitioning(transitioning)
+            kitRenderer.setLayoutTransitioning(transitioning)
             return
         }
         isTransitioning = transitioning
@@ -179,7 +221,7 @@ final class DanmakuRendererHostView: UIView {
         renderer?.stop()
         renderer?.removeFromSuperview()
         renderer = nil
-        requestedMetal = nil
+        requestedPreference = nil
         danmakuKitStageTransitionActive = false
         danmakuKitStageSourceSize = nil
     }

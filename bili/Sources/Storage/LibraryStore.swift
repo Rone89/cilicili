@@ -128,6 +128,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
+    @Published private(set) var danmakuSynchronizedLayerRendererEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
@@ -211,6 +212,7 @@ final class LibraryStore: ObservableObject {
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
+    private static let danmakuSynchronizedLayerRendererEnabledKey = "cc.bili.playback.danmakuSynchronizedLayerRenderer.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
@@ -630,6 +632,7 @@ final class LibraryStore: ObservableObject {
         userDefaults.removeObject(forKey: "cc.bili.videoDetail.compactPageSelectorExperimentEnabled.v1")
         userDefaults.removeObject(forKey: "cc.bili.experimental.aiSubtitle.v1")
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
+        self.danmakuSynchronizedLayerRendererEnabled = userDefaults.object(forKey: Self.danmakuSynchronizedLayerRendererEnabledKey) as? Bool ?? true
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
         self.backgroundPlaybackEnabled = userDefaults.object(forKey: Self.backgroundPlaybackEnabledKey) as? Bool ?? false
@@ -1240,6 +1243,11 @@ final class LibraryStore: ObservableObject {
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {
         metalDanmakuRendererExperimentEnabled = enabled
         userDefaults.set(enabled, forKey: Self.metalDanmakuRendererExperimentEnabledKey)
+    }
+
+    func setDanmakuSynchronizedLayerRendererEnabled(_ enabled: Bool) {
+        danmakuSynchronizedLayerRendererEnabled = enabled
+        userDefaults.set(enabled, forKey: Self.danmakuSynchronizedLayerRendererEnabledKey)
     }
 
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {

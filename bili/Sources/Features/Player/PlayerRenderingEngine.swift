@@ -442,6 +442,9 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     var usesNativePlaybackControls: Bool { get }
     var diagnostics: PlayerEngineDiagnostics { get }
     var presentationSize: CGSize { get }
+    /// 弹幕同步层后端（AVSynchronizedLayer）需要的媒体时钟宿主；
+    /// 不支持同步层的引擎返回 nil，上层自动回退 DanmakuKit/Metal。
+    var danmakuSyncPlayer: AVPlayer? { get }
     var volume: Float { get }
     var isMuted: Bool { get }
     var onPlaybackStateChange: (@MainActor (PlayerEnginePlaybackState) -> Void)? { get set }
@@ -506,6 +509,8 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
 
 extension PlayerRenderingEngine {
     func recoveryBufferSnapshot() -> PlayerPlaybackSnapshot? { nil }
+
+    var danmakuSyncPlayer: AVPlayer? { nil }
 
 #if DEBUG
     func debugBeginRecoveryTrace(type: String, at: Double, fields: [String: String]) {}

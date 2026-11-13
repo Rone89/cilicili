@@ -74,7 +74,7 @@ final class DanmakuKitTextCellModel: DanmakuCellModel {
         identifier == cellModel.identifier
     }
 
-    private static func render(
+    static func render(
         _ text: String,
         emotes: [String: BiliInlineEmote],
         font: UIFont,

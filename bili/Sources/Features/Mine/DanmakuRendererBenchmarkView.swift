@@ -297,7 +297,7 @@ private struct BenchmarkOverlay: UIViewRepresentable {
         view.debugDiagnostics = diagnostics
         view.debugPreferredFramesPerSecond = requestedFPS
         view.debugMaximumActiveCount = density
-        view.selectRenderer(metalEnabled: metal)
+        view.selectRenderer(preference: metal ? .metal : .danmakuKit)
         let items = (0..<density).map { index in
             DanmakuItem(id: "benchmark-\(revision)-\(index)", time: 0,
                 mode: index % 10 == 0 ? 5 : (index % 10 == 1 ? 4 : 1),

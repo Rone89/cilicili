@@ -15,6 +15,7 @@ struct VideoDetailDanmakuOverlay: View {
     var body: some View {
         let snapshot = state.snapshot
         let isVisibleInCurrentOrientation = usesLandscapePlaybackChrome || !snapshot.settings.hidesInPortrait
+        let rendererPreference = danmakuRendererPreference
 
         DanmakuOverlayView(
             items: snapshot.items,
@@ -32,14 +33,8 @@ struct VideoDetailDanmakuOverlay: View {
             isLayoutTransitioning: isLayoutTransitioning,
             playbackClock: clock,
             onPlaybackTime: onPlaybackTime,
-            // Metal 弹幕在 4K HDR（EDR 合成）下与视频解码/合成争抢 GPU，实测会导致
-            // 播放页 UI 严重掉帧（fps 2–27、最长卡顿 2s+）。HDR 播放回退到 DanmakuKit。
-            // 弹幕渲染器与 HDR 无关（已用自动自测验证两种渲染器在 HDR 下均流畅），
-            // 遵循用户的 Metal 弹幕实验开关。
-            metalRendererEnabled: PlaybackDiagnosticsExperiment.forceDanmakuKit
-                ? false
-                : (PlaybackDiagnosticsExperiment.forceMetalDanmaku
-                    || libraryStore.metalDanmakuRendererExperimentEnabled),
+            rendererPreference: rendererPreference,
+            syncPlayer: playerViewModel.danmakuSyncPlayer,
             logicalCanvasSize: logicalCanvasSize,
             videoAspectRatio: videoAspectRatio
         )
@@ -71,5 +66,19 @@ struct VideoDetailDanmakuOverlay: View {
             state: state,
             onPlaybackTime: onPlaybackTime
         )
+    }
+
+    /// 弹幕渲染后端选择。优先级：诊断强制 > 同步层实验（需引擎暴露 AVPlayer，
+    /// 直播等无播放器场景自动回退）> Metal 实验 > DanmakuKit。
+    /// Metal 弹幕与 HDR 无关（已用自动自测验证两种渲染器在 4K HDR 下均流畅），
+    /// 遵循用户的 Metal 弹幕实验开关。
+    private var danmakuRendererPreference: DanmakuRendererPreference {
+        if PlaybackDiagnosticsExperiment.forceDanmakuKit { return .danmakuKit }
+        if PlaybackDiagnosticsExperiment.forceMetalDanmaku { return .metal }
+        if libraryStore.danmakuSynchronizedLayerRendererEnabled,
+           playerViewModel.danmakuSyncPlayer != nil {
+            return .synchronizedLayer
+        }
+        return libraryStore.metalDanmakuRendererExperimentEnabled ? .metal : .danmakuKit
     }
 }

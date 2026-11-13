@@ -417,6 +417,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         engine.debugPlayerIdentity
     }
 
+    /// 弹幕同步层后端的媒体时钟宿主；引擎不支持（直播/测试桩）时为 nil。
+    var danmakuSyncPlayer: AVPlayer? {
+        engine.danmakuSyncPlayer
+    }
+
     var debugAVPlayerItemIdentity: ObjectIdentifier? {
         engine.debugPlayerItemIdentity
     }

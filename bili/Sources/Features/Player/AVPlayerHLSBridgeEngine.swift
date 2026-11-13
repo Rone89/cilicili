@@ -224,6 +224,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     var onLoadingProgressChange: (@MainActor (Double) -> Void)?
     var onFirstFrame: (@MainActor (TimeInterval) -> Void)?
 
+    var danmakuSyncPlayer: AVPlayer? {
+        player
+    }
+
 #if DEBUG
     var debugPlayerIdentity: ObjectIdentifier? {
         ObjectIdentifier(player)

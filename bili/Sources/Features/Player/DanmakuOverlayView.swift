@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import SwiftUI
 import UIKit
@@ -5,7 +6,7 @@ import UIKit
 struct DanmakuOverlayView: UIViewRepresentable {
     fileprivate struct ConfigurationSignature: Equatable {
         let itemsRevision: Int
-        let metalRendererEnabled: Bool
+        let rendererPreference: DanmakuRendererPreference
         let videoAspectRatioMilli: Int?
         let currentTimeBucket: Int?
         let isPlaying: Bool
@@ -19,7 +20,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
 
         init(
             itemsRevision: Int,
-            metalRendererEnabled: Bool,
+            rendererPreference: DanmakuRendererPreference,
             videoAspectRatio: CGFloat?,
             currentTime: TimeInterval,
             usesExternalClock: Bool,
@@ -33,7 +34,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
             bottomInset: CGFloat
         ) {
             self.itemsRevision = itemsRevision
-            self.metalRendererEnabled = metalRendererEnabled
+            self.rendererPreference = rendererPreference
             videoAspectRatioMilli = videoAspectRatio.flatMap { $0.isFinite ? Int(($0 * 1_000).rounded()) : nil }
             // When a PlayerPlaybackClock is bound, UIKit receives time ticks directly.
             // Without one, keep a coarse time bucket so live-style callers can resync.
@@ -49,7 +50,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
         }
     }
 
-    let metalRendererEnabled: Bool
+    let rendererPreference: DanmakuRendererPreference
+    let syncPlayer: AVPlayer?
     let videoAspectRatio: CGFloat?
     let logicalCanvasSize: CGSize?
     let items: [DanmakuItem]
@@ -82,11 +84,13 @@ struct DanmakuOverlayView: UIViewRepresentable {
         isLayoutTransitioning: Bool = false,
         playbackClock: PlayerPlaybackClock? = nil,
         onPlaybackTime: ((TimeInterval, Bool) -> Void)? = nil,
-        metalRendererEnabled: Bool = false,
+        rendererPreference: DanmakuRendererPreference = .danmakuKit,
+        syncPlayer: AVPlayer? = nil,
         logicalCanvasSize: CGSize? = nil,
         videoAspectRatio: CGFloat? = nil
     ) {
-        self.metalRendererEnabled = metalRendererEnabled
+        self.rendererPreference = rendererPreference
+        self.syncPlayer = syncPlayer
         self.videoAspectRatio = videoAspectRatio
         self.logicalCanvasSize = logicalCanvasSize
         self.items = items
@@ -112,7 +116,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
     func makeUIView(context: Context) -> DanmakuRendererHostView {
         let view = DanmakuRendererHostView(frame: .zero)
         view.setLogicalCanvasSize(logicalCanvasSize)
-        view.selectRenderer(metalEnabled: metalRendererEnabled)
+        view.selectRenderer(preference: rendererPreference)
+        view.setPlaybackPlayer(syncPlayer)
         view.setLayoutTransitioning(isLayoutTransitioning)
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
         let signature = configurationSignature(resolvedCurrentTime: resolvedCurrentTime)
@@ -136,7 +141,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: DanmakuRendererHostView, context: Context) {
-        uiView.selectRenderer(metalEnabled: metalRendererEnabled)
+        uiView.selectRenderer(preference: rendererPreference)
+        uiView.setPlaybackPlayer(syncPlayer)
         if isLayoutTransitioning { uiView.setLayoutTransitioning(true) }
         uiView.setLogicalCanvasSize(logicalCanvasSize)
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
@@ -167,7 +173,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
     private func configurationSignature(resolvedCurrentTime: TimeInterval) -> ConfigurationSignature {
         ConfigurationSignature(
             itemsRevision: itemsRevision,
-            metalRendererEnabled: metalRendererEnabled,
+            rendererPreference: rendererPreference,
             videoAspectRatio: videoAspectRatio,
             currentTime: resolvedCurrentTime,
             usesExternalClock: playbackClock != nil,
