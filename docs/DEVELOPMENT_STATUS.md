@@ -790,3 +790,14 @@
 - 本地 Release 构建成功，未签名 IPA SHA-256 `34755b812b3265a82cdd1a876b18dc45825faeb0054a17ead18f8b9c2a98d4e5`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (157)。合并提交 `0779cad`（main），父提交 `b46feb7`（主线启动 P1）与 `b56adad`（草稿图片）。
 - 验收：图片清晰度改动用户已真机验收通过（"可以没问题"）；启动 P1 真机验收待确认（首页打开 playURL 阶段应出现竞速提前量、无本地历史会话门控开销收窄，日志 playURLPending joined 偏移）。未推送 GitHub、未跑完整云端 CI。
 - 收尾：草稿分支 `analysis/ibili-cover-clarity` 与 worktree `/Users/rayc/Desktop/ccswift-ibili-analysis` 已完成使命，内容全部并入 main，可按需清理（未自动删除）。
+
+## 2026-11-13 Build 157 验收（启动 P1 首次真机）+ url>player 分段诊断 / 1.1.4 Build 158
+
+- Build 157 验收（12 会话）：启动 P1 生效——齐鲁样本 playURLPending joined wait=60ms vs owner wait=250ms，预取首次有 ~190ms 真实提前量（此前各版 joined≈owner 零提前量）；10 个网络会话 playURL 超出取流本身仅 7–23ms（Build 154 时 4/13 付 150–175ms），云端历史门控开销消失；P0-2 持续生效（带进度 url>player 14–22ms）。缓存命中开屏 NVIDIA 369ms / Tabe 444ms。本批 9/12 带进度且撞华为云 08c 慢窗口，慢样本（1.14–1.43s）卡在恢复位置取流 play>frame 719–985ms。
+- 新发现（代码证实）：`isStartupCriticalMediaPath`（AVPlayerHLSBridgeEngine.swift:8676）CDN 对冲只覆盖 init/segment-0/segment-1（从头播），恢复位置取 segment-N 不享受对冲——慢 CDN 带进度打开单源硬等，是慢样本主因。列为后续候选②。
+- url>player 尖峰侦察修正：缓存命中开屏 url>player ~170ms（网络开屏 14–22ms）。深查调用链（applyPlayURLData → schedulePostPlayURLApplicationWork 多个 await 悬挂点：历史门控/变体选择/预构建等待），确认是页面出现期主线程争用——缓存命中时这些 await 在页面刚出现、SwiftUI 布局/转场最忙时执行被反复插队。**前轮"评论骨架布局"归因不准确**：二级内容在 viewDidAppear 才挂载（defersVideoDetailSecondaryContent 默认 true），真实评论本就等首帧+320ms，时序未必落在尖峰窗口。故本轮不盲改评论，先精确测量。
+- Build 158 改动（纯日志零行为）：`urlPlayerApply`（historyGate/variants 墙钟）+ `urlPlayerCreate`（earlyWarm/prebuild/create/wall 墙钟）。wall 减各段之和 ≈ 调度争用，下次复测即可定位尖峰具体落在哪段。
+- 测试：回归 3 类 56/56 通过。证据 `build/logs/build158-instrument2.xcresult`。
+- 本地 Release 构建成功，未签名 IPA SHA-256 `a46c24257db654604ee48ff4c27513e5c68f9e7b9f34eda89868dc0b245fba13`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (158)，PID 12462。
+- 待用户复测：重点开几个缓存命中视频（看过的、秒开的），导出日志看 urlPlayerApply/urlPlayerCreate 分段，定位 ~170ms 尖峰落在 historyGate/variants/prebuild/create 哪段还是纯调度争用，再决定修法。
+- 本地 `main` 提交 `543ec4c`（含 Build 158），基线 `3826c55`。未推送 GitHub、未跑完整云端 CI。
