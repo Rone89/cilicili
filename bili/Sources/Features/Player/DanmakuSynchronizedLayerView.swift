@@ -5,8 +5,9 @@ import UIKit
 // MARK: - Timeline lane allocator
 
 /// 时间轴记账式泳道分配。占用控制的是碰撞放置而非容量：全部泳道繁忙时选最早
-/// 空闲的一条，任何来源弹幕都不会被静默丢弃。滚动泳道在 45% 时长处即可复用
-/// （此时弹幕尾端已进入画布），静态泳道占用整个展示时长。
+/// 可复用的一条。滚动泳道在“新弹幕进场点扫过旧弹幕尾端”的时刻即可复用
+/// （开始 + 时长 × 位图宽/(画布宽+位图宽)）：短弹幕比固定比例复用得更早，
+/// 长弹幕自动延后，两个方向都不产生碰撞；静态泳道占用整个展示时长。
 struct DanmakuSyncLaneAllocator {
     private(set) var scrollingFreeAt: [Double]
     private(set) var topFreeAt: [Double]
@@ -20,18 +21,19 @@ struct DanmakuSyncLaneAllocator {
         bottomFreeAt = Array(repeating: 0, count: staticCount)
     }
 
+    /// `reusableAt` = 本次弹幕自己的“尾端被下一发进场点扫过”的绝对时刻。
     mutating func reserveScrollingLane(
-        at startTime: Double,
-        duration: Double,
+        at entryTime: Double,
+        reusableAt: Double,
         allowsOverlap: Bool
     ) -> Int? {
-        if let lane = scrollingFreeAt.firstIndex(where: { $0 <= startTime }) {
-            scrollingFreeAt[lane] = startTime + duration * 0.45
+        if let lane = scrollingFreeAt.firstIndex(where: { $0 <= entryTime }) {
+            scrollingFreeAt[lane] = reusableAt
             return lane
         }
         guard allowsOverlap else { return nil }
         let lane = Self.earliestFreeLane(in: scrollingFreeAt)
-        scrollingFreeAt[lane] = startTime + duration * 0.45
+        scrollingFreeAt[lane] = reusableAt
         return lane
     }
 
@@ -170,6 +172,9 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private static let schedulingLookAhead: Double = 2
     private static let seekResyncThreshold: Double = 1.25
     private static let recycleGrace: Double = 0.2
+    /// 排队宽限：弹幕因泳道/容量繁忙而等待超过该时长后放弃。泳道复用最坏
+    /// 等待 ≈ 时长 × 0.5（位图与画布等宽的极端弹幕），3.0s 覆盖绝大多数排队。
+    private static let lateEntryGrace: Double = 3
     private static let maximumPooledLayers = 128
     private static let baseFontSize: CGFloat = 18
 
@@ -213,6 +218,26 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     var isSyncLayerInstalled: Bool { synchronizedLayer != nil }
     var activeDanmakuCount: Int { activeEntries.count }
     var pooledLayerCount: Int { layerPool.count }
+    /// 游标之后尚未处理的物品数（含排队等待泳道的弹幕）。
+    var debugPendingDanmakuCount: Int { max(0, sortedItems.count - cursor) }
+
+    /// 以显式媒体时刻驱动一次排程/回收（单测与诊断用，绕过真实播放器时钟）。
+    func debugScheduleForTesting(at now: Double) {
+        guard isRenderingActive, synchronizedLayer != nil else { return }
+        lastObservedPlaybackTime = now
+        recycleExpiredLayers(at: now)
+        scheduleItems(through: now + Self.schedulingLookAhead, currentTime: now)
+    }
+
+    /// 首颗滚动弹幕动画的 beginTime（媒体时间）：断言迟到弹幕被钳制到右缘进场。
+    var debugFirstScrollAnimationBeginTime: Double? {
+        for entry in activeEntries {
+            if let animation = entry.layer.animation(forKey: "danmaku.sync.scroll") {
+                return animation.beginTime
+            }
+        }
+        return nil
+    }
 
     /// 诊断：同步层/容器/首个活动子弹的 frame、opacity、contents 状态。
     var debugLayerSummary: String {
@@ -227,6 +252,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             "containerFrame=\(containerLayer?.frame ?? .zero)",
             "bounds=\(bounds)",
             "active=\(activeEntries.count)",
+            "pending=\(debugPendingDanmakuCount)",
             "bulletFrame=\(bulletFrame)",
             "presentationFrame=\(presentationFrame)",
             "bulletOpacity=\(bulletOpacity)",
@@ -487,29 +513,55 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             rate: configuration.playbackRate,
             loadShedding: configuration.isLoadShedding
         )
-        while cursor < sortedItems.count, sortedItems[cursor].time <= horizon {
-            let item = sortedItems[cursor]
-            cursor += 1
-            guard DanmakuRenderPolicy.supports(item, settings: configuration.settings) else { continue }
-            guard !materializedAheadIds.contains(item.id) else { continue }
-            guard activeEntries.count < maximumActiveCount else { return }
-            materialize(
+        // 从游标向后扫描到 horizon。队头被泳道/容量阻塞时保留游标下一拍重试，
+        // 后续弹幕仍可占用当前空闲的泳道（与 B 站逐泳道取弹幕一致，避免一条
+        // 长弹幕堵住整条队列造成进场断流）；已放置/放弃的物品由去重集合记账。
+        var firstBusyIndex: Int?
+        var index = cursor
+        while index < sortedItems.count, sortedItems[index].time <= horizon {
+            let item = sortedItems[index]
+            switch scheduleItem(
                 item,
                 parameters: parameters,
                 configuration: configuration,
-                currentTime: currentTime
-            )
-            materializedAheadIds.insert(item.id)
+                currentTime: currentTime,
+                maximumActiveCount: maximumActiveCount
+            ) {
+            case .placed, .skipped:
+                index += 1
+            case .busy:
+                if firstBusyIndex == nil { firstBusyIndex = index }
+                index += 1
+            }
         }
+        cursor = firstBusyIndex ?? min(index, sortedItems.count)
     }
 
-    private func materialize(
+    private enum ItemSchedulingOutcome {
+        case placed
+        case skipped
+        case busy
+    }
+
+    private func scheduleItem(
         _ item: DanmakuItem,
         parameters: SyncLayoutParameters,
         configuration: DanmakuOverlayConfiguration,
-        currentTime: Double
-    ) {
-        guard synchronizedLayer != nil, containerLayer != nil else { return }
+        currentTime: Double,
+        maximumActiveCount: Int
+    ) -> ItemSchedulingOutcome {
+        guard activeEntries.count < maximumActiveCount else { return .busy }
+        guard DanmakuRenderPolicy.supports(item, settings: configuration.settings) else {
+            materializedAheadIds.insert(item.id)
+            return .skipped
+        }
+        let plannedStart = max(0, item.time)
+        // 重放回看窗口或排队迟到的弹幕：宽限内从右缘立即进场（钳制开始时刻），
+        // 超过宽限直接放弃；绝不按过去的 beginTime 从屏幕中间冒出。
+        guard plannedStart >= currentTime - Self.lateEntryGrace else {
+            materializedAheadIds.insert(item.id)
+            return .skipped
+        }
         let mode: DanmakuSyncMode
         let duration: Double
         if item.isTopAnchored {
@@ -522,36 +574,63 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             mode = .scroll
             duration = DanmakuRenderPolicy.duration(for: item, viewportWidth: viewportWidth)
         }
-        let startTime = max(0, item.time)
-        let endTime = startTime + duration
-        guard endTime > currentTime - Self.recycleGrace else { return }
-
+        let effectiveStart = max(plannedStart, currentTime)
+        let cached = cachedText(for: item, configuration: configuration)
         let allowsOverlap = configuration.settings.danmakuKit.allowsDanmakuOverlap
         let lane: Int?
         switch mode {
         case .scroll:
+            let bitmapWidth = max(cached.size.width, 1)
+            let canvasWidth = max(viewportWidth, 1)
+            // 新弹幕进场点（画布右缘）扫过旧弹幕尾端后才复用该泳道。
+            let reusableAt = effectiveStart
+                + duration * Double(bitmapWidth / (canvasWidth + bitmapWidth))
             lane = laneAllocator.reserveScrollingLane(
-                at: startTime, duration: duration, allowsOverlap: allowsOverlap
+                at: effectiveStart, reusableAt: reusableAt, allowsOverlap: allowsOverlap
             )
         case .top:
             lane = laneAllocator.reserveTopLane(
-                at: startTime, duration: duration, allowsOverlap: allowsOverlap
+                at: effectiveStart, duration: duration, allowsOverlap: allowsOverlap
             )
         case .bottom:
             lane = laneAllocator.reserveBottomLane(
-                at: startTime, duration: duration, allowsOverlap: allowsOverlap
+                at: effectiveStart, duration: duration, allowsOverlap: allowsOverlap
             )
         }
-        guard let lane else { return }
+        guard let lane else { return .busy }
+        materialize(
+            item,
+            cached: cached,
+            mode: mode,
+            lane: lane,
+            parameters: parameters,
+            configuration: configuration,
+            effectiveStart: effectiveStart,
+            duration: duration
+        )
+        materializedAheadIds.insert(item.id)
+        return .placed
+    }
 
+    private func materialize(
+        _ item: DanmakuItem,
+        cached: DanmakuSyncCachedText,
+        mode: DanmakuSyncMode,
+        lane: Int,
+        parameters: SyncLayoutParameters,
+        configuration: DanmakuOverlayConfiguration,
+        effectiveStart: Double,
+        duration: Double
+    ) {
+        guard let containerLayer else { return }
+        let endTime = effectiveStart + duration
         let bulletLayer = dequeueLayer()
-        let cached = cachedText(for: item, configuration: configuration)
         bulletLayer.configure(
             image: cached.image,
             size: cached.size,
             contentsScale: window?.windowScene?.screen.scale ?? UIScreen.main.scale
         )
-        containerLayer?.addSublayer(bulletLayer)
+        containerLayer.addSublayer(bulletLayer)
         configureAnimations(
             on: bulletLayer,
             cached: cached,
@@ -559,10 +638,10 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             lane: lane,
             parameters: parameters,
             configuration: configuration,
-            startTime: startTime,
+            startTime: effectiveStart,
             duration: duration
         )
-        activeEntries.append(SyncActiveEntry(layer: bulletLayer, startTime: startTime, endTime: endTime))
+        activeEntries.append(SyncActiveEntry(layer: bulletLayer, startTime: effectiveStart, endTime: endTime))
     }
 
     // MARK: Animation construction

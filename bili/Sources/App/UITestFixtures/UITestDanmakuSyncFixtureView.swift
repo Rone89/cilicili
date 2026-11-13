@@ -87,31 +87,33 @@ struct UITestDanmakuSyncFixtureView: View {
             player.play()
         }
 
-        static func makeProbeItems() -> [DanmakuItem] {
-            let colors: [UInt32] = [0xFFFFFF, 0x55D6FF, 0xFFD6E7, 0xB7FF8A]
-            var items: [DanmakuItem] = []
-            for index in 0..<45 {
-                let mode: Int
-                if index % 9 == 0 {
-                    mode = 5
-                } else if index % 9 == 4 {
-                    mode = 4
-                } else {
-                    mode = 1
-                }
-                let time = Double(index % 45) * 0.55 + 0.4
-                let text = "同步层探针弹幕 \(index) 🐶 ABC 123 密集压力测试"
-                items.append(DanmakuItem(
-                    id: "probe-\(index)",
-                    time: time,
-                    mode: mode,
-                    fontSize: 25,
-                    color: colors[index % 4],
-                    text: text
-                ))
+    static func makeProbeItems() -> [DanmakuItem] {
+        let colors: [UInt32] = [0xFFFFFF, 0x55D6FF, 0xFFD6E7, 0xB7FF8A]
+        var items: [DanmakuItem] = []
+        for index in 0..<45 {
+            let mode: Int
+            if index % 9 == 0 {
+                mode = 5
+            } else if index % 9 == 4 {
+                mode = 4
+            } else {
+                mode = 1
             }
-            return items
+            // 密集压测：≈12 条/秒，超过 430×242 竖屏画带 6 条泳道的吞吐，
+            // 验证排队进场（背压）而不是整批丢弃。
+            let time = Double(index) * 0.085 + 0.4
+            let text = "同步层探针弹幕 \(index) 🐶 ABC 123 密集压力测试"
+            items.append(DanmakuItem(
+                id: "probe-\(index)",
+                time: time,
+                mode: mode,
+                fontSize: 25,
+                color: colors[index % 4],
+                text: text
+            ))
         }
+        return items
+    }
 
         static func makeLocalVideoURL() -> URL {
             let url = FileManager.default.temporaryDirectory
@@ -204,16 +206,19 @@ struct UITestDanmakuSyncFixtureView: View {
         @ObservedObject var controller: PlayerController
 
         var body: some View {
-            ZStack {
+            ZStack(alignment: .top) {
                 Color.black
-                PlayerLayerView(player: controller.player)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                HostEmbeddingView(host: controller.host)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .allowsHitTesting(false)
-                VStack {
-                    Text("danmaku-sync probe")
+                VStack(spacing: 0) {
+                    // 竖屏生产几何：430×242 视频画带，弹幕画布 = 画带本身。
+                    ZStack {
+                        PlayerLayerView(player: controller.player)
+                        HostEmbeddingView(host: controller.host)
+                            .allowsHitTesting(false)
+                    }
+                    .frame(width: 430, height: 242)
+                    Text("danmaku-sync probe · portrait band 430×242")
                         .foregroundStyle(.white)
+                        .padding(.top, 16)
                         .accessibilityIdentifier("ui.danmakuSync.ready")
                     Spacer()
                 }
