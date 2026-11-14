@@ -986,4 +986,5 @@
 - 重构：删除 `HomeFeedNavigationChrome`（原生 toolbar + 转场隐藏逻辑），新增页面内 `HomeTopBar`（标题 / 推荐·热门 / 隐藏标签菜单 / 头像），由 `HomeView` 以 `safeAreaInset(edge: .top)` 挂载，背景 `.ultraThinMaterial` 延伸至状态栏。首页根视图隐藏系统导航栏（`RootTabView` 对 home 设 `.toolbarVisibility(.hidden)`），顶栏成为首页内容的一部分，push/pop 时随页面整体滑出/滑入，不再被导航 chrome 在转场中途单独恢复。
 - 标题淡出状态 `HomeChromeTitleState` 改由 `HomeView` 持有并经环境注入；`HomeFeedScrollView` 仍按滚动偏移更新。UP 空间目标页显式 `.toolbar(.visible)` 保留导航栏；视频/直播/番剧页各自管理导航栏可见性，不受影响。
 - 验证：返回探针抓帧确认顶栏只出现在首页被滑出的区域、随页面移动，不再压在视频页上（对比 Build 174/基线的整组顶栏悬停）。`HomeChromeTitleStateTests` 3/3、`HomeFeedModeSwitchTests` 3/3、`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 175 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (175) 出包，IPA SHA-256 `1ff492483ca0a84057d80cd0d4b596a07f5206a2affe094ac49f1df2bf292045`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (175)`（bundle ID `app.bamboo2779.brussels691`）。
