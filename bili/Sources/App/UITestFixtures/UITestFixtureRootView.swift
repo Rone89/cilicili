@@ -44,6 +44,8 @@ struct UITestFixtureRootView: View {
                 UITestVideoOwnerMenuFixtureView(libraryStore: dependencies.libraryStore)
             case .mineTopBar:
                 UITestMineTopBarFixtureView(dependencies: dependencies)
+            case .searchTopBar:
+                UITestSearchTopBarFixtureView(dependencies: dependencies)
             #endif
             case .dynamicDetail:
                 UITestDynamicDetailFixtureView(
@@ -165,6 +167,33 @@ private struct UITestMineTopBarFixtureView: View {
         }
         .environmentObject(dependencies)
         .environmentObject(dependencies.sessionStore)
+        .environmentObject(dependencies.libraryStore)
+    }
+}
+
+/// Hosts the production Search page root with its page-owned top bar so the
+/// title + glass search/settings buttons can be exercised deterministically.
+private struct UITestSearchTopBarFixtureView: View {
+    let dependencies: AppDependencies
+    @StateObject private var holder = SearchViewModelHolder()
+    @StateObject private var accessoryStore = SearchBottomAccessoryStore()
+    @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            SearchView(
+                holder: holder,
+                accessoryStore: accessoryStore,
+                searchText: $searchText,
+                isSearchFocused: $isSearchFocused,
+                onSubmit: { isSearchFocused = false }
+            )
+            .environment(\.isRootTabContent, true)
+            .navigationTitle("搜索")
+            .toolbarTitleDisplayMode(.inline)
+        }
+        .environmentObject(dependencies)
         .environmentObject(dependencies.libraryStore)
     }
 }

@@ -6,6 +6,7 @@ struct SearchListView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
+    var titleState: FeedChromeTitleState? = nil
     @State private var scrollPosition = ScrollPosition()
     @State private var isPaginationVisible = false
     // Offset samples do not drive UI updates while the user scrolls.
@@ -50,6 +51,14 @@ struct SearchListView: View {
         } action: { _, offset in
             scrollOffsets.current = offset
         }
+        .onScrollGeometryChange(for: SearchTitleScrollSample.self) { geometry in
+            SearchTitleScrollSample(
+                sum: geometry.contentOffset.y + geometry.contentInsets.top,
+                insetsTop: geometry.contentInsets.top
+            )
+        } action: { _, sample in
+            titleState?.update(scrollSum: sample.sum, insetsTop: sample.insetsTop)
+        }
         .onDisappear { scrollOffsets.saved = scrollOffsets.current }
         .onAppear {
             if let saved = scrollOffsets.saved {
@@ -71,7 +80,7 @@ struct SearchListView: View {
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemGroupedBackground))
-        .nativeTopScrollEdgeEffect()
+        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
     }
 
     private func resetScrollPosition() {
@@ -441,7 +450,12 @@ private struct SearchScopeBar: View {
             }
             .padding(.horizontal, 20)
         }
-        .padding(.vertical, 8)
-        .background(Color(.systemGroupedBackground))
+            .padding(.vertical, 8)
+            .background(Color(.systemGroupedBackground))
     }
+}
+
+private struct SearchTitleScrollSample: Equatable {
+    let sum: CGFloat
+    let insetsTop: CGFloat
 }

@@ -196,7 +196,7 @@ struct RootTabView: View {
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
                 .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
-                .toolbarVisibility((tab == .home || tab == .dynamic || tab == .mine) ? .hidden : .visible, for: .navigationBar)
+                .toolbarVisibility((tab == .home || tab == .dynamic || tab == .mine || tab == .search) ? .hidden : .visible, for: .navigationBar)
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .navigationTitle(rootNavigationTitle(for: tab))
                 .navigationHistoryTitle(tab.title)
@@ -299,14 +299,9 @@ struct RootTabView: View {
         case .search:
             SearchView(
                 holder: searchViewModelHolder,
-                accessoryStore: searchBottomAccessoryStore
-            )
-            .navigationToolbarSearch(
-                text: rootSearchQueryBinding,
-                isFocused: $isRootSearchFocused,
-                prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
-                hasBackButton: !detailPath.wrappedValue.isEmpty,
-                trailingButtonCount: 1,
+                accessoryStore: searchBottomAccessoryStore,
+                searchText: rootSearchQueryBinding,
+                isSearchFocused: $isRootSearchFocused,
                 onSubmit: submitRootSearch
             )
         }

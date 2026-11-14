@@ -1,18 +1,25 @@
 import SwiftUI
 
 struct SearchContentView: View {
+    @Environment(\.isRootTabContent) private var isRootTabContent
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
     @ObservedObject var accessoryStore: SearchBottomAccessoryStore
+    var titleState: FeedChromeTitleState? = nil
 
     var body: some View {
         SearchListView(
             viewModel: viewModel,
-            showsHotSearches: showsHotSearches
+            showsHotSearches: showsHotSearches,
+            titleState: titleState
         )
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                SearchFilterToolbarMenu(viewModel: viewModel)
+            // The root tab draws its own top bar (with the settings button);
+            // pushed destinations and fixtures keep the native bar menu.
+            if !isRootTabContent {
+                ToolbarItem(placement: .topBarTrailing) {
+                    SearchFilterToolbarMenu(viewModel: viewModel)
+                }
             }
         }
         .overlay {
@@ -140,7 +147,7 @@ private struct SearchFilterCapsule: View {
     }
 }
 
-private struct SearchFilterToolbarMenu: View {
+struct SearchFilterToolbarMenu: View {
     @ObservedObject var viewModel: SearchViewModel
 
     var body: some View {
