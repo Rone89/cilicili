@@ -85,6 +85,13 @@ private struct DynamicFeedKindMenuButton: UIViewRepresentable {
         button.menu = makeMenu()
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        // Size the capsule to its text + chevron rather than stretching to the
+        // proposed width, so the control hugs the current option's label.
+        let fitting = uiView.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        return CGSize(width: ceil(fitting.width), height: DynamicTopBarLayout.controlHeight)
+    }
+
     private func applyConfiguration(to button: UIButton) {
         var configuration = UIButton.Configuration.plain()
         configuration.title = current.title

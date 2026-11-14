@@ -1070,3 +1070,10 @@
 - 验证：动态 tab UI 全套 6/6（含单选隐藏导航栏、push 二级返回键、设置排序）、`FeedChromeTitleStateTests` 5/5、首页模式菜单 UI 1/1、首页单测 8/8；模拟器截图确认动态标题「动态」+「全部 ⌄」玻璃按钮、菜单全部✓/投稿/番剧/专栏/UP；探针已清理；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (185) 出包，IPA SHA-256 `eac0ae2f305c757d9e2b49f3b88abf1e018b39cf3f26bce3f842532be7e4b19d`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (185)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 动态选项玻璃按钮宽度随文字自适应 / 1.1.4 Build 186
+
+- 用户需求：右上角选项按钮宽度按文字内容决定，不要撑宽。
+- 实现：`DynamicFeedKindMenuButton` 增加 `sizeThatFits`，用 `systemLayoutSizeFitting(compressed)` 返回文字+chevron+内边距的固有宽度（高度固定 44），玻璃胶囊随当前选项文字宽窄自适应。
+- 验证：模拟器截图确认「全部 ⌄」胶囊贴合内容；动态 tab UI 全套 6/6；探针已清理；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 186 出包与安装记录见后续。
