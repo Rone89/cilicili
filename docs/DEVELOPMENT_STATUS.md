@@ -1020,3 +1020,11 @@
 - 修复：`HomeView` 顶栏 `safeAreaInset(edge: .top, spacing: 12)`，在顶栏与 feed 之间固定留 12pt 间距，保证各机型按钮不贴/压封面；透明顶栏 + 系统 `.soft` 与随页面滑动不变。
 - 验证：真机 `devicectl` 截图（`build/logs/device-179-home.png`）确认按钮底边与首张封面间距正常、无重叠；顶部为系统 `.soft` 软边缘。分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (179) 出包，IPA SHA-256 `b4f6317ac29a3e3b970963a73af3846506d6249f96e0517b6e1ee02c2a2ae216`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (179)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 修复连点刷新时首页标题闪烁 / 1.1.4 Build 180
+
+- 用户反馈：连点三下首页刷新推荐时标题文字闪烁。
+- 定位：探针逐帧抓到刷新中标题消失约 360ms 又恢复。根因是下拉刷新期间 refreshControl 撑起顶部 inset、内容在其下重载，`contentOffset.y + contentInsets.top` 瞬时变正，标题进度跳到隐藏阈值再回落（Ibili 用 `adjustedContentInset` 含刷新控件故稳定）。
+- 修复：`HomeChromeTitleState.update` 增加 `isRefreshing` 参数，刷新期间冻结进度为 0（标题保持可见）；`HomeFeedScrollView` 传入 `viewModel.isRefreshing || viewModel.isUserRefreshing`。
+- 验证：探针复测刷新全程 70 帧标题均可见、无闪烁；新增单测 `testRefreshFreezesTitleVisibleDespiteOffsetSpike`，`HomeChromeTitleStateTests`+`HomeFeedModeSwitchTests` 7/7、标题淡出 UI 用例 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 180 出包与安装记录见后续。

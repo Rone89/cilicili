@@ -75,7 +75,10 @@ struct HomeFeedScrollView<FeedContent: View>: View {
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, offset in
-                chromeTitleState?.update(contentOffsetY: offset)
+                chromeTitleState?.update(
+                    contentOffsetY: offset,
+                    isRefreshing: viewModel.isRefreshing || viewModel.isUserRefreshing
+                )
             }
             .onChange(of: rootTabScrollRequest) { _, request in
                 guard request != nil else { return }

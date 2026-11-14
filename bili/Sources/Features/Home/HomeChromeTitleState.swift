@@ -13,7 +13,15 @@ final class HomeChromeTitleState: ObservableObject {
 
     @Published private(set) var progress: CGFloat = 0
 
-    func update(contentOffsetY: CGFloat) {
+    func update(contentOffsetY: CGFloat, isRefreshing: Bool = false) {
+        // While the pull-to-refresh control is active the scroll view's content
+        // inset is inflated and the content is reloaded underneath it, so the
+        // raw offset transiently reads as "scrolled down". Freeze the title
+        // visible during refresh instead of letting it flicker out and back.
+        if isRefreshing {
+            if progress != 0 { progress = 0 }
+            return
+        }
         let next = Self.progress(forContentOffsetY: contentOffsetY)
         guard abs(next - progress) >= 0.01 else { return }
         progress = next
