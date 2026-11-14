@@ -256,6 +256,7 @@ struct RootTabView: View {
                     .homeFeedNavigationChrome(
                         viewModel: viewModel,
                         titleState: homeChromeTitleState,
+                        isDetailPresented: !detailPath.wrappedValue.isEmpty,
                         modeActions: homeActionStore.mode,
                         scrollActions: homeActionStore.scroll,
                         nativeRefreshActionStore: homeActionStore.nativeRefresh,

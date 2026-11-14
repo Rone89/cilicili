@@ -971,3 +971,11 @@
 - 分支与 worktree：`feature/home-title-fade`（功能提交 `5a99b4c`），`/Users/rayc/Desktop/ccswift-title-fade`，基线 `d8d0e58`。**未合并本地 main、未推送 GitHub**；按用户要求待真机验收通过后再提交本地 main。
 - Release 1.1.4 (173) 出包，IPA SHA-256 `f186954560614774e8000e2bfb67459e8387a3136a3aaba082c2ccd130b18c7a`；18pm 证书重签安装 RCe2027，`devicectl` 确认 `cilicili 1.1.4 (173)` 并启动（bundle ID `app.bamboo2779.brussels691`）。
 - 待真机验收：①首页左上显示「首页」大字标题；②上滑标题上移淡出，推荐/热门、隐藏标签菜单、头像保持；③下滚或回顶标题恢复；④推荐/热门切换仍瞬时回顶；⑤头像、隐藏标签菜单、账户消息入口仍可用。
+
+## 2026-11-14 首页顶栏返回转场保护 / 1.1.4 Build 174
+
+- 用户反馈：从视频播放页返回时，首页顶栏在视频页未完全退出前就出现。
+- 对照：在基线 `d8d0e58`（main）用同一段返回探针抓帧，旧版顶栏（头像 / 居中分段 / 菜单）同样在视频页仍占约 80% 时停在顶部，确认**不是本次标题重构引入**；新版因滚动后仍保留推荐/热门与头像，观感更明显。
+- 修复：`HomeFeedNavigationChrome` 新增 `isDetailPresented`，详情页存在时首页 toolbar 透明度 0；返回后由 `.task(id:)` 等待 450ms（覆盖返回动画）再以 0.18s 淡入，避免顶栏提前盖在视频页上。
+- 验证：`HomeChromeTitleStateTests` 3/3；`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug/Release 编译通过。转场视觉效果待用户真机复看。
+- Build 174 出包并安装 RCe2027，版本与 SHA 见后续记录。

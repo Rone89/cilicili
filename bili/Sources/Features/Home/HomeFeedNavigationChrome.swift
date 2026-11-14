@@ -5,6 +5,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: HomeViewModel
     @ObservedObject var titleState: HomeChromeTitleState
+    let isDetailPresented: Bool
     let modeActions: HomeFeedModeActions
     let scrollActions: HomeFeedScrollActions
     let nativeRefreshActionStore: HomeNativeRefreshActionStore
@@ -12,6 +13,12 @@ struct HomeFeedNavigationChrome: ViewModifier {
     let onOpenAccountMessages: () -> Void
     let onOpenProfile: () -> Void
     let onOpenRootPage: ((AppTab) -> Void)?
+    @State private var hasPresentedDetail = false
+    @State private var suppressesChromeForReturn = false
+
+    private var chromeOpacity: Double {
+        isDetailPresented || suppressesChromeForReturn ? 0 : 1
+    }
 
     func body(content: Content) -> some View {
         content
@@ -19,27 +26,51 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 ToolbarItem(placement: .topBarLeading) {
                     if titleState.progress <= 0.9 {
                         HomeToolbarTitle(state: titleState)
+                            .opacity(chromeOpacity)
                     }
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 10) {
-                        HomeToolbarModeButtons(
-                            mode: viewModel.mode,
-                            onSelect: switchMode
-                        )
-                        trailingAccessory
-                        HomeProfileButton(
-                            viewModel: accountMessageViewModel,
-                            action: onOpenProfile,
-                            onOpenMessages: onOpenAccountMessages
-                        )
-                        .buttonBorderShape(.circle)
-                    }
+                    HomeToolbarModeButtons(
+                        mode: viewModel.mode,
+                        onSelect: switchMode
+                    )
+                    .opacity(chromeOpacity)
+                    .allowsHitTesting(!isDetailPresented)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarTrailing) {
+                    trailingAccessory
+                        .opacity(chromeOpacity)
+                        .allowsHitTesting(!isDetailPresented)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarTrailing) {
+                    HomeProfileButton(
+                        viewModel: accountMessageViewModel,
+                        action: onOpenProfile,
+                        onOpenMessages: onOpenAccountMessages
+                    )
+                    .buttonBorderShape(.circle)
+                    .opacity(chromeOpacity)
+                    .allowsHitTesting(!isDetailPresented)
                 }
                 .sharedBackgroundVisibility(.hidden)
             }
             .nativeTopNavigationChrome()
+            .task(id: isDetailPresented) {
+                if isDetailPresented {
+                    hasPresentedDetail = true
+                    suppressesChromeForReturn = false
+                } else if hasPresentedDetail {
+                    suppressesChromeForReturn = true
+                    try? await Task.sleep(for: .milliseconds(450))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        suppressesChromeForReturn = false
+                    }
+                }
+            }
     }
 
     private var hiddenTabs: [AppTab] {
@@ -112,6 +143,7 @@ extension View {
     func homeFeedNavigationChrome(
         viewModel: HomeViewModel,
         titleState: HomeChromeTitleState,
+        isDetailPresented: Bool,
         modeActions: HomeFeedModeActions,
         scrollActions: HomeFeedScrollActions,
         nativeRefreshActionStore: HomeNativeRefreshActionStore,
@@ -124,6 +156,7 @@ extension View {
             HomeFeedNavigationChrome(
                 viewModel: viewModel,
                 titleState: titleState,
+                isDetailPresented: isDetailPresented,
                 modeActions: modeActions,
                 scrollActions: scrollActions,
                 nativeRefreshActionStore: nativeRefreshActionStore,
