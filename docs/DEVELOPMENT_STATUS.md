@@ -1084,4 +1084,5 @@
 - 用户需求：我的页改成左上角标题、右上角液态玻璃圆形搜索按钮（带搜索图标）。
 - 实现：新增 `MineTopBar`（大标题「我的」随滚动淡出 + 圆形玻璃搜索按钮）；搜索按钮用 UIKit `UIButton`（`MineSearchGlassButton`，与首页模式按钮一致，无障碍标识可靠暴露），点击切换为内联玻璃搜索框（绑定原 `searchText`/`isSearchFocused`，过滤 `MineSearchResultsSection`）+「取消」恢复。`MineView` 以 `safeAreaInset` 挂顶栏、root 隐藏原生导航栏（`isRootTabContent`）、push 保留返回键；移除原 `navigationToolbarSearch`。`MineContentView` 增加可选 `titleState` 上报滚动偏移驱动标题淡出。
 - 验证：新增 fixture `mineTopBar` + `MineTopBarUITests` 2/2（标题/搜索按钮存在且 root 隐藏导航栏；点按钮展开搜索框、输入过滤、取消恢复）；`SearchScrollRetentionUITests` 我的页相关 2/2 不受影响（该 fixture 自带搜索框）；模拟器截图确认我的页标题+圆形玻璃搜索按钮；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 187 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (187) 出包，IPA SHA-256 `de9b414ed722d40ee4ad8e9251dd71d40a4a83ceeb8ed47d157fae36d77fdb90`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (187)`（bundle ID `app.bamboo2779.brussels691`）。
