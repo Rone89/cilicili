@@ -1092,4 +1092,5 @@
 - 用户反馈：我的页点搜索按钮展开搜索框没有过渡动画。
 - 实现：`MineTopBar` 给 `isSearching` 切换加 `.animation(.smooth(duration: 0.3))`；搜索框以 `.scale(anchor: .trailing)+.opacity` 从按钮一侧缩放展开、标题淡出，取消时反向收回。
 - 验证：逐帧探针确认中间态搜索框从右侧缩放展开（非瞬切）；`MineTopBarUITests` 2/2；探针已清理；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 188 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (188) 出包，IPA SHA-256 `951374eb71f0787f1f0e3a8ff7c08614c6fbaa02917b3662f0fd052630656bee`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (188)`（bundle ID `app.bamboo2779.brussels691`）。
