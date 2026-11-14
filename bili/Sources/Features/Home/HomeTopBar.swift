@@ -51,8 +51,15 @@ struct HomeTopBar: View {
                 HomeTopBarTitle(title: viewModel.mode.title, state: titleState)
             }
             Spacer(minLength: 8)
-            HomeTopBarModeMenu(mode: viewModel.mode, onSelect: switchMode)
-            HomeTopBarAccessory(hiddenTabs: hiddenTabs, actions: actions)
+            HomeTopBarModeMenu(
+                mode: viewModel.mode,
+                hiddenTabs: hiddenTabs,
+                onSelect: switchMode,
+                onOpenRootPage: actions.onOpenRootPage
+            )
+            if hiddenTabs.isEmpty {
+                HomeTopBarMessageButton(actions: actions)
+            }
             HomeTopBarProfileButton(actions: actions)
         }
         .padding(.horizontal, 16)
@@ -95,23 +102,33 @@ private struct HomeTopBarTitle: View {
 }
 
 /// Liquid-glass icon button that opens a native single-selection menu to pick
-/// the feed mode. UIKit's UIMenu keeps the checkmark on the trailing edge and
-/// sizes the menu to its content (narrow), which SwiftUI's Menu does not
-/// guarantee across OS versions.
+/// the feed mode. When some root tabs are hidden from the bottom bar, their
+/// entries join the same menu as a second group. UIKit's UIMenu keeps the
+/// checkmark on the trailing edge and sizes the menu to its content (narrow),
+/// which SwiftUI's Menu does not guarantee across OS versions.
 private struct HomeTopBarModeMenu: View {
     let mode: HomeFeedMode
+    let hiddenTabs: [AppTab]
     let onSelect: (HomeFeedMode) -> Void
+    let onOpenRootPage: (AppTab) -> Void
 
     var body: some View {
-        HomeModeMenuButton(mode: mode, onSelect: onSelect)
-            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-            .glassEffect(.regular.interactive(), in: Circle())
+        HomeModeMenuButton(
+            mode: mode,
+            hiddenTabs: hiddenTabs,
+            onSelect: onSelect,
+            onOpenRootPage: onOpenRootPage
+        )
+        .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+        .glassEffect(.regular.interactive(), in: Circle())
     }
 }
 
 private struct HomeModeMenuButton: UIViewRepresentable {
     let mode: HomeFeedMode
+    let hiddenTabs: [AppTab]
     let onSelect: (HomeFeedMode) -> Void
+    let onOpenRootPage: (AppTab) -> Void
 
     func makeUIView(context: Context) -> UIButton {
         let button = UIButton(type: .system)
@@ -134,7 +151,7 @@ private struct HomeModeMenuButton: UIViewRepresentable {
     }
 
     private func makeMenu() -> UIMenu {
-        let actions = HomeFeedMode.allCases.map { item in
+        let modeActions = HomeFeedMode.allCases.map { item in
             UIAction(
                 title: item.title,
                 state: item == mode ? .on : .off
@@ -143,48 +160,24 @@ private struct HomeModeMenuButton: UIViewRepresentable {
                 onSelect(item)
             }
         }
-        return UIMenu(title: "", options: .singleSelection, children: actions)
-    }
-}
-
-private struct HomeTopBarAccessory: View {
-    let hiddenTabs: [AppTab]
-    let actions: HomeTopBarActions
-
-    var body: some View {
-        if !hiddenTabs.isEmpty {
-            if hiddenTabs.count == 1, let tab = hiddenTabs.first {
-                Button {
-                    actions.onOpenRootPage(tab)
-                } label: {
-                    accessoryIcon(tab == .mine ? "slider.horizontal.3" : tab.systemImage)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tab.title)
-            } else {
-                Menu {
-                    ForEach(hiddenTabs) { tab in
-                        Button(tab.title, systemImage: tab == .mine ? "slider.horizontal.3" : tab.systemImage) {
-                            actions.onOpenRootPage(tab)
-                        }
-                    }
-                } label: {
-                    accessoryIcon("circle.grid.2x2")
-                }
-                .accessibilityLabel("更多页面")
-            }
-        } else {
-            HomeTopBarMessageButton(actions: actions)
+        guard !hiddenTabs.isEmpty else {
+            return UIMenu(title: "", options: .singleSelection, children: modeActions)
         }
-    }
-
-    private func accessoryIcon(_ systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.primary)
-            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-            .contentShape(Circle())
-            .glassEffect(.regular.interactive(), in: Circle())
+        let modeSection = UIMenu(
+            title: "",
+            options: [.displayInline, .singleSelection],
+            children: modeActions
+        )
+        let navActions = hiddenTabs.map { tab in
+            UIAction(
+                title: tab.title,
+                image: UIImage(systemName: tab == .mine ? "slider.horizontal.3" : tab.systemImage)
+            ) { _ in
+                onOpenRootPage(tab)
+            }
+        }
+        let navSection = UIMenu(title: "", options: .displayInline, children: navActions)
+        return UIMenu(title: "", children: [modeSection, navSection])
     }
 }
 

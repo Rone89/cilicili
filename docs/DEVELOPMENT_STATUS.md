@@ -1054,3 +1054,10 @@
 - 验证：模拟器菜单截图确认图标=三条递减横线、菜单窄、勾选在「推荐」右侧；UI 用例（菜单项改按标题查询）1/1、首页单测 18/18；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (183) 出包，IPA SHA-256 `de138b7d612287e2bd8a60f907043072e28eacd41c2232d7040591ae5897ec91`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (183)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 隐藏 tab 入口并入模式菜单 / 1.1.4 Build 184
+
+- 用户需求：底部 tab 有被隐藏时，把这些隐藏页面的入口并进推荐/热门同一个玻璃菜单，不再单独放网格按钮。
+- 实现：`HomeModeMenuButton` 的 UIMenu 在 `hiddenTabs` 非空时追加第二组（`.displayInline` 分隔）导航项（直播/我的/搜索等，带各自图标，点击 `onOpenRootPage`）；模式组保留 `.singleSelection` 右钩。顶栏移除独立 `HomeTopBarAccessory` 网格按钮，仅在无隐藏 tab 时保留通知铃铛。
+- 验证：模拟器以 `visibleRootTabs=[home,dynamic]` 配置抓菜单截图，确认「推荐✓/热门」+分隔线+「直播/我的/搜索」同菜单、网格按钮消失、底栏仅剩可见 tab；首页单测 18/18、菜单 UI 用例 1/1；探针已清理、模拟器默认配置已恢复；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 184 出包与安装记录见后续。
