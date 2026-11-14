@@ -1076,4 +1076,5 @@
 - 用户需求：右上角选项按钮宽度按文字内容决定，不要撑宽。
 - 实现：`DynamicFeedKindMenuButton` 增加 `sizeThatFits`，用 `systemLayoutSizeFitting(compressed)` 返回文字+chevron+内边距的固有宽度（高度固定 44），玻璃胶囊随当前选项文字宽窄自适应。
 - 验证：模拟器截图确认「全部 ⌄」胶囊贴合内容；动态 tab UI 全套 6/6；探针已清理；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 186 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (186) 出包，IPA SHA-256 `77482d275d4b7f8c2c128978573e6176ecd1e01a391c72251ce2126e7f1766da`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (186)`（bundle ID `app.bamboo2779.brussels691`）。
