@@ -1011,4 +1011,5 @@
 - 根因：177 为让滚动视图顶到顶栏下改用 `overlay(alignment: .top)` + `contentMargins(.top, 44)`，顶栏与内容起始位置未对齐导致重叠。
 - 修复：`HomeView` 改回 `safeAreaInset(edge: .top)` 预留顶栏空间，`HomeFeedScrollView` 顶部 `contentMargins` 还原 0；顶栏保持透明，系统 `scrollEdgeEffectStyle(.soft)` 仍在滚动视图顶边渲染官方软边缘（safeAreaInset 区域内容可滚入其下）。
 - 验证：模拟器静止截图按钮与封面间距正常、无重叠；滚动截图官方软边缘正常；首页单测 16/16、标题淡出 UI 用例 1/1；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 178 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (178) 出包，IPA SHA-256 `3f214d776db48b35823a9eca6e6b1aad3317e70fbcbcd276b73a9b17d2179f5d`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (178)`（bundle ID `app.bamboo2779.brussels691`）。
