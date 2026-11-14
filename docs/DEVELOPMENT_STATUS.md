@@ -1100,4 +1100,5 @@
 - 用户需求：搜索页左上角标题，右上角搜索按钮和搜索设置按钮。
 - 实现：新增 `SearchTopBar`（大标题「搜索」随滚动淡出 + 圆形玻璃搜索按钮 + 圆形玻璃设置按钮）；搜索按钮点开内联玻璃搜索框（绑定原 `rootSearchQueryBinding`/`isRootSearchFocused`/`submitRootSearch`，带缩放展开动画），设置按钮复用 `SearchFilterToolbarMenu`（排序菜单）。`SearchView` 以 `safeAreaInset` 挂顶栏、root 隐藏原生导航栏、push 保留返回键；`SearchContentView` 的导航栏筛选菜单仅在非 root（push/fixture）显示避免重复；`SearchListView` 上报滚动偏移驱动标题淡出。
 - 验证：新增 fixture `searchTopBar` + `SearchTopBarUITests` 3/3（标题/搜索/设置按钮存在且 root 隐藏导航栏；搜索框展开输入取消恢复；设置按钮打开排序菜单）。`SearchScrollRetentionUITests` 13 个中 7 个通过、6 个失败——已在原始基线 `d8d0e58` 临时 worktree 复跑确认这 6 个**基线即失败**（搜索框键盘/取消交互的预先存在问题），非本次改动引入；本次无回归。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 189 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (189) 出包，IPA SHA-256 `3dfb0be2a1ae10cd88c416897e187a8a3168eac59da3ad4a5438eb26a04e09f9`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (189)`（bundle ID `app.bamboo2779.brussels691`）。
