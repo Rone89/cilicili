@@ -432,14 +432,20 @@ private struct SearchScopeBar: View {
                     Button {
                         Task { await viewModel.selectScope(scope) }
                     } label: {
-                        Label(scope.title, systemImage: scope.systemImage)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 44)
-                            .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
-                            .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+                        HStack(spacing: 6) {
+                            Image(systemName: scope.systemImage)
+                            if selected {
+                                Text(scope.title)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, selected ? 16 : 0)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
+                        .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+                        .animation(.smooth(duration: 0.25), value: selected)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("搜索类型：\(scope.title)")
