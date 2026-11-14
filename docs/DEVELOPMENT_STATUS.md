@@ -1004,3 +1004,11 @@
 - 验证：模拟器静止/滚动截图确认顶部为系统软边缘模糊、无硬边无自写渐变；`HomeChromeTitleStateTests`/`HomeFeedModeSwitchTests`/`HomeFeedSnapshotStorageTests` 16/16、标题淡出 UI 用例 1/1；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (177) 出包，IPA SHA-256 `5c64d36e3b56bb129072eac83bdba0014fafb841b142e7e6186af96fd5bf2900`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (177)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 修复静止时顶栏按钮与封面重叠 / 1.1.4 Build 178
+
+- 用户反馈：177 未下滑时头像/通知按钮最下端已与下方封面重叠。
+- 根因：177 为让滚动视图顶到顶栏下改用 `overlay(alignment: .top)` + `contentMargins(.top, 44)`，顶栏与内容起始位置未对齐导致重叠。
+- 修复：`HomeView` 改回 `safeAreaInset(edge: .top)` 预留顶栏空间，`HomeFeedScrollView` 顶部 `contentMargins` 还原 0；顶栏保持透明，系统 `scrollEdgeEffectStyle(.soft)` 仍在滚动视图顶边渲染官方软边缘（safeAreaInset 区域内容可滚入其下）。
+- 验证：模拟器静止截图按钮与封面间距正常、无重叠；滚动截图官方软边缘正常；首页单测 16/16、标题淡出 UI 用例 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 178 出包与安装记录见后续。
