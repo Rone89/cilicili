@@ -8,22 +8,28 @@ struct DanmakuSettingsSheetContent: View {
     let updateDanmakuSettings: (DanmakuSettings) -> Void
 
     var body: some View {
+        // 去掉表单默认的分组灰黑卡片底色：让弹窗统一透出底部玻璃材质，
+        // 不再出现一块块深色方块。
         Form {
             DanmakuSettingsHeaderFormSection(
                 store: store,
                 summary: summary,
                 toggleDanmaku: toggleDanmaku
             )
+            .listRowBackground(Color.clear)
 
             DanmakuSettingsPortraitVisibilitySection(
                 hidesDanmakuInPortrait: hidesDanmakuInPortraitBinding
             )
+            .listRowBackground(Color.clear)
 
             DanmakuKitSettingsSection(
                 settings: store.danmakuSettings,
                 updateSettings: updateDanmakuSettings
             )
+            .listRowBackground(Color.clear)
         }
+        .scrollContentBackground(.hidden)
     }
 }
 
@@ -34,6 +40,7 @@ struct DanmakuKitSettingsSection: View {
     var body: some View {
         Section("DanmakuKit 渲染设置") {
             DanmakuKitSettingsContent(settings: settings, updateSettings: updateSettings)
+                .listRowBackground(Color.clear)
         }
     }
 }
@@ -87,6 +94,8 @@ struct DanmakuKitSettingsContent: View {
                 valueText: "\(Int((settings.danmakuKit.fontScale * 100).rounded()))%"
             )
 
+            // 菜单式选择器：横屏“更多”抽屉是自绘面板、没有 NavigationStack，
+            // navigationLink 风格需要导航栈才能推子页，横屏下会异常（被转回竖屏）。
             Picker(selection: enumBinding(\.fontWeight)) {
                 ForEach(DanmakuFontWeightOption.allCases) { weight in
                     Text(weight.title).tag(weight)
@@ -94,7 +103,8 @@ struct DanmakuKitSettingsContent: View {
             } label: {
                 Label("字体粗细", systemImage: "bold")
             }
-            .pickerStyle(.navigationLink)
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("ui.danmakuKit.settings.fontWeight")
 
             DanmakuSettingsSlider(
                 title: "不透明度",
@@ -187,6 +197,7 @@ struct DanmakuSettingsPortraitVisibilitySection: View {
     var body: some View {
         Section("竖屏播放") {
             DanmakuSettingsPortraitVisibilityContent(hidesDanmakuInPortrait: $hidesDanmakuInPortrait)
+                .listRowBackground(Color.clear)
         }
     }
 }

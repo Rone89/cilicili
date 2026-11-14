@@ -13,6 +13,7 @@ struct DanmakuSettingsHeaderFormSection: View {
                 summary: summary,
                 toggleDanmaku: toggleDanmaku
             )
+            .listRowBackground(Color.clear)
         }
     }
 }

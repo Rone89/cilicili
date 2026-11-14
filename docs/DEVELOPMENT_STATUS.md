@@ -918,3 +918,12 @@
 - 新增回归单测 `testCursorRewindDoesNotRePlaceMaterializedItems`：施加窗口→并入新物品触发游标回退→断言 a/b 未被二次放置。同步层单测 12/12 通过（确定性，不依赖 AVPlayer 时钟）。
 - Release 1.1.4 (168) 出包，IPA SHA-256 `0f7592b2ba49e289d164778b06294188ccfea2b8f59c8a9ab052f4f3c86dc5c6`；18pm 重签安装 RCe2027，`devicectl` 确认 1.1.4 (168) 并启动（bundle ID `app.bamboo2779.brussels691`）。
 - 本地 `main` 提交 `c80eab8`（含 168）。**GitHub 推送仍暂停**；待用户真机验收。
+
+## 2026-11-14 弹幕设置弹窗外观 + 字重选择优化 / 1.1.4 Build 169
+
+- 用户反馈两项：①竖屏播放页弹幕设置弹窗内的灰黑色背景要去掉；②横屏打开字重设置会转回竖屏。
+- ①：竖屏弹窗是 `Form`（`DanmakuSettingsSheetContent`），深色方块来自系统分组行背景。修复：`Form.scrollContentBackground(.hidden)` + 三个区块内容 `.listRowBackground(Color.clear)`（Section 级与行级各一次），弹窗统一透出底部玻璃材质。横屏抽屉 `DanmakuSettingsLandscapePanelContent` 的卡片背景未动（用户只指竖屏弹窗）。
+- ②根因：横屏“更多”是自绘滑出面板（`SurfaceOnlyLandscapeMoreControlsOverlay` 的 ZStack + page 枚举），**没有 NavigationStack**；而字重用 `.pickerStyle(.navigationLink)`，需导航栈推子页，横屏下行为异常（触发转回竖屏）。修复：改为 `.pickerStyle(.menu)`，点击弹出菜单，不依赖导航栈；加 `ui.danmakuKit.settings.fontWeight` 标识。竖屏弹窗同样用菜单式，交互一致。
+- 验证性质：两项均为设置界面改动（不涉媒体时钟），编译通过；模拟器因无法可靠驱动该弹窗交互且此前有误判，**未声称模拟器视觉验证**，真机观感由用户确认。同步层单测 12/12 仍通过（上一轮）。
+- Release 1.1.4 (169) 出包，IPA SHA-256 `ed1ef8ef604cc3adcc26bcda9d427beb2711a8d5b9ece6627686047ea43c0c0d`；18pm 重签安装 RCe2027，`devicectl` 确认 1.1.4 (169) 并启动。
+- 本地 `main` 提交（含 169）。**GitHub 推送仍暂停**；待用户真机验收。
