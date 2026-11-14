@@ -42,6 +42,8 @@ struct UITestFixtureRootView: View {
                 UITestHomeFeedbackFixtureView()
             case .videoOwnerMenu:
                 UITestVideoOwnerMenuFixtureView(libraryStore: dependencies.libraryStore)
+            case .mineTopBar:
+                UITestMineTopBarFixtureView(dependencies: dependencies)
             #endif
             case .dynamicDetail:
                 UITestDynamicDetailFixtureView(
@@ -137,6 +139,33 @@ private struct UITestDynamicFeedTabSettingsFixtureView: View {
             .frame(maxWidth: .infinity)
             .padding(.bottom, 6)
             .accessibilityIdentifier("fixture.dynamicTabs.config")
+    }
+}
+
+/// Hosts the production Mine page root with its page-owned top bar so the
+/// title + glass search button interaction can be exercised deterministically.
+private struct UITestMineTopBarFixtureView: View {
+    let dependencies: AppDependencies
+    @StateObject private var holder = MineViewModelHolder()
+    @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            MineView(
+                holder: holder,
+                searchText: $searchText,
+                isSearchFocused: $isSearchFocused,
+                hasBackButton: false,
+                onOpenRoute: { _ in }
+            )
+            .environment(\.isRootTabContent, true)
+            .navigationTitle("我的")
+            .toolbarTitleDisplayMode(.inline)
+        }
+        .environmentObject(dependencies)
+        .environmentObject(dependencies.sessionStore)
+        .environmentObject(dependencies.libraryStore)
     }
 }
 #endif
