@@ -43,6 +43,7 @@ extension View {
         .navigationDestination(for: VideoOwner.self) { owner in
             UploaderView(owner: owner)
                 .navigationHistoryTitle(owner.name)
+                .toolbar(.visible, for: .navigationBar)
         }
         .navigationDestination(for: LiveRoom.self) { room in
             LiveRoomDetailView(seedRoom: room)

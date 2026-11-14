@@ -10,7 +10,6 @@ struct RootTabView: View {
     @EnvironmentObject var libraryStore: LibraryStore
     @StateObject var runtimeSettings = RootRuntimeSettingsStore()
     @StateObject var homeViewModelHolder = RootHomeViewModelHolder()
-    @StateObject var homeChromeTitleState = HomeChromeTitleState()
     @StateObject var mineViewModelHolder = MineViewModelHolder()
     @StateObject var searchViewModelHolder = SearchViewModelHolder()
     @StateObject var searchBottomAccessoryStore = SearchBottomAccessoryStore()
@@ -197,7 +196,7 @@ struct RootTabView: View {
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
                 .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
-                .toolbarVisibility(.visible, for: .navigationBar)
+                .toolbarVisibility(tab == .home ? .hidden : .visible, for: .navigationBar)
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .navigationTitle(rootNavigationTitle(for: tab))
                 .navigationHistoryTitle(tab.title)
@@ -250,23 +249,10 @@ struct RootTabView: View {
         detailPath: Binding<NavigationPath>
     ) -> some View {
         Group {
-            if tab == .home, let viewModel = homeViewModelHolder.viewModel {
+            if tab == .home {
                 rootTabContent(for: tab, detailPath: detailPath)
-                    .environment(\.homeChromeTitleState, homeChromeTitleState)
-                    .homeFeedNavigationChrome(
-                        viewModel: viewModel,
-                        titleState: homeChromeTitleState,
-                        isDetailPresented: !detailPath.wrappedValue.isEmpty,
-                        modeActions: homeActionStore.mode,
-                        scrollActions: homeActionStore.scroll,
-                        nativeRefreshActionStore: homeActionStore.nativeRefresh,
+                    .environment(\.homeTopBarActions, HomeTopBarActions(
                         accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
-                        onOpenAccountMessages: {
-                            openMineOverlayRoute(.accountMessages)
-                        },
-                        onOpenRootPage: { page in
-                            appendActiveRootRoute(page)
-                        },
                         onOpenProfile: {
                             if dependencies.sessionStore.isLoggedIn,
                                let user = dependencies.sessionStore.user,
@@ -275,8 +261,14 @@ struct RootTabView: View {
                             } else {
                                 openMineOverlayRoute(.accountManagement)
                             }
+                        },
+                        onOpenMessages: {
+                            openMineOverlayRoute(.accountMessages)
+                        },
+                        onOpenRootPage: { page in
+                            appendActiveRootRoute(page)
                         }
-                    )
+                    ))
             } else {
                 rootTabContent(for: tab, detailPath: detailPath)
             }

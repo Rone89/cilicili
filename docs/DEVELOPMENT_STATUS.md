@@ -979,3 +979,11 @@
 - 修复：`HomeFeedNavigationChrome` 新增 `isDetailPresented`，详情页存在时首页 toolbar 透明度 0；返回后由 `.task(id:)` 等待 450ms（覆盖返回动画）再以 0.18s 淡入，避免顶栏提前盖在视频页上。
 - 验证：`HomeChromeTitleStateTests` 3/3；`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug/Release 编译通过。转场视觉效果待用户真机复看。
 - Release 1.1.4 (174) 出包，IPA SHA-256 `0c83bdd46815366a3ad65a1f65d307e253809e1998ac7bf008711e1f84603a2b`；18pm 证书重签成功。首次无线安装因设备掉线返回 CoreDeviceError 4016；设备恢复 `available (paired)` 后直接重试安装成功并启动，`devicectl` 确认 `cilicili 1.1.4 (174)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 首页顶栏移入页面内容（随页面转场滑动）/ 1.1.4 Build 175
+
+- 用户反馈 Build 174 的“隐藏+延时淡入”仍不自然：进入视频页顶栏突然消失、返回时从无到有突然出现。用户选定方案：顶栏跟随页面一起滑动。
+- 重构：删除 `HomeFeedNavigationChrome`（原生 toolbar + 转场隐藏逻辑），新增页面内 `HomeTopBar`（标题 / 推荐·热门 / 隐藏标签菜单 / 头像），由 `HomeView` 以 `safeAreaInset(edge: .top)` 挂载，背景 `.ultraThinMaterial` 延伸至状态栏。首页根视图隐藏系统导航栏（`RootTabView` 对 home 设 `.toolbarVisibility(.hidden)`），顶栏成为首页内容的一部分，push/pop 时随页面整体滑出/滑入，不再被导航 chrome 在转场中途单独恢复。
+- 标题淡出状态 `HomeChromeTitleState` 改由 `HomeView` 持有并经环境注入；`HomeFeedScrollView` 仍按滚动偏移更新。UP 空间目标页显式 `.toolbar(.visible)` 保留导航栏；视频/直播/番剧页各自管理导航栏可见性，不受影响。
+- 验证：返回探针抓帧确认顶栏只出现在首页被滑出的区域、随页面移动，不再压在视频页上（对比 Build 174/基线的整组顶栏悬停）。`HomeChromeTitleStateTests` 3/3、`HomeFeedModeSwitchTests` 3/3、`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 175 出包与安装记录见后续。
