@@ -1044,4 +1044,5 @@
 - 用户需求：推荐/热门切换控件改为液态玻璃图标按钮（图标参考用户附图，列表样式），点击展开菜单选择推荐/热门、选中项后打钩；首页大标题改为显示当前「推荐/热门」。
 - 实现：`HomeTopBarModeButtons`（两个文字按钮）替换为 `HomeTopBarModeMenu`——`Menu` + 圆形 `glassEffect` 图标按钮（`list.bullet.rectangle`），菜单项 `HStack{ Text; Spacer; checkmark }` 使选中项尾部打钩；`HomeTopBarTitle` 改为接收 `viewModel.mode.title`，标题随当前模式显示「推荐/热门」，滚动淡出逻辑不变。隐藏标签菜单与头像保留。
 - 验证：UI 用例更名 `testHomeTitleFadesOnScrollDownWhileModeMenuStaysVisible` 并新增展开菜单断言（推荐/热门项存在），截图确认玻璃按钮、菜单尾部勾选、标题=当前模式；首页单测 18/18；Debug 编译通过。图标暂用 `list.bullet.rectangle`，如需与附图完全一致可再换 SF Symbol。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 182 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (182) 出包，IPA SHA-256 `b778a88f49db8709a116ca9901a76dbefb611f2f388a4db855a146c55108e27c`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (182)`；真机截图（`build/logs/device-182-home.png`）确认标题=当前模式、玻璃菜单按钮与间距正常。
