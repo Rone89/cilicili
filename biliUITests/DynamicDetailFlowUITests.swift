@@ -314,7 +314,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible() {
+    func testHomeTitleFadesOnScrollDownWhileModeMenuStaysVisible() {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-reset-state", "--ui-test-video-detail-network",
@@ -324,11 +324,9 @@ final class DynamicDetailFlowUITests: XCTestCase {
         app.launch()
 
         let title = app.staticTexts["home.feed.title"]
-        let recommendButton = app.buttons["home.feed.mode.recommend"]
-        let popularButton = app.buttons["home.feed.mode.popular"]
+        let modeMenu = app.buttons["home.feed.modeMenu"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertTrue(recommendButton.waitForExistence(timeout: 5))
-        XCTAssertTrue(popularButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(modeMenu.waitForExistence(timeout: 5))
         let fixtureVideo = app.staticTexts["固定视频详情回归"].firstMatch
         XCTAssertTrue(fixtureVideo.waitForExistence(timeout: 10))
         let scrollView = app.scrollViews.containing(.staticText, identifier: "固定视频详情回归").firstMatch
@@ -348,8 +346,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         hiddenAttachment.name = "home-title-scrolled"
         hiddenAttachment.lifetime = .keepAlways
         add(hiddenAttachment)
-        XCTAssertTrue(recommendButton.exists)
-        XCTAssertTrue(popularButton.exists)
+        XCTAssertTrue(modeMenu.exists)
         XCTAssertTrue(app.tabBars.firstMatch.exists)
 
         for _ in 0..<4 {
@@ -359,9 +356,18 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertTrue(waitForHittableState(
             true,
-            query: { app.buttons["home.feed.mode.recommend"] },
+            query: { app.buttons["home.feed.modeMenu"] },
             timeout: 5
         ))
+
+        // The mode menu lists both feeds and checks the selected one.
+        modeMenu.tap()
+        XCTAssertTrue(app.buttons["home.feed.mode.recommend"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["home.feed.mode.popular"].waitForExistence(timeout: 3))
+        let menuAttachment = XCTAttachment(screenshot: app.screenshot())
+        menuAttachment.name = "home-mode-menu"
+        menuAttachment.lifetime = .keepAlways
+        add(menuAttachment)
     }
 
     @MainActor

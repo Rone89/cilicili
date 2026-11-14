@@ -1038,3 +1038,10 @@
 - 验证：探针复测刷新全程 70 帧标题均完整可见、不上移不半透明；单测重写并新增 `testRefreshInsetInflationFreezesTitleVisible`/`testExplicitRefreshFlagAlsoFreezesTitle`，首页单测 18/18、标题淡出 UI 用例 1/1；调试日志与探针已清理；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (181) 出包，IPA SHA-256 `5df1d1a6c7638463824dbe99ec998eab0546ac50303f01eee2b7e8c5b1e6790f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (181)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 首页模式切换改液态玻璃菜单按钮 + 标题显示当前模式 / 1.1.4 Build 182
+
+- 用户需求：推荐/热门切换控件改为液态玻璃图标按钮（图标参考用户附图，列表样式），点击展开菜单选择推荐/热门、选中项后打钩；首页大标题改为显示当前「推荐/热门」。
+- 实现：`HomeTopBarModeButtons`（两个文字按钮）替换为 `HomeTopBarModeMenu`——`Menu` + 圆形 `glassEffect` 图标按钮（`list.bullet.rectangle`），菜单项 `HStack{ Text; Spacer; checkmark }` 使选中项尾部打钩；`HomeTopBarTitle` 改为接收 `viewModel.mode.title`，标题随当前模式显示「推荐/热门」，滚动淡出逻辑不变。隐藏标签菜单与头像保留。
+- 验证：UI 用例更名 `testHomeTitleFadesOnScrollDownWhileModeMenuStaysVisible` 并新增展开菜单断言（推荐/热门项存在），截图确认玻璃按钮、菜单尾部勾选、标题=当前模式；首页单测 18/18；Debug 编译通过。图标暂用 `list.bullet.rectangle`，如需与附图完全一致可再换 SF Symbol。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 182 出包与安装记录见后续。

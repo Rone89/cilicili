@@ -47,10 +47,10 @@ struct HomeTopBar: View {
     var body: some View {
         HStack(spacing: 10) {
             if titleState.progress <= 0.9 {
-                HomeTopBarTitle(state: titleState)
+                HomeTopBarTitle(title: viewModel.mode.title, state: titleState)
             }
             Spacer(minLength: 8)
-            HomeTopBarModeButtons(mode: viewModel.mode, onSelect: switchMode)
+            HomeTopBarModeMenu(mode: viewModel.mode, onSelect: switchMode)
             HomeTopBarAccessory(hiddenTabs: hiddenTabs, actions: actions)
             HomeTopBarProfileButton(actions: actions)
         }
@@ -74,11 +74,12 @@ enum HomeTopBarLayout {
 }
 
 private struct HomeTopBarTitle: View {
+    let title: String
     @ObservedObject var state: HomeChromeTitleState
 
     var body: some View {
         let progress = state.progress
-        Text(AppTab.home.title)
+        Text(title)
             .font(.system(size: 32, weight: .bold))
             .foregroundStyle(.primary)
             .lineLimit(1)
@@ -92,34 +93,40 @@ private struct HomeTopBarTitle: View {
     }
 }
 
-private struct HomeTopBarModeButtons: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
+/// Liquid-glass icon button that opens a menu to pick the feed mode. The
+/// selected mode is marked with a trailing checkmark.
+private struct HomeTopBarModeMenu: View {
     let mode: HomeFeedMode
     let onSelect: (HomeFeedMode) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        Menu {
             ForEach(HomeFeedMode.allCases) { item in
                 Button {
                     guard item != mode else { return }
                     onSelect(item)
                 } label: {
-                    Text(item.title)
-                        .font(.body.weight(item == mode ? .semibold : .regular))
-                        .foregroundStyle(item == mode ? libraryStore.appTintColor : Color.primary.opacity(0.78))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                        .frame(minWidth: HomeTopBarLayout.controlHeight, minHeight: HomeTopBarLayout.controlHeight)
-                        .contentShape(Rectangle())
+                    HStack {
+                        Text(item.title)
+                        if item == mode {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(item == mode ? .isSelected : [])
                 .accessibilityIdentifier("home.feed.mode.\(item.rawValue)")
             }
+        } label: {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+                .contentShape(Circle())
+                .glassEffect(.regular.interactive(), in: Circle())
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("home.feed.modePicker")
+        .accessibilityLabel("切换推荐或热门")
+        .accessibilityValue(mode.title)
+        .accessibilityIdentifier("home.feed.modeMenu")
     }
 }
 
