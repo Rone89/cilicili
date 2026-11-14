@@ -902,3 +902,10 @@
 - **显示区域客观验证（本轮用户问题）**：新增单测 `testDisplayAreaFractionScalesScrollLaneCount`，430×242 竖屏几何（topInset 8/bottomInset 54，内容区高 180、泳道高 30）下断言占比 0.25/0.5/0.75/1.0 → 滚动泳道 1/3/4/6，通过。新增读取口 `debugScrollLaneCount`/`debugContentFrameHeight`。同步层单测 11/11 通过。
 - 诊断脚手架（探针叠层、渲染器临时计数器）已清理还原；仅保留显示区域单测与两个读取口。
 - 本地 `main` 提交（显示区域单测），基线 `231e909`。**推送仍暂停**，待用户决定；此前基于无效模拟器证据的推送授权不再适用。
+
+## 2026-11-14 装机：1.1.4 Build 167（RCe2027）
+
+- 用户要求装到手机。构建号 165→166→167 之后，从当前 `main`（`0f81b48` + 167 bump）出 Release：`sh Scripts/build-release-unsigned-ipa.sh`，IPA SHA-256 `181780ea7ce3981d813bd7b079d6cdf7c17e04bc085098dc8f0545b7b4c6d27d`。
+- 18pm 证书重签安装成功。**注意：重签后 bundle ID 随描述文件固定为 `app.bamboo2779.brussels691`（不是项目里的 `cc.bili`）**；`devicectl` 列表确认 cilicili 1.1.4 (167) 已装。首次误用 `cc.bili` 启动报 error 10002，改用 `app.bamboo2779.brussels691` 后 `devicectl device process launch` 退出 0、打印 Launched。
+- 本轮 Release 代码相对 166 仅新增只读调试访问器（`debugScrollLaneCount`/`debugContentFrameHeight`）与单测，无生产行为变化；167 等价于 166 的功能。
+- 推送 GitHub 仍暂停（用户未就"推送 GitHub"表态，本轮"推送我的手机"= 装机）。
