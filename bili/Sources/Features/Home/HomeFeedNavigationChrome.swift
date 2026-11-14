@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 
 struct HomeFeedNavigationChrome: ViewModifier {
-    @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: HomeViewModel
+    @ObservedObject var titleState: HomeChromeTitleState
     let modeActions: HomeFeedModeActions
     let scrollActions: HomeFeedScrollActions
     let nativeRefreshActionStore: HomeNativeRefreshActionStore
@@ -16,65 +16,28 @@ struct HomeFeedNavigationChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    HomeToolbarModePicker(
-                        mode: viewModel.mode,
-                        isHidden: hidesNavigationChrome,
-                        onSelectMode: switchMode
-                    )
-                        .frame(width: 140, height: HomeToolbarLayout.controlHeight)
-                        .accessibilityIdentifier("home.feed.modePicker")
-                        .font(.headline)
-                        .opacity(navigationChromeOpacity)
-                        .disabled(hidesNavigationChrome)
-                        .accessibilityHidden(hidesNavigationChrome)
-                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
-                }
-                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarLeading) {
-                    HomeProfileButton(viewModel: accountMessageViewModel, action: onOpenProfile, onOpenMessages: onOpenAccountMessages)
-                        .buttonBorderShape(.circle)
-                        .opacity(navigationChromeOpacity)
-                        .disabled(hidesNavigationChrome)
-                        .accessibilityHidden(hidesNavigationChrome)
-                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
+                    if titleState.progress <= 0.9 {
+                        HomeToolbarTitle(state: titleState)
+                    }
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
-                    Group {
-                        if !hidesNavigationChrome {
-                            if let onOpenRootPage, !hiddenTabs.isEmpty {
-                                if hiddenTabs.count == 1, let tab = hiddenTabs.first {
-                                    Button(tab.title, systemImage: tab == .mine ? "slider.horizontal.3" : tab.systemImage) {
-                                        onOpenRootPage(tab)
-                                    }
-                                    .foregroundStyle(.primary)
-                                    .tint(.primary)
-                                } else {
-                                    Menu {
-                                        ForEach(hiddenTabs) { tab in
-                                            Button(tab.title, systemImage: tab == .mine ? "slider.horizontal.3" : tab.systemImage) {
-                                                onOpenRootPage(tab)
-                                            }
-                                        }
-                                    } label: {
-                                        Image(systemName: "circle.grid.2x2")
-                                            .foregroundStyle(.primary)
-                                    }
-                                    .tint(.primary)
-                                    .accessibilityLabel("更多页面")
-                                }
-                            } else {
-                                accountMessageButton
-                            }
-                        }
+                    HStack(spacing: 10) {
+                        HomeToolbarModeButtons(
+                            mode: viewModel.mode,
+                            onSelect: switchMode
+                        )
+                        trailingAccessory
+                        HomeProfileButton(
+                            viewModel: accountMessageViewModel,
+                            action: onOpenProfile,
+                            onOpenMessages: onOpenAccountMessages
+                        )
+                        .buttonBorderShape(.circle)
                     }
-                    .opacity(navigationChromeOpacity)
-                    .disabled(hidesNavigationChrome)
-                    .accessibilityHidden(hidesNavigationChrome)
-                    .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
-                .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
+                .sharedBackgroundVisibility(.hidden)
             }
             .nativeTopNavigationChrome()
     }
@@ -83,16 +46,41 @@ struct HomeFeedNavigationChrome: ViewModifier {
         [.dynamic, .live, .mine, .search].filter { !libraryStore.visibleRootTabs.contains($0) }
     }
 
-    private var hidesNavigationChrome: Bool {
-        rootNavigationTitleHidden.wrappedValue
+    @ViewBuilder
+    private var trailingAccessory: some View {
+        if let onOpenRootPage, !hiddenTabs.isEmpty {
+            if hiddenTabs.count == 1, let tab = hiddenTabs.first {
+                Button {
+                    onOpenRootPage(tab)
+                } label: {
+                    toolbarIcon(tab == .mine ? "slider.horizontal.3" : tab.systemImage)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tab.title)
+            } else {
+                Menu {
+                    ForEach(hiddenTabs) { tab in
+                        Button(tab.title, systemImage: tab == .mine ? "slider.horizontal.3" : tab.systemImage) {
+                            onOpenRootPage(tab)
+                        }
+                    }
+                } label: {
+                    toolbarIcon("circle.grid.2x2")
+                }
+                .accessibilityLabel("更多页面")
+            }
+        } else {
+            accountMessageButton
+        }
     }
 
-    private var navigationChromeOpacity: Double {
-        hidesNavigationChrome ? 0 : 1
-    }
-
-    private var toolbarItemBackgroundVisibility: Visibility {
-        hidesNavigationChrome ? .hidden : .automatic
+    private func toolbarIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
+            .contentShape(Circle())
+            .glassEffect(.regular.interactive(), in: Circle())
     }
 
     @ViewBuilder
@@ -123,6 +111,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
 extension View {
     func homeFeedNavigationChrome(
         viewModel: HomeViewModel,
+        titleState: HomeChromeTitleState,
         modeActions: HomeFeedModeActions,
         scrollActions: HomeFeedScrollActions,
         nativeRefreshActionStore: HomeNativeRefreshActionStore,
@@ -134,6 +123,7 @@ extension View {
         modifier(
             HomeFeedNavigationChrome(
                 viewModel: viewModel,
+                titleState: titleState,
                 modeActions: modeActions,
                 scrollActions: scrollActions,
                 nativeRefreshActionStore: nativeRefreshActionStore,
@@ -166,7 +156,11 @@ private struct HomeAccountMessageButtonContent: View {
                 .symbolRenderingMode(.monochrome)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(hasUnread ? appTintColor : Color.primary)
+                .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
+                .contentShape(Circle())
+                .glassEffect(.regular.interactive(), in: Circle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("账号消息")
         .accessibilityValue(hasUnread ? "有未读消息" : "全部已读")
         .accessibilityIdentifier("home.account.messages")
@@ -256,48 +250,56 @@ private enum HomeToolbarLayout {
     static let controlHeight: CGFloat = 44
 }
 
-/// Match the native segmented control to the adjacent toolbar buttons.
-private struct HomeToolbarModePicker: UIViewRepresentable {
+/// Ibili-style floating root title: large, left aligned, and driven by the
+/// home scroll offset instead of a native large-title collapse.
+private struct HomeToolbarTitle: View {
+    @ObservedObject var state: HomeChromeTitleState
+
+    var body: some View {
+        let progress = state.progress
+        Text(AppTab.home.title)
+            .font(.system(size: 32, weight: .bold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .fixedSize(horizontal: true, vertical: false)
+            .offset(y: -progress * HomeChromeTitleState.slideDistance)
+            .opacity(1 - progress)
+            .accessibilityIdentifier("home.feed.title")
+            .accessibilityAddTraits(.isHeader)
+            .allowsHitTesting(false)
+    }
+}
+
+/// Text mode switch that replaces the centered segmented control so the title
+/// can own the leading edge, matching Ibili's feed header.
+private struct HomeToolbarModeButtons: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     let mode: HomeFeedMode
-    let isHidden: Bool
-    let onSelectMode: (HomeFeedMode) -> Void
+    let onSelect: (HomeFeedMode) -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onSelectMode: onSelectMode)
-    }
-
-    func makeUIView(context: Context) -> UISegmentedControl {
-        let control = UISegmentedControl(items: HomeFeedMode.allCases.map(\.title))
-        control.addTarget(context.coordinator, action: #selector(Coordinator.selectionChanged(_:)), for: .valueChanged)
-        control.accessibilityLabel = "首页内容"
-        control.accessibilityIdentifier = "home.feed.modePicker"
-        return control
-    }
-
-    func updateUIView(_ control: UISegmentedControl, context: Context) {
-        context.coordinator.onSelectMode = onSelectMode
-        control.selectedSegmentIndex = HomeFeedMode.allCases.firstIndex(of: mode) ?? 0
-        control.isEnabled = context.environment.isEnabled
-        // SwiftUI toolbar opacity does not hide the embedded UIKit control
-        // from accessibility or hit testing. Keep both trees in sync.
-        control.isHidden = isHidden
-        control.accessibilityElementsHidden = isHidden
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UISegmentedControl, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: HomeToolbarLayout.controlHeight)
-    }
-
-    final class Coordinator: NSObject {
-        var onSelectMode: (HomeFeedMode) -> Void
-
-        init(onSelectMode: @escaping (HomeFeedMode) -> Void) {
-            self.onSelectMode = onSelectMode
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(HomeFeedMode.allCases) { item in
+                Button {
+                    guard item != mode else { return }
+                    onSelect(item)
+                } label: {
+                    Text(item.title)
+                        .font(.body.weight(item == mode ? .semibold : .regular))
+                        .foregroundStyle(item == mode ? libraryStore.appTintColor : Color.primary.opacity(0.78))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                        .frame(minWidth: HomeToolbarLayout.controlHeight, minHeight: HomeToolbarLayout.controlHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.title)
+                .accessibilityAddTraits(item == mode ? .isSelected : [])
+                .accessibilityIdentifier("home.feed.mode.\(item.rawValue)")
+            }
         }
-
-        @objc func selectionChanged(_ control: UISegmentedControl) {
-            guard HomeFeedMode.allCases.indices.contains(control.selectedSegmentIndex) else { return }
-            onSelectMode(HomeFeedMode.allCases[control.selectedSegmentIndex])
-        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.feed.modePicker")
     }
 }

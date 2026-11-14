@@ -10,6 +10,7 @@ struct RootTabView: View {
     @EnvironmentObject var libraryStore: LibraryStore
     @StateObject var runtimeSettings = RootRuntimeSettingsStore()
     @StateObject var homeViewModelHolder = RootHomeViewModelHolder()
+    @StateObject var homeChromeTitleState = HomeChromeTitleState()
     @StateObject var mineViewModelHolder = MineViewModelHolder()
     @StateObject var searchViewModelHolder = SearchViewModelHolder()
     @StateObject var searchBottomAccessoryStore = SearchBottomAccessoryStore()
@@ -251,8 +252,10 @@ struct RootTabView: View {
         Group {
             if tab == .home, let viewModel = homeViewModelHolder.viewModel {
                 rootTabContent(for: tab, detailPath: detailPath)
+                    .environment(\.homeChromeTitleState, homeChromeTitleState)
                     .homeFeedNavigationChrome(
                         viewModel: viewModel,
+                        titleState: homeChromeTitleState,
                         modeActions: homeActionStore.mode,
                         scrollActions: homeActionStore.scroll,
                         nativeRefreshActionStore: homeActionStore.nativeRefresh,

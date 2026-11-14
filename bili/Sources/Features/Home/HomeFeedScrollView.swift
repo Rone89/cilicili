@@ -16,6 +16,7 @@ enum HomeNativeRefreshLayout {
 struct HomeFeedScrollView<FeedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.rootTabScrollRequest) private var rootTabScrollRequest
+    @Environment(\.homeChromeTitleState) private var chromeTitleState
     @State private var isAtTop = false
     @ObservedObject var viewModel: HomeViewModel
     @Binding var viewportState: HomeFeedViewportState
@@ -71,6 +72,11 @@ struct HomeFeedScrollView<FeedContent: View>: View {
             } action: { _, atTop in
                 isAtTop = atTop
             }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, offset in
+                chromeTitleState?.update(contentOffsetY: offset)
+            }
             .onChange(of: rootTabScrollRequest) { _, request in
                 guard request != nil else { return }
                 if isAtTop, viewModel.mode == .recommend {
@@ -84,7 +90,7 @@ struct HomeFeedScrollView<FeedContent: View>: View {
             .scrollBounceBehavior(.always, axes: .vertical)
             .defersRemoteImageLoadsDuringFastScroll()
             .background(layout.homeFeedBackground)
-            .nativeTopScrollEdgeEffect()
+            .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
             .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: layout)
             .homeFeedScrollOverlays(
                 viewModel: viewModel
@@ -102,6 +108,7 @@ struct HomeFeedScrollView<FeedContent: View>: View {
     }
 
     private func scrollToTop(_ proxy: ScrollViewProxy, animated: Bool) {
+        chromeTitleState?.reset()
         if reduceMotion || !animated {
             proxy.scrollTo(HomeFeedScrollAnchor.top, anchor: .top)
         } else {

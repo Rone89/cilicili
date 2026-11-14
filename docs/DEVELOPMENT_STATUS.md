@@ -961,3 +961,12 @@
 - 附件完整性：从 Release 下载后实测 SHA-256 与本地一致（同上）。
 - 更新概述按 v1.1.3 → v1.1.4 口径撰写：启动提速、#66 全屏漂移修复、弹幕同步层与显示问题修复、弹幕设置去底色与字重菜单化、横屏 100% 铺满、清晰度选项合并与长标题展开。附件为未签名 IPA，需自行签名安装。
 - 说明：本文件同时收录并行会话"与官方 B 站弹幕数量差异排查"记录（其内容自述为排查结论，非代码变更）。
+
+## 2026-11-14 首页顶栏 Ibili 式重构（标题上滑消失）/ 1.1.4 Build 173
+
+- 用户选定方案：首页顶栏按 Ibili 重构——左上「首页」大字标题，右上文字「推荐 / 热门」，隐藏标签菜单与头像置右；不再使用居中 `UISegmentedControl`。
+- 实现：新增 `HomeChromeTitleState`（44pt 淡出距离、24pt 上移、0.01 进度节流）；`RootTabView` 持有状态并注入首页环境；`HomeFeedScrollView` 用 `onScrollGeometryChange` 读取 `contentOffset.y + contentInsets.top` 更新；`HomeFeedNavigationChrome` 改为 `topBarLeading` 标题 + `topBarTrailing` 文本模式按钮 / 隐藏标签菜单 / 头像。标题进度 >0.9 时从工具栏与无障碍树移除，回顶或切换推荐/热门时 reset。
+- 有意行为变化：首页不再调用 `nativeTopScrollEdgeEffect` 的标题隐藏（改为 `hidesRootNavigationTitle: false`），上滑时推荐/热门、隐藏标签菜单和头像保留，只有标题上移淡出；旧版是整组 chrome 在 18pt 后一起淡出。该变化与 Ibili 的标题语义一致，待用户真机确认。
+- 验证：iPhone 18 Pro Max / iOS 27.0 模拟器，共享 Xcode-27 缓存。新增单测 `HomeChromeTitleStateTests` 3/3；首页相关单测 24/24；UI 用例 `testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1。截图附件 `home-title-rest` / `home-title-scrolled` 确认：静止时左上显示「首页」，上滑后标题消失、模式按钮与头像保留，下滚恢复。Debug build 成功。
+- 分支与 worktree：`feature/home-title-fade`，`/Users/rayc/Desktop/ccswift-title-fade`，基线 `d8d0e58`。**未合并本地 main、未推送 GitHub**；按用户要求待真机验收通过后再提交本地 main。
+- 待真机验收：①首页左上显示「首页」大字标题；②上滑标题上移淡出，推荐/热门、隐藏标签菜单、头像保持；③下滚或回顶标题恢复；④推荐/热门切换仍瞬时回顶；⑤头像、隐藏标签菜单、账户消息入口仍可用。

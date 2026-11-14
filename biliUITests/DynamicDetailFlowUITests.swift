@@ -314,7 +314,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testHomeNavigationBarMinimizesOnScrollDown() {
+    func testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible() {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-reset-state", "--ui-test-video-detail-network",
@@ -323,34 +323,43 @@ final class DynamicDetailFlowUITests: XCTestCase {
         app.launchArguments += ["-cc.bili.home.recommendFeedSourcePreference.v1", "web"]
         app.launch()
 
-        let modeButton = app.segmentedControls["home.feed.modePicker"]
-        let messageButton = app.buttons["账号消息"]
-        XCTAssertTrue(modeButton.waitForExistence(timeout: 5))
-        XCTAssertTrue(messageButton.waitForExistence(timeout: 5))
+        let title = app.staticTexts["home.feed.title"]
+        let recommendButton = app.buttons["home.feed.mode.recommend"]
+        let popularButton = app.buttons["home.feed.mode.popular"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(recommendButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(popularButton.waitForExistence(timeout: 5))
         let fixtureVideo = app.staticTexts["固定视频详情回归"].firstMatch
         XCTAssertTrue(fixtureVideo.waitForExistence(timeout: 10))
         let scrollView = app.scrollViews.containing(.staticText, identifier: "固定视频详情回归").firstMatch
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
-        for _ in 0..<3 where modeButton.isHittable { scrollView.swipeUp() }
+        let restAttachment = XCTAttachment(screenshot: app.screenshot())
+        restAttachment.name = "home-title-rest"
+        restAttachment.lifetime = .keepAlways
+        add(restAttachment)
+        for _ in 0..<3 where title.exists { scrollView.swipeUp() }
 
-        let hiddenChrome = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                let picker = app.segmentedControls["home.feed.modePicker"]
-                return (!picker.exists || !picker.isEnabled)
-                    && !app.buttons["账号消息"].exists
-            },
+        let hiddenTitle = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in !title.exists },
             object: nil
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [hiddenChrome], timeout: 5), .completed, app.debugDescription)
+        XCTAssertEqual(XCTWaiter.wait(for: [hiddenTitle], timeout: 5), .completed, app.debugDescription)
+        let hiddenAttachment = XCTAttachment(screenshot: app.screenshot())
+        hiddenAttachment.name = "home-title-scrolled"
+        hiddenAttachment.lifetime = .keepAlways
+        add(hiddenAttachment)
+        XCTAssertTrue(recommendButton.exists)
+        XCTAssertTrue(popularButton.exists)
         XCTAssertTrue(app.tabBars.firstMatch.exists)
 
         for _ in 0..<4 {
             scrollView.swipeDown()
         }
 
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertTrue(waitForHittableState(
             true,
-            query: { app.segmentedControls["home.feed.modePicker"] },
+            query: { app.buttons["home.feed.mode.recommend"] },
             timeout: 5
         ))
     }
