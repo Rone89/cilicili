@@ -909,3 +909,12 @@
 - 18pm 证书重签安装成功。**注意：重签后 bundle ID 随描述文件固定为 `app.bamboo2779.brussels691`（不是项目里的 `cc.bili`）**；`devicectl` 列表确认 cilicili 1.1.4 (167) 已装。首次误用 `cc.bili` 启动报 error 10002，改用 `app.bamboo2779.brussels691` 后 `devicectl device process launch` 退出 0、打印 Launched。
 - 本轮 Release 代码相对 166 仅新增只读调试访问器（`debugScrollLaneCount`/`debugContentFrameHeight`）与单测，无生产行为变化；167 等价于 166 的功能。
 - 推送 GitHub 仍暂停（用户未就"推送 GitHub"表态，本轮"推送我的手机"= 装机）。
+
+## 2026-11-14 修复：滚动弹幕重叠（重复放置）/ 1.1.4 Build 168
+
+- 用户真机截图报滚动弹幕重叠。定位两层原因：
+- **真 bug（本轮修复）**：Build 165 背压改造把排程搬进 `scheduleItem` 时，漏掉了原有的 `materializedAheadIds` 判重。生产链路约每 8s 重发窗口，新物品并入使 `merged != sortedItems` → `itemsChanged` → `positionCursor(now-2s)` 游标回退；重扫时已上屏弹幕被再次放置，同一句叠在原弹幕上。修复：`scheduleItem` 顶部恢复判重（resync 时集合仍清空，循环/seek 重放不受影响）。
+- **设置层（非 bug）**：弹幕设置里有"海量弹幕（轨道满时仍显示）"开关（`allowsDanmakuOverlap`，默认关）。开启时轨道满仍强行显示 → 重叠，属设计行为（B站同类开关亦然）。若用户不想要重叠，关闭该开关即可——配合 165 的背压排队，进场会排队而非叠放。
+- 新增回归单测 `testCursorRewindDoesNotRePlaceMaterializedItems`：施加窗口→并入新物品触发游标回退→断言 a/b 未被二次放置。同步层单测 12/12 通过（确定性，不依赖 AVPlayer 时钟）。
+- Release 1.1.4 (168) 出包，IPA SHA-256 `0f7592b2ba49e289d164778b06294188ccfea2b8f59c8a9ab052f4f3c86dc5c6`；18pm 重签安装 RCe2027，`devicectl` 确认 1.1.4 (168) 并启动（bundle ID `app.bamboo2779.brussels691`）。
+- 本地 `main` 提交 `c80eab8`（含 168）。**GitHub 推送仍暂停**；待用户真机验收。
