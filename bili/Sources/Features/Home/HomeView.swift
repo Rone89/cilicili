@@ -27,7 +27,7 @@ struct HomeView: View {
             launchConfiguration: launchConfiguration
         )
         .environment(\.homeChromeTitleState, titleState)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        .safeAreaInset(edge: .top, spacing: 12) {
             HomeTopBar(
                 viewModel: viewModel,
                 titleState: titleState,

@@ -1013,3 +1013,9 @@
 - 验证：模拟器静止截图按钮与封面间距正常、无重叠；滚动截图官方软边缘正常；首页单测 16/16、标题淡出 UI 用例 1/1；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (178) 出包，IPA SHA-256 `3f214d776db48b35823a9eca6e6b1aad3317e70fbcbcd276b73a9b17d2179f5d`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (178)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 真机顶栏与封面间距不足 / 1.1.4 Build 179
+
+- 用户真机反馈 178 问题依旧。`devicectl device capture screenshot` 抓真机图：按钮底边几乎贴住首张封面（模拟器因首卡布局不同看着有缝，真机更紧）。
+- 修复：`HomeView` 顶栏 `safeAreaInset(edge: .top, spacing: 12)`，在顶栏与 feed 之间固定留 12pt 间距，保证各机型按钮不贴/压封面；透明顶栏 + 系统 `.soft` 与随页面滑动不变。
+- 验证：以真机截图为准（待装机后抓取确认）。分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**。Build 179 出包与安装记录见后续。
