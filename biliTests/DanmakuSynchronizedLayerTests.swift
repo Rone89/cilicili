@@ -213,6 +213,35 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
         XCTAssertEqual(view.debugPendingDanmakuCount, 0)
     }
 
+    // MARK: Display area（显示区域占比 → 滚动泳道数）
+
+    /// 竖屏生产几何 430×242、topInset 8 / bottomInset 54 → 内容区高 180。
+    /// 泳道高 30 时，占比 0.25/0.5/0.75/1.0 应分别解析出 1/3/4/6 条滚动泳道。
+    func testDisplayAreaFractionScalesScrollLaneCount() {
+        let view = DanmakuSynchronizedLayerView(frame: CGRect(x: 0, y: 0, width: 430, height: 242))
+        let expected: [(Double, Int)] = [(0.25, 1), (0.5, 3), (0.75, 4), (1.0, 6)]
+        for (fraction, lanes) in expected {
+            view.apply(configuration: DanmakuOverlayConfiguration(
+                items: [],
+                itemsRevision: 1,
+                currentTime: 0,
+                isPlaying: true,
+                playbackRate: 1,
+                isEnabled: true,
+                hasPresentedPlayback: true,
+                isLoadShedding: false,
+                settings: DanmakuSettings(danmakuKit: .init(displayArea: .init(fraction: fraction))),
+                topInset: 8,
+                bottomInset: 54
+            ))
+            XCTAssertEqual(view.debugContentFrameHeight, 180, accuracy: 0.5, "内容区高应为 242-8-54")
+            XCTAssertEqual(
+                view.debugScrollLaneCount, lanes,
+                "显示区域 \(Int(fraction * 100))% 应解析出 \(lanes) 条滚动泳道"
+            )
+        }
+    }
+
     // MARK: Helpers
 
     private func makeAttachedView(width: CGFloat, height: CGFloat) throws -> (DanmakuSynchronizedLayerView, UIWindow) {

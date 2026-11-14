@@ -221,6 +221,10 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     /// 游标之后尚未处理的物品数（含排队等待泳道的弹幕）。
     var debugPendingDanmakuCount: Int { max(0, sortedItems.count - cursor) }
 
+    /// 当前布局解析出的滚动泳道数（显示区域占比验证用）。
+    var debugScrollLaneCount: Int { layoutParameters?.scrollLaneCount ?? 0 }
+    var debugContentFrameHeight: CGFloat { layoutParameters?.contentFrame.height ?? 0 }
+
     /// 以显式媒体时刻驱动一次排程/回收（单测与诊断用，绕过真实播放器时钟）。
     func debugScheduleForTesting(at now: Double) {
         guard isRenderingActive, synchronizedLayer != nil else { return }
