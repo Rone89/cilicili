@@ -1036,4 +1036,5 @@
 - 真因（os_log 实测）：刷新时 `contentInsets.top` 从 118 跳到 178（刷新控件撑高），SwiftUI 不补偿 `contentOffset.y`，`sum` 瞬时 +60 被判成上滑；且下拉动画阶段 `isRefreshing/isUserRefreshing` 全为 false，180 的标志守卫根本没触发。
 - 修复：`HomeChromeTitleState.update(scrollSum:insetsTop:isRefreshing:)` 记录静止基线 inset，凡 inset 高于基线（刷新撑高）即冻结标题可见，待 inset 回落再恢复滚动淡出；不再依赖刷新标志。`HomeFeedScrollView` 同时上报 sum 与 insetsTop。
 - 验证：探针复测刷新全程 70 帧标题均完整可见、不上移不半透明；单测重写并新增 `testRefreshInsetInflationFreezesTitleVisible`/`testExplicitRefreshFlagAlsoFreezesTitle`，首页单测 18/18、标题淡出 UI 用例 1/1；调试日志与探针已清理；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 181 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (181) 出包，IPA SHA-256 `5df1d1a6c7638463824dbe99ec998eab0546ac50303f01eee2b7e8c5b1e6790f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (181)`（bundle ID `app.bamboo2779.brussels691`）。
