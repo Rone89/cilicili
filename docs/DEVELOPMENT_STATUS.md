@@ -927,3 +927,13 @@
 - 验证性质：两项均为设置界面改动（不涉媒体时钟），编译通过；模拟器因无法可靠驱动该弹窗交互且此前有误判，**未声称模拟器视觉验证**，真机观感由用户确认。同步层单测 12/12 仍通过（上一轮）。
 - Release 1.1.4 (169) 出包，IPA SHA-256 `ed1ef8ef604cc3adcc26bcda9d427beb2711a8d5b9ece6627686047ea43c0c0d`；18pm 重签安装 RCe2027，`devicectl` 确认 1.1.4 (169) 并启动。
 - 本地 `main` 提交（含 169）。**GitHub 推送仍暂停**；待用户真机验收。
+
+## 2026-11-14 弹幕设置弹窗去底色 + 横屏铺满 / 1.1.4 Build 170–171
+
+- 用户反馈①竖屏弹幕设置弹窗灰黑方块仍在；②横屏 100% 弹幕未铺满（用户确认期望：铺满除底部控件区的全部区域）。
+- ①真因：`Form` 在 iOS 26/27 会为每个 Section 绘制玻璃卡片底板，`listRowBackground(.clear)` 清不掉。修复：`DanmakuSettingsSheetContent` 改为 `ScrollView + VStack` 平铺布局，去掉 Form 与 Section 容器；区块只用小标题与间距分隔。模拟器夹具（`--ui-test-fixture danmaku --danmaku-settings-open`）截图 + 逐点取色复核：卡片底板消失，面板统一。Build 170 先装机。
+- ②两处：a) 横屏顶部预留 28pt 去掉（`VideoDetailDanmakuOverlay` landscape topInset 28→0），弹幕可顶到最上沿；底部 84pt 仍为控件让位。b) 泳道分配由“永远优先最上面空闲泳道”改为**轮转铺开**（`DanmakuSyncLaneAllocator.scrollingCursor`），低密度时不再只挤在顶部几条，弹幕分布到整个可用高度。
+- 测试：新增 `testScrollingLanesRotateToSpreadBullets`（4 泳道连续分配应铺满且占满后返回 nil）；`testScrollingLaneReusesOnlyAfterEntrySweepPassesTail` 改为单泳道精确验证尾端门控。同步层单测 13/13 通过。
+- 说明：这两项是布局/分配逻辑（不依赖媒体时钟），由单测背书；弹幕的实际视觉效果仍以真机为准，未声称模拟器视觉验证。
+- Release 1.1.4 (171) 出包，IPA SHA-256 `333dc10d9ffe72107e5ec49d86110d4c8c78e668e358fd11ea2b2835da78a301`；18pm 重签安装 RCe2027，`devicectl` 确认 1.1.4 (171) 并启动。
+- 本地 `main` 提交（含 170/171）。**GitHub 推送仍暂停**；待用户真机验收。

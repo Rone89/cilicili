@@ -702,6 +702,12 @@ private struct UITestDanmakuFixtureView: View {
             synchronizeRenderStore()
         }
         .task {
+            // 诊断用：--danmaku-settings-open 自动弹出弹幕设置面板，供截图/取色核对。
+            guard ProcessInfo.processInfo.arguments.contains("--danmaku-settings-open") else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            isShowingSettings = true
+        }
+        .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(50))
                 guard !Task.isCancelled else { return }

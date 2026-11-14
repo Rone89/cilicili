@@ -8,28 +8,38 @@ struct DanmakuSettingsSheetContent: View {
     let updateDanmakuSettings: (DanmakuSettings) -> Void
 
     var body: some View {
-        // 去掉表单默认的分组灰黑卡片底色：让弹窗统一透出底部玻璃材质，
-        // 不再出现一块块深色方块。
-        Form {
-            DanmakuSettingsHeaderFormSection(
-                store: store,
-                summary: summary,
-                toggleDanmaku: toggleDanmaku
-            )
-            .listRowBackground(Color.clear)
+        // 不用 Form：iOS 26 起分组表单会为每个 Section 绘制玻璃卡片底板，
+        // listRowBackground(.clear) 清不掉，就是用户看到的灰黑方块。
+        // 改为平铺滚动布局，区块之间只用小标题和间距分隔，彻底没有卡片底色。
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                DanmakuSettingsHeaderSectionContent(
+                    isDanmakuEnabled: store.isDanmakuEnabled,
+                    settings: store.danmakuSettings,
+                    summary: summary,
+                    toggleDanmaku: toggleDanmaku
+                )
 
-            DanmakuSettingsPortraitVisibilitySection(
-                hidesDanmakuInPortrait: hidesDanmakuInPortraitBinding
-            )
-            .listRowBackground(Color.clear)
+                sectionHeader("竖屏播放")
+                DanmakuSettingsPortraitVisibilityContent(
+                    hidesDanmakuInPortrait: hidesDanmakuInPortraitBinding
+                )
 
-            DanmakuKitSettingsSection(
-                settings: store.danmakuSettings,
-                updateSettings: updateDanmakuSettings
-            )
-            .listRowBackground(Color.clear)
+                sectionHeader("DanmakuKit 渲染设置")
+                DanmakuKitSettingsContent(
+                    settings: store.danmakuSettings,
+                    updateSettings: updateDanmakuSettings
+                )
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .scrollContentBackground(.hidden)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
     }
 }
 

@@ -28,7 +28,9 @@ struct VideoDetailDanmakuOverlay: View {
             isLoadShedding: snapshot.isLoadShedding
                 || PlaybackDiagnosticsExperiment.forceDanmakuLoadShedding,
             settings: snapshot.settings,
-            topInset: usesLandscapePlaybackChrome ? 28 : 8,
+            // 横屏全屏：顶部不再预留，弹幕可顶到最上沿（100% 时铺满除底部
+            // 控件区以外的区域）；底部仍为进度条/控件让位。
+            topInset: usesLandscapePlaybackChrome ? 0 : 8,
             bottomInset: usesLandscapePlaybackChrome ? 84 : 54,
             isLayoutTransitioning: isLayoutTransitioning,
             playbackClock: clock,

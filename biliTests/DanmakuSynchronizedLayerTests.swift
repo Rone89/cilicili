@@ -9,14 +9,30 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
     // MARK: Lane allocator
 
     func testScrollingLaneReusesOnlyAfterEntrySweepPassesTail() {
-        var allocator = DanmakuSyncLaneAllocator(laneCount: 3)
-        // 位图 80 / 画布 400 / 时长 7.2：进场点扫过尾端 ≈ 开始 + 1.2s（远早于旧 45% 比例）。
+        // 单泳道：精确验证“尾端被进场点扫过”这一复用门控。
+        var allocator = DanmakuSyncLaneAllocator(laneCount: 1)
         let reusable = 7.2 * 80 / (400 + 80)
-        XCTAssertEqual(allocator.reserveScrollingLane(at: 0, reusableAt: reusable, allowsOverlap: true), 0)
-        // 尾端被扫过前不得复用 → 选泳道 1。
-        XCTAssertEqual(allocator.reserveScrollingLane(at: reusable - 0.05, reusableAt: 5, allowsOverlap: true), 1)
-        // 扫过后泳道 0 即可复用。
-        XCTAssertEqual(allocator.reserveScrollingLane(at: reusable + 0.05, reusableAt: 5, allowsOverlap: true), 0)
+        XCTAssertEqual(allocator.reserveScrollingLane(at: 0, reusableAt: reusable, allowsOverlap: false), 0)
+        // 尾端未扫过前不得复用 → 无可用泳道。
+        XCTAssertNil(allocator.reserveScrollingLane(at: reusable - 0.05, reusableAt: 5, allowsOverlap: false))
+        // 扫过后可复用。
+        XCTAssertEqual(allocator.reserveScrollingLane(at: reusable + 0.05, reusableAt: 5, allowsOverlap: false), 0)
+    }
+
+    func testScrollingLanesRotateToSpreadBullets() {
+        // 全部空闲时连续分配应轮转铺开到不同泳道，而不是永远挤在最上面一条。
+        var allocator = DanmakuSyncLaneAllocator(laneCount: 4)
+        var lanes: [Int] = []
+        for _ in 0..<4 {
+            if let lane = allocator.reserveScrollingLane(at: 0, reusableAt: 10, allowsOverlap: false) {
+                lanes.append(lane)
+            }
+        }
+        XCTAssertEqual(Set(lanes).count, 4, "连续分配应铺开到全部泳道")
+        XCTAssertNil(
+            allocator.reserveScrollingLane(at: 0, reusableAt: 10, allowsOverlap: false),
+            "泳道占满且不允许重叠时应交给调用方排队"
+        )
     }
 
     func testLaneAllocatorOverlapFallbackStaysInBoundsWhenAllLanesBusy() {

@@ -12,6 +12,8 @@ struct DanmakuSyncLaneAllocator {
     private(set) var scrollingFreeAt: [Double]
     private(set) var topFreeAt: [Double]
     private(set) var bottomFreeAt: [Double]
+    /// 下一次优先尝试的滚动泳道：轮转铺开，避免弹幕永远挤在最上面几条泳道。
+    private var scrollingCursor = 0
 
     init(laneCount: Int) {
         let resolvedCount = max(1, laneCount)
@@ -22,17 +24,25 @@ struct DanmakuSyncLaneAllocator {
     }
 
     /// `reusableAt` = 本次弹幕自己的“尾端被下一发进场点扫过”的绝对时刻。
+    /// 从上次分配位置开始轮转找空闲泳道，使弹幕在垂直方向铺满可用区域。
     mutating func reserveScrollingLane(
         at entryTime: Double,
         reusableAt: Double,
         allowsOverlap: Bool
     ) -> Int? {
-        if let lane = scrollingFreeAt.firstIndex(where: { $0 <= entryTime }) {
-            scrollingFreeAt[lane] = reusableAt
-            return lane
+        let count = scrollingFreeAt.count
+        guard count > 0 else { return nil }
+        for step in 0..<count {
+            let lane = (scrollingCursor + step) % count
+            if scrollingFreeAt[lane] <= entryTime {
+                scrollingCursor = (lane + 1) % count
+                scrollingFreeAt[lane] = reusableAt
+                return lane
+            }
         }
         guard allowsOverlap else { return nil }
         let lane = Self.earliestFreeLane(in: scrollingFreeAt)
+        scrollingCursor = (lane + 1) % count
         scrollingFreeAt[lane] = reusableAt
         return lane
     }
