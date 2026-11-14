@@ -12,17 +12,27 @@ final class HomeChromeTitleState: ObservableObject {
     static let slideDistance: CGFloat = 24
 
     @Published private(set) var progress: CGFloat = 0
+    private var restingInsetsTop: CGFloat = 0
 
-    func update(contentOffsetY: CGFloat, isRefreshing: Bool = false) {
-        // While the pull-to-refresh control is active the scroll view's content
-        // inset is inflated and the content is reloaded underneath it, so the
-        // raw offset transiently reads as "scrolled down". Freeze the title
-        // visible during refresh instead of letting it flicker out and back.
-        if isRefreshing {
+    /// - Parameters:
+    ///   - scrollSum: `contentOffset.y + contentInsets.top` (0 at resting top).
+    ///   - insetsTop: the scroll view's current top content inset.
+    ///   - isRefreshing: view-model refresh flag (best-effort extra guard).
+    func update(scrollSum: CGFloat, insetsTop: CGFloat, isRefreshing: Bool = false) {
+        // The pull-to-refresh control inflates the top inset, but SwiftUI does
+        // not compensate contentOffset for it, so `scrollSum` transiently reads
+        // as a downward scroll and would flicker the title out. Track the
+        // resting inset and treat any inflation above it as refresh activity,
+        // freezing the title visible until the inset settles back.
+        if restingInsetsTop == 0 || scrollSum <= 0.5 {
+            restingInsetsTop = insetsTop
+        }
+        let insetInflatedByRefresh = insetsTop > restingInsetsTop + 1
+        if isRefreshing || insetInflatedByRefresh {
             if progress != 0 { progress = 0 }
             return
         }
-        let next = Self.progress(forContentOffsetY: contentOffsetY)
+        let next = Self.progress(forContentOffsetY: scrollSum)
         guard abs(next - progress) >= 0.01 else { return }
         progress = next
     }

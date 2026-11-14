@@ -13,6 +13,11 @@ enum HomeNativeRefreshLayout {
     }
 }
 
+private struct HomeTitleScrollSample: Equatable {
+    let sum: CGFloat
+    let insetsTop: CGFloat
+}
+
 struct HomeFeedScrollView<FeedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.rootTabScrollRequest) private var rootTabScrollRequest
@@ -72,11 +77,15 @@ struct HomeFeedScrollView<FeedContent: View>: View {
             } action: { _, atTop in
                 isAtTop = atTop
             }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top
-            } action: { _, offset in
+            .onScrollGeometryChange(for: HomeTitleScrollSample.self) { geometry in
+                HomeTitleScrollSample(
+                    sum: geometry.contentOffset.y + geometry.contentInsets.top,
+                    insetsTop: geometry.contentInsets.top
+                )
+            } action: { _, sample in
                 chromeTitleState?.update(
-                    contentOffsetY: offset,
+                    scrollSum: sample.sum,
+                    insetsTop: sample.insetsTop,
                     isRefreshing: viewModel.isRefreshing || viewModel.isUserRefreshing
                 )
             }
