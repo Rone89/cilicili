@@ -554,6 +554,9 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         currentTime: Double,
         maximumActiveCount: Int
     ) -> ItemSchedulingOutcome {
+        // 游标会因窗口重发而回退重扫：已物化的物品必须跳过，否则同一句
+        // 弹幕会被重复放置并叠在原弹幕上（Build 165 背压改造遗漏的判重）。
+        guard !materializedAheadIds.contains(item.id) else { return .skipped }
         guard activeEntries.count < maximumActiveCount else { return .busy }
         guard DanmakuRenderPolicy.supports(item, settings: configuration.settings) else {
             materializedAheadIds.insert(item.id)

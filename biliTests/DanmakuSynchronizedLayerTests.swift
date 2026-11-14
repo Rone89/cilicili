@@ -213,6 +213,37 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
         XCTAssertEqual(view.debugPendingDanmakuCount, 0)
     }
 
+    // MARK: Dedup（窗口重发后游标回退不得重复放置）
+
+    /// 生产链路约每 8s 重发窗口，新物品并入会触发游标回退重扫。
+    /// 已物化的物品必须被跳过，否则同一句弹幕会重复进场并叠在原弹幕上。
+    func testCursorRewindDoesNotRePlaceMaterializedItems() throws {
+        let (view, window) = try makeAttachedView(width: 400, height: 200)
+        defer { window.isHidden = true }
+
+        let base = [
+            DanmakuItem(id: "a", time: 0.2, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "第一句"),
+            DanmakuItem(id: "b", time: 1.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "第二句"),
+        ]
+        view.apply(configuration: Self.configuration(
+            items: base,
+            settings: DanmakuSettings(danmakuKit: .init(displayArea: .full))
+        ))
+        XCTAssertEqual(view.activeDanmakuCount, 2)
+
+        // 窗口推进：新物品加入使 merged != current → 触发 positionCursor 回退。
+        let withNew = base + [
+            DanmakuItem(id: "c", time: 3.0, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "第三句"),
+        ]
+        view.apply(configuration: Self.configuration(
+            items: withNew,
+            settings: DanmakuSettings(danmakuKit: .init(displayArea: .full))
+        ))
+        // 回退后重扫：已物化的 a/b 不得重复放置（c 在 2s 前瞻外）。
+        view.debugScheduleForTesting(at: 0)
+        XCTAssertEqual(view.activeDanmakuCount, 2, "已上屏弹幕被重复放置会造成重叠")
+    }
+
     // MARK: Display area（显示区域占比 → 滚动泳道数）
 
     /// 竖屏生产几何 430×242、topInset 8 / bottomInset 54 → 内容区高 180。
