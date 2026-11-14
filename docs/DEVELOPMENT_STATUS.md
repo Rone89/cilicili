@@ -978,4 +978,4 @@
 - 对照：在基线 `d8d0e58`（main）用同一段返回探针抓帧，旧版顶栏（头像 / 居中分段 / 菜单）同样在视频页仍占约 80% 时停在顶部，确认**不是本次标题重构引入**；新版因滚动后仍保留推荐/热门与头像，观感更明显。
 - 修复：`HomeFeedNavigationChrome` 新增 `isDetailPresented`，详情页存在时首页 toolbar 透明度 0；返回后由 `.task(id:)` 等待 450ms（覆盖返回动画）再以 0.18s 淡入，避免顶栏提前盖在视频页上。
 - 验证：`HomeChromeTitleStateTests` 3/3；`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug/Release 编译通过。转场视觉效果待用户真机复看。
-- Build 174 出包并安装 RCe2027，版本与 SHA 见后续记录。
+- Release 1.1.4 (174) 出包，IPA SHA-256 `0c83bdd46815366a3ad65a1f65d307e253809e1998ac7bf008711e1f84603a2b`；18pm 证书重签成功。无线安装首次与重试均返回 CoreDeviceError 4016，`devicectl` 显示 RCe2027 `unavailable`（设备无线连接掉线），安装未完成；待设备重新连接后重试。Build 173 仍在设备上。
