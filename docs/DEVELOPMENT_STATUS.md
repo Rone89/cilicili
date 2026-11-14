@@ -994,4 +994,5 @@
 - 用户对比截图反馈：cilicili 顶栏底边是硬边，Ibili 是渐变模糊。
 - 修复：`HomeTopBar` 背景由整块 `.ultraThinMaterial` 改为 `HomeTopEdgeBackground`——材质层用自上而下 `LinearGradient` 遮罩（0→0.9→0.35→透明）化开，叠加一层深色 tint 渐变，高度 126pt（对齐 Ibili `FeedNavigationBackgroundOverlay` 的 expandedHeight+24），向上延伸至状态栏、向下融入 feed，消除硬边。
 - 验证：模拟器截图确认顶栏底边渐变过渡、无硬线；`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 176 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (176) 出包，IPA SHA-256 `ad5e603e94036b55ca6210262524875f0f58a394c967380120a6a3987366ebe4`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (176)`（bundle ID `app.bamboo2779.brussels691`）。
