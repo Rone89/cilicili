@@ -1060,4 +1060,5 @@
 - 用户需求：底部 tab 有被隐藏时，把这些隐藏页面的入口并进推荐/热门同一个玻璃菜单，不再单独放网格按钮。
 - 实现：`HomeModeMenuButton` 的 UIMenu 在 `hiddenTabs` 非空时追加第二组（`.displayInline` 分隔）导航项（直播/我的/搜索等，带各自图标，点击 `onOpenRootPage`）；模式组保留 `.singleSelection` 右钩。顶栏移除独立 `HomeTopBarAccessory` 网格按钮，仅在无隐藏 tab 时保留通知铃铛。
 - 验证：模拟器以 `visibleRootTabs=[home,dynamic]` 配置抓菜单截图，确认「推荐✓/热门」+分隔线+「直播/我的/搜索」同菜单、网格按钮消失、底栏仅剩可见 tab；首页单测 18/18、菜单 UI 用例 1/1；探针已清理、模拟器默认配置已恢复；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 184 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (184) 出包，IPA SHA-256 `d337d8a0fa3c92da497468de1d2f7ec5ca1c7a1b84f3e47d323ed76447d4b04f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (184)`（bundle ID `app.bamboo2779.brussels691`）。
