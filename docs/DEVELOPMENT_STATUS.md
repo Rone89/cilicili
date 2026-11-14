@@ -1046,3 +1046,10 @@
 - 验证：UI 用例更名 `testHomeTitleFadesOnScrollDownWhileModeMenuStaysVisible` 并新增展开菜单断言（推荐/热门项存在），截图确认玻璃按钮、菜单尾部勾选、标题=当前模式；首页单测 18/18；Debug 编译通过。图标暂用 `list.bullet.rectangle`，如需与附图完全一致可再换 SF Symbol。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (182) 出包，IPA SHA-256 `b778a88f49db8709a116ca9901a76dbefb611f2f388a4db855a146c55108e27c`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (182)`；真机截图（`build/logs/device-182-home.png`）确认标题=当前模式、玻璃菜单按钮与间距正常。
+
+## 2026-11-15 模式菜单图标/勾选位置/宽度优化 / 1.1.4 Build 183
+
+- 用户三点要求：①图标用 `line.3.horizontal.decrease`；②选中钩放右侧；③菜单窄一点。
+- 实现：`HomeTopBarModeMenu` 由 SwiftUI `Menu` 改为 UIKit `UIButton + UIMenu`（`UIViewRepresentable`，外包圆形 `glassEffect`）。UIMenu `.singleSelection` + `UIAction.state=.on` 原生把勾选放在右侧、菜单宽度随内容收窄；图标改 `line.3.horizontal.decrease`。SwiftUI Menu 在不同 OS 会把钩挪左且菜单偏宽，故换原生。
+- 验证：模拟器菜单截图确认图标=三条递减横线、菜单窄、勾选在「推荐」右侧；UI 用例（菜单项改按标题查询）1/1、首页单测 18/18；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 183 出包与安装记录见后续。

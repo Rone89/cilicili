@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Actions wired by the root tab shell for the home top bar.
 struct HomeTopBarActions {
@@ -93,40 +94,56 @@ private struct HomeTopBarTitle: View {
     }
 }
 
-/// Liquid-glass icon button that opens a menu to pick the feed mode. The
-/// selected mode is marked with a trailing checkmark.
+/// Liquid-glass icon button that opens a native single-selection menu to pick
+/// the feed mode. UIKit's UIMenu keeps the checkmark on the trailing edge and
+/// sizes the menu to its content (narrow), which SwiftUI's Menu does not
+/// guarantee across OS versions.
 private struct HomeTopBarModeMenu: View {
     let mode: HomeFeedMode
     let onSelect: (HomeFeedMode) -> Void
 
     var body: some View {
-        Menu {
-            ForEach(HomeFeedMode.allCases) { item in
-                Button {
-                    guard item != mode else { return }
-                    onSelect(item)
-                } label: {
-                    HStack {
-                        Text(item.title)
-                        if item == mode {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .accessibilityIdentifier("home.feed.mode.\(item.rawValue)")
+        HomeModeMenuButton(mode: mode, onSelect: onSelect)
+            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+            .glassEffect(.regular.interactive(), in: Circle())
+    }
+}
+
+private struct HomeModeMenuButton: UIViewRepresentable {
+    let mode: HomeFeedMode
+    let onSelect: (HomeFeedMode) -> Void
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.showsMenuAsPrimaryAction = true
+        button.tintColor = .label
+        let configuration = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        button.setImage(
+            UIImage(systemName: "line.3.horizontal.decrease", withConfiguration: configuration),
+            for: .normal
+        )
+        button.accessibilityIdentifier = "home.feed.modeMenu"
+        button.accessibilityLabel = "切换推荐或热门"
+        button.menu = makeMenu()
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.accessibilityValue = mode.title
+        button.menu = makeMenu()
+    }
+
+    private func makeMenu() -> UIMenu {
+        let actions = HomeFeedMode.allCases.map { item in
+            UIAction(
+                title: item.title,
+                state: item == mode ? .on : .off
+            ) { _ in
+                guard item != mode else { return }
+                onSelect(item)
             }
-        } label: {
-            Image(systemName: "list.bullet.rectangle")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: Circle())
         }
-        .accessibilityLabel("切换推荐或热门")
-        .accessibilityValue(mode.title)
-        .accessibilityIdentifier("home.feed.modeMenu")
+        return UIMenu(title: "", options: .singleSelection, children: actions)
     }
 }
 
