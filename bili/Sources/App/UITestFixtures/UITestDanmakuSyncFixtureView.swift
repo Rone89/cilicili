@@ -89,27 +89,39 @@ struct UITestDanmakuSyncFixtureView: View {
 
     static func makeProbeItems() -> [DanmakuItem] {
         let colors: [UInt32] = [0xFFFFFF, 0x55D6FF, 0xFFD6E7, 0xB7FF8A]
+        let texts = [
+            "正如蓝宝石所言",
+            "五千人blg决赛加涨然单人路对线",
+            "加油啊",
+            "BLG能否击败GEN?",
+            "上单这个版本很难carry",
+            "666",
+            "分析师牛逼",
+            "这波BP有问题啊",
+        ]
         var items: [DanmakuItem] = []
-        for index in 0..<45 {
-            let mode: Int
-            if index % 9 == 0 {
-                mode = 5
-            } else if index % 9 == 4 {
-                mode = 4
-            } else {
-                mode = 1
-            }
-            // 密集压测：≈12 条/秒，超过 430×242 竖屏画带 6 条泳道的吞吐，
-            // 验证排队进场（背压）而不是整批丢弃。
-            let time = Double(index) * 0.085 + 0.4
-            let text = "同步层探针弹幕 \(index) 🐶 ABC 123 密集压力测试"
+        // 真实密度：≈2.2 条/秒稳态（竖屏速度基准后吞吐 ≈4 条/秒，应有富余）。
+        for index in 0..<132 {
+            let mode = index % 11 == 0 ? 5 : (index % 11 == 4 ? 4 : 1)
+            let time = 0.6 + Double(index) * 0.45
             items.append(DanmakuItem(
                 id: "probe-\(index)",
                 time: time,
                 mode: mode,
                 fontSize: 25,
                 color: colors[index % 4],
-                text: text
+                text: texts[index % texts.count]
+            ))
+        }
+        // 密集簇：t≈10s 八连发，验证排队吸收后继续平滑进场。
+        for burst in 0..<8 {
+            items.append(DanmakuItem(
+                id: "burst-\(burst)",
+                time: 10.0 + Double(burst) * 0.12,
+                mode: 1,
+                fontSize: 25,
+                color: colors[burst % 4],
+                text: "簇发弹幕\(burst)号排队测试"
             ))
         }
         return items
@@ -136,12 +148,14 @@ struct UITestDanmakuSyncFixtureView: View {
             writer.add(input)
             writer.startWriting()
             writer.startSession(atSourceTime: .zero)
-            for frame in 0..<120 {
+            // 60s @15fps：拉长视频避免循环 resync 干扰进场节奏观察。
+            // 渐变内容与帧号无关，共享同一像素缓冲即可。
+            for frame in 0..<900 {
                 while !input.isReadyForMoreMediaData {
                     Thread.sleep(forTimeInterval: 0.005)
                 }
                 let buffer = Self.makeFrame(adaptor: adaptor, frameIndex: frame)
-                let seconds = Double(frame) / 30.0
+                let seconds = Double(frame) / 15.0
                 let presentationTime = CMTime(seconds: seconds, preferredTimescale: 600)
                 adaptor.append(buffer, withPresentationTime: presentationTime)
             }

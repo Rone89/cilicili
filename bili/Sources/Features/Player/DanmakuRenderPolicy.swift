@@ -14,6 +14,15 @@ enum DanmakuRenderPolicy {
         item.isScrolling ? (viewportWidth > 640 ? 8.4 : 7.2) : 4.2
     }
 
+    /// 滚动弹幕固定速度（pt/秒）：时长 =（画布宽 + 位图宽）/ 速度。
+    /// 速度取横屏既有校准（(852+187)/8.4 ≈ 124），竖屏画布窄则时长自然缩短，
+    /// 观感速度两个方向一致；弹幕位图随文本长度变化，飞行距离同步伸缩。
+    static func scrollDuration(viewportWidth: CGFloat, bitmapWidth: CGFloat) -> TimeInterval {
+        let canvasWidth = max(viewportWidth, 1)
+        let width = max(bitmapWidth, 1)
+        return Double((canvasWidth + width) / 124)
+    }
+
     static func font(for item: DanmakuItem, viewportWidth: CGFloat, scale: Double,
                      weight: DanmakuFontWeightOption) -> UIFont {
         let compact: CGFloat = viewportWidth > 640 ? 0.86 : 0.70

@@ -148,7 +148,8 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
     // MARK: Scheduling backpressure（竖屏少泳道下的连续进场）
 
     /// 泳道占满时弹幕排队等下一拍重试，而不是被永久丢弃；泳道释放后继续进场。
-    /// 400×200 画布 + 100% 区域 = 6 条滚动泳道；10 字文本泳道占用 ≈ 2.3s。
+    /// 400×200 画布 + 100% 区域 = 6 条滚动泳道；10 字文本（位图 ≈187pt）
+    /// 时长 (400+187)/124 ≈ 4.7s，尾端被扫过 ≈ 开始 + 1.5s。
     func testBusyLanesQueueInsteadOfDropping() throws {
         let (view, window) = try makeAttachedView(width: 400, height: 200)
         defer { window.isHidden = true }
@@ -165,13 +166,13 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
         XCTAssertEqual(view.activeDanmakuCount, 6)
         XCTAssertEqual(view.debugPendingDanmakuCount, 6)
 
-        // 泳道仍被占（尾端 2.69s 后才被扫过）：排队继续等待，不丢弃。
-        view.debugScheduleForTesting(at: 2.0)
+        // 泳道仍被占（尾端 1.91s 后才被扫过）：排队继续等待，不丢弃。
+        view.debugScheduleForTesting(at: 1.0)
         XCTAssertEqual(view.activeDanmakuCount, 6)
         XCTAssertEqual(view.debugPendingDanmakuCount, 6)
 
-        // 泳道释放（2.69s ≤ 2.8s 且仍在 3s 排队宽限内）：排队的 6 条继续进场。
-        view.debugScheduleForTesting(at: 2.8)
+        // 泳道释放（1.91s ≤ 2.0s 且仍在 3s 排队宽限内）：排队的 6 条继续进场。
+        view.debugScheduleForTesting(at: 2.0)
         XCTAssertEqual(view.activeDanmakuCount, 12)
         XCTAssertEqual(view.debugPendingDanmakuCount, 0)
 

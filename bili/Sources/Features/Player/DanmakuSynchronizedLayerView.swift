@@ -563,6 +563,10 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             return .skipped
         }
         let mode: DanmakuSyncMode
+        let effectiveStart = max(plannedStart, currentTime)
+        let cached = cachedText(for: item, configuration: configuration)
+        // 滚动弹幕按固定速度（pt/秒）计算时长：竖屏画布窄、时长自然更短，
+        // 与横屏观感速度一致，泳道周转也更快。静态弹幕仍用固定展示时长。
         let duration: Double
         if item.isTopAnchored {
             mode = .top
@@ -572,10 +576,11 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             duration = DanmakuRenderPolicy.duration(for: item, viewportWidth: viewportWidth)
         } else {
             mode = .scroll
-            duration = DanmakuRenderPolicy.duration(for: item, viewportWidth: viewportWidth)
+            duration = DanmakuRenderPolicy.scrollDuration(
+                viewportWidth: viewportWidth,
+                bitmapWidth: cached.size.width
+            )
         }
-        let effectiveStart = max(plannedStart, currentTime)
-        let cached = cachedText(for: item, configuration: configuration)
         let allowsOverlap = configuration.settings.danmakuKit.allowsDanmakuOverlap
         let lane: Int?
         switch mode {
