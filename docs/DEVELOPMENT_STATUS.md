@@ -1086,3 +1086,10 @@
 - 验证：新增 fixture `mineTopBar` + `MineTopBarUITests` 2/2（标题/搜索按钮存在且 root 隐藏导航栏；点按钮展开搜索框、输入过滤、取消恢复）；`SearchScrollRetentionUITests` 我的页相关 2/2 不受影响（该 fixture 自带搜索框）；模拟器截图确认我的页标题+圆形玻璃搜索按钮；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (187) 出包，IPA SHA-256 `de9b414ed722d40ee4ad8e9251dd71d40a4a83ceeb8ed47d157fae36d77fdb90`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (187)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 我的页搜索按钮↔搜索框过渡动画 / 1.1.4 Build 188
+
+- 用户反馈：我的页点搜索按钮展开搜索框没有过渡动画。
+- 实现：`MineTopBar` 给 `isSearching` 切换加 `.animation(.smooth(duration: 0.3))`；搜索框以 `.scale(anchor: .trailing)+.opacity` 从按钮一侧缩放展开、标题淡出，取消时反向收回。
+- 验证：逐帧探针确认中间态搜索框从右侧缩放展开（非瞬切）；`MineTopBarUITests` 2/2；探针已清理；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 188 出包与安装记录见后续。

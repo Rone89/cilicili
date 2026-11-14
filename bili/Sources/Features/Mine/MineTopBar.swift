@@ -14,6 +14,7 @@ struct MineTopBar: View {
         HStack(spacing: 10) {
             if isSearching {
                 searchField
+                    .transition(.scale(scale: 0.85, anchor: .trailing).combined(with: .opacity))
                 Button("取消") {
                     isSearchFocused.wrappedValue = false
                     searchText = ""
@@ -24,17 +25,21 @@ struct MineTopBar: View {
                 .foregroundStyle(.primary)
                 .fixedSize()
                 .accessibilityIdentifier("mine.search.cancel")
+                .transition(.opacity)
             } else {
                 if titleState.progress <= 0.9 {
                     MineTopBarTitle(state: titleState)
+                        .transition(.opacity)
                 }
                 Spacer(minLength: 8)
                 searchButton
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 16)
         .frame(height: MineTopBarLayout.controlHeight)
         .frame(maxWidth: .infinity)
+        .animation(.smooth(duration: 0.3), value: isSearching)
     }
 
     private var searchButton: some View {
