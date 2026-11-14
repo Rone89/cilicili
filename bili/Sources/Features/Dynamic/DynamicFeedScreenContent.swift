@@ -24,6 +24,7 @@ struct DynamicFeedScreenContent: View {
     let isLoggedIn: Bool
     var selectedUP: VideoOwner? = nil
     var onChooseUP: (() -> Void)? = nil
+    var titleState: FeedChromeTitleState? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -37,7 +38,8 @@ struct DynamicFeedScreenContent: View {
                 isLoggedIn: isLoggedIn,
                 contentWidth: contentWidth,
                 horizontalInset: horizontalInset,
-                selectedUP: selectedUP, onChooseUP: onChooseUP
+                selectedUP: selectedUP, onChooseUP: onChooseUP,
+                titleState: titleState
             )
         }
         .background(Color(.systemBackground))

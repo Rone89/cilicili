@@ -1062,3 +1062,10 @@
 - 验证：模拟器以 `visibleRootTabs=[home,dynamic]` 配置抓菜单截图，确认「推荐✓/热门」+分隔线+「直播/我的/搜索」同菜单、网格按钮消失、底栏仅剩可见 tab；首页单测 18/18、菜单 UI 用例 1/1；探针已清理、模拟器默认配置已恢复；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (184) 出包，IPA SHA-256 `d337d8a0fa3c92da497468de1d2f7ec5ca1c7a1b84f3e47d323ed76447d4b04f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (184)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 动态页采用首页式顶栏（大标题 + 当前选项玻璃菜单按钮）/ 1.1.4 Build 185
+
+- 用户需求：动态页用和首页一样的大标题；顶部选项（全部/投稿/番剧/专栏/UP）改成一个液态玻璃按钮，按钮直接显示当前选项，点击展开切换菜单。
+- 实现：`HomeChromeTitleState` 泛化为 `FeedChromeTitleState`（环境键 `feedChromeTitleState`，首页同步改名）；新增 `DynamicTopBar`（大标题「动态」随滚动淡出 + 玻璃胶囊按钮显示当前 kind.title + chevron.down，`UIButton+UIMenu` 单选右钩列出可见 kinds）。`DynamicContentRoot` 以 `safeAreaInset` 挂顶栏、root 隐藏原生导航栏、移除旧 `DynamicFeedToolbarPicker` 分段控件；新增 `isRootTabContent` 环境标记区分 root/push（push 保留返回键）。`DynamicFeedScrollContent` 上报滚动偏移驱动标题淡出（含刷新 inset 冻结）。单选 kind 不显示选项按钮、保留原隐藏导航栏行为。
+- 验证：动态 tab UI 全套 6/6（含单选隐藏导航栏、push 二级返回键、设置排序）、`FeedChromeTitleStateTests` 5/5、首页模式菜单 UI 1/1、首页单测 8/8；模拟器截图确认动态标题「动态」+「全部 ⌄」玻璃按钮、菜单全部✓/投稿/番剧/专栏/UP；探针已清理；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 185 出包与安装记录见后续。

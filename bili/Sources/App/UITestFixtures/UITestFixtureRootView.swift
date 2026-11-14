@@ -80,6 +80,7 @@ private struct UITestDynamicFeedTabsFixtureView: View {
                 sessionStore: dependencies.sessionStore,
                 pageWidth: 390
             )
+            .environment(\.isRootTabContent, true)
             .navigationTitle("动态")
             .toolbarTitleDisplayMode(.inline)
             .overlay(alignment: .topTrailing) {

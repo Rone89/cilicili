@@ -196,7 +196,7 @@ struct RootTabView: View {
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
                 .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
-                .toolbarVisibility(tab == .home ? .hidden : .visible, for: .navigationBar)
+                .toolbarVisibility((tab == .home || tab == .dynamic) ? .hidden : .visible, for: .navigationBar)
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .navigationTitle(rootNavigationTitle(for: tab))
                 .navigationHistoryTitle(tab.title)
@@ -273,6 +273,7 @@ struct RootTabView: View {
                 rootTabContent(for: tab, detailPath: detailPath)
             }
         }
+        .environment(\.isRootTabContent, true)
     }
 
     @ViewBuilder

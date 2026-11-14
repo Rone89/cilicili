@@ -36,7 +36,7 @@ struct HomeTopBar: View {
     @Environment(\.homeTopBarActions) private var actions
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: HomeViewModel
-    @ObservedObject var titleState: HomeChromeTitleState
+    @ObservedObject var titleState: FeedChromeTitleState
     let modeActions: HomeFeedModeActions
     let scrollActions: HomeFeedScrollActions
     let nativeRefreshActionStore: HomeNativeRefreshActionStore
@@ -83,7 +83,7 @@ enum HomeTopBarLayout {
 
 private struct HomeTopBarTitle: View {
     let title: String
-    @ObservedObject var state: HomeChromeTitleState
+    @ObservedObject var state: FeedChromeTitleState
 
     var body: some View {
         let progress = state.progress
@@ -93,7 +93,7 @@ private struct HomeTopBarTitle: View {
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .fixedSize(horizontal: true, vertical: false)
-            .offset(y: -progress * HomeChromeTitleState.slideDistance)
+            .offset(y: -progress * FeedChromeTitleState.slideDistance)
             .opacity(1 - progress)
             .accessibilityIdentifier("home.feed.title")
             .accessibilityAddTraits(.isHeader)

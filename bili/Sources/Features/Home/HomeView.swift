@@ -5,7 +5,7 @@ struct HomeView: View {
     let actionStore: HomeFeedScreenActionStore
     @ObservedObject private var viewModel: HomeViewModel
     @Binding var detailPath: NavigationPath
-    @StateObject private var titleState = HomeChromeTitleState()
+    @StateObject private var titleState = FeedChromeTitleState()
 
     init(
         viewModel: HomeViewModel,
@@ -26,7 +26,7 @@ struct HomeView: View {
             actionStore: actionStore,
             launchConfiguration: launchConfiguration
         )
-        .environment(\.homeChromeTitleState, titleState)
+        .environment(\.feedChromeTitleState, titleState)
         .safeAreaInset(edge: .top, spacing: 12) {
             HomeTopBar(
                 viewModel: viewModel,

@@ -1,13 +1,13 @@
 import Combine
 import SwiftUI
 
-/// Scroll-driven state for the home root title.
+/// Scroll-driven state for a feed root title (home / dynamic).
 ///
 /// Mirrors Ibili's floating feed title: the title lifts and fades over the
 /// first 44pt of upward scroll, then stays hidden while the feed keeps
 /// scrolling. Kept as a reference type so per-frame scroll updates invalidate
-/// only the navigation chrome instead of the whole home hierarchy.
-final class HomeChromeTitleState: ObservableObject {
+/// only the navigation chrome instead of the whole feed hierarchy.
+final class FeedChromeTitleState: ObservableObject {
     static let fadeDistance: CGFloat = 44
     static let slideDistance: CGFloat = 24
 
@@ -47,15 +47,30 @@ final class HomeChromeTitleState: ObservableObject {
     }
 }
 
-private struct HomeChromeTitleStateKey: EnvironmentKey {
-    static let defaultValue: HomeChromeTitleState? = nil
+private struct FeedChromeTitleStateKey: EnvironmentKey {
+    static let defaultValue: FeedChromeTitleState? = nil
 }
 
 extension EnvironmentValues {
-    /// Optional so previews, fixtures and non-home hosts do not need to
+    /// Optional so previews, fixtures and non-feed hosts do not need to
     /// provide the state object.
-    var homeChromeTitleState: HomeChromeTitleState? {
-        get { self[HomeChromeTitleStateKey.self] }
-        set { self[HomeChromeTitleStateKey.self] = newValue }
+    var feedChromeTitleState: FeedChromeTitleState? {
+        get { self[FeedChromeTitleStateKey.self] }
+        set { self[FeedChromeTitleStateKey.self] = newValue }
+    }
+}
+
+private struct IsRootTabContentKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True when the view is the root of a bottom-tab navigation stack (rather
+    /// than a pushed destination). Feed roots hide the native navigation bar
+    /// and draw their own top chrome; pushed destinations keep the bar so the
+    /// back button remains available.
+    var isRootTabContent: Bool {
+        get { self[IsRootTabContentKey.self] }
+        set { self[IsRootTabContentKey.self] = newValue }
     }
 }

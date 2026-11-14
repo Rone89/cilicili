@@ -1,37 +1,37 @@
 import XCTest
 @testable import bili
 
-final class HomeChromeTitleStateTests: XCTestCase {
+final class FeedChromeTitleStateTests: XCTestCase {
     private let restingInset: CGFloat = 118
 
     func testProgressClampsAtFadeDistance() {
-        XCTAssertEqual(HomeChromeTitleState.progress(forContentOffsetY: -12), 0)
-        XCTAssertEqual(HomeChromeTitleState.progress(forContentOffsetY: 0), 0)
+        XCTAssertEqual(FeedChromeTitleState.progress(forContentOffsetY: -12), 0)
+        XCTAssertEqual(FeedChromeTitleState.progress(forContentOffsetY: 0), 0)
         XCTAssertEqual(
-            HomeChromeTitleState.progress(forContentOffsetY: HomeChromeTitleState.fadeDistance / 2),
+            FeedChromeTitleState.progress(forContentOffsetY: FeedChromeTitleState.fadeDistance / 2),
             0.5,
             accuracy: 0.0001
         )
-        XCTAssertEqual(HomeChromeTitleState.progress(forContentOffsetY: HomeChromeTitleState.fadeDistance), 1)
-        XCTAssertEqual(HomeChromeTitleState.progress(forContentOffsetY: 400), 1)
+        XCTAssertEqual(FeedChromeTitleState.progress(forContentOffsetY: FeedChromeTitleState.fadeDistance), 1)
+        XCTAssertEqual(FeedChromeTitleState.progress(forContentOffsetY: 400), 1)
     }
 
     func testStateIgnoresNegativeOffsetsAndSmallDeltas() {
-        let state = HomeChromeTitleState()
+        let state = FeedChromeTitleState()
 
         state.update(scrollSum: -40, insetsTop: restingInset)
         XCTAssertEqual(state.progress, 0)
 
-        state.update(scrollSum: HomeChromeTitleState.fadeDistance / 2, insetsTop: restingInset)
+        state.update(scrollSum: FeedChromeTitleState.fadeDistance / 2, insetsTop: restingInset)
         XCTAssertEqual(state.progress, 0.5, accuracy: 0.0001)
 
-        state.update(scrollSum: HomeChromeTitleState.fadeDistance / 2 + 0.05, insetsTop: restingInset)
+        state.update(scrollSum: FeedChromeTitleState.fadeDistance / 2 + 0.05, insetsTop: restingInset)
         XCTAssertEqual(state.progress, 0.5, accuracy: 0.0001)
     }
 
     func testResetRestoresVisibleTitle() {
-        let state = HomeChromeTitleState()
-        state.update(scrollSum: HomeChromeTitleState.fadeDistance, insetsTop: restingInset)
+        let state = FeedChromeTitleState()
+        state.update(scrollSum: FeedChromeTitleState.fadeDistance, insetsTop: restingInset)
         XCTAssertEqual(state.progress, 1)
 
         state.reset()
@@ -39,7 +39,7 @@ final class HomeChromeTitleStateTests: XCTestCase {
     }
 
     func testRefreshInsetInflationFreezesTitleVisible() {
-        let state = HomeChromeTitleState()
+        let state = FeedChromeTitleState()
         // Establish the resting inset.
         state.update(scrollSum: 0, insetsTop: restingInset)
 
@@ -53,14 +53,14 @@ final class HomeChromeTitleStateTests: XCTestCase {
 
         // Once the inset settles back, normal scroll-driven fading resumes.
         state.update(scrollSum: 0, insetsTop: restingInset)
-        state.update(scrollSum: HomeChromeTitleState.fadeDistance, insetsTop: restingInset)
+        state.update(scrollSum: FeedChromeTitleState.fadeDistance, insetsTop: restingInset)
         XCTAssertEqual(state.progress, 1)
     }
 
     func testExplicitRefreshFlagAlsoFreezesTitle() {
-        let state = HomeChromeTitleState()
+        let state = FeedChromeTitleState()
         state.update(scrollSum: 0, insetsTop: restingInset)
-        state.update(scrollSum: HomeChromeTitleState.fadeDistance, insetsTop: restingInset)
+        state.update(scrollSum: FeedChromeTitleState.fadeDistance, insetsTop: restingInset)
         XCTAssertEqual(state.progress, 1)
 
         state.update(scrollSum: 400, insetsTop: restingInset, isRefreshing: true)

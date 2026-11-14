@@ -11,6 +11,7 @@ struct DynamicFeedScrollContent: View {
     let horizontalInset: CGFloat
     var selectedUP: VideoOwner? = nil
     var onChooseUP: (() -> Void)? = nil
+    var titleState: FeedChromeTitleState? = nil
 
     var body: some View {
         ScrollView {
@@ -40,10 +41,22 @@ struct DynamicFeedScrollContent: View {
             refresh: { refreshRequestID &+= 1 }
         ))
         .contentMargins(.top, 0, for: .scrollContent)
+        .onScrollGeometryChange(for: DynamicTitleScrollSample.self) { geometry in
+            DynamicTitleScrollSample(
+                sum: geometry.contentOffset.y + geometry.contentInsets.top,
+                insetsTop: geometry.contentInsets.top
+            )
+        } action: { _, sample in
+            titleState?.update(
+                scrollSum: sample.sum,
+                insetsTop: sample.insetsTop,
+                isRefreshing: viewModel.isRefreshing
+            )
+        }
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemBackground))
-        .nativeTopScrollEdgeEffect()
+        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
         .task(id: DynamicFeedLoadIdentity(model: ObjectIdentifier(viewModel), isLoggedIn: isLoggedIn)) {
             if viewModel.feedKind != .all {
                 topUploaderStripViewModel?.loadTopUploaderStripIfNeeded()
@@ -144,4 +157,9 @@ private struct DynamicFeedTopUploaderStrip: View {
 private struct DynamicFeedLoadIdentity: Hashable {
     let model: ObjectIdentifier
     let isLoggedIn: Bool
+}
+
+private struct DynamicTitleScrollSample: Equatable {
+    let sum: CGFloat
+    let insetsTop: CGFloat
 }

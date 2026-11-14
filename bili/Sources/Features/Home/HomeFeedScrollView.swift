@@ -21,7 +21,7 @@ private struct HomeTitleScrollSample: Equatable {
 struct HomeFeedScrollView<FeedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.rootTabScrollRequest) private var rootTabScrollRequest
-    @Environment(\.homeChromeTitleState) private var chromeTitleState
+    @Environment(\.feedChromeTitleState) private var chromeTitleState
     @State private var isAtTop = false
     @ObservedObject var viewModel: HomeViewModel
     @Binding var viewportState: HomeFeedViewportState
