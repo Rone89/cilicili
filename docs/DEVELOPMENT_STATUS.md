@@ -996,3 +996,10 @@
 - 验证：模拟器截图确认顶栏底边渐变过渡、无硬线；`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug 编译通过。
 - 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
 - Release 1.1.4 (176) 出包，IPA SHA-256 `ad5e603e94036b55ca6210262524875f0f58a394c967380120a6a3987366ebe4`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (176)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 顶部边缘改用系统官方 .soft 效果 / 1.1.4 Build 177
+
+- 用户反馈：176 的渐变模糊是自写遮罩，要求改用官方 `.soft`  scroll edge 效果。
+- 重构：删除自写 `HomeTopEdgeBackground`，`HomeTopBar` 改为透明；`HomeView` 由 `safeAreaInset` 改为 `overlay(alignment: .top)`，让滚动视图顶到顶栏下方；`HomeFeedScrollView` 顶部 `contentMargins` 设为顶栏高度 44pt，使内容在顶栏下起始并由系统 `scrollEdgeEffectStyle(.soft, for: .top)`（经 `nativeTopScrollEdgeEffect`）渲染官方软边缘。顶栏仍属首页内容，转场随页面滑动不变。
+- 验证：模拟器静止/滚动截图确认顶部为系统软边缘模糊、无硬边无自写渐变；`HomeChromeTitleStateTests`/`HomeFeedModeSwitchTests`/`HomeFeedSnapshotStorageTests` 16/16、标题淡出 UI 用例 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 177 出包与安装记录见后续。

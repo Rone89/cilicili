@@ -57,9 +57,6 @@ struct HomeTopBar: View {
         .padding(.horizontal, 16)
         .frame(height: HomeTopBarLayout.controlHeight)
         .frame(maxWidth: .infinity)
-        .background(alignment: .top) {
-            HomeTopEdgeBackground()
-        }
     }
 
     private func switchMode(_ mode: HomeFeedMode) {
@@ -72,46 +69,8 @@ struct HomeTopBar: View {
     }
 }
 
-/// Soft top edge matching Ibili: a compositor-backed material masked by a
-/// top-to-bottom gradient so the chrome melts into the feed instead of ending
-/// in a hard line. Extends below the bar row and up under the status bar.
-private struct HomeTopEdgeBackground: View {
-    var body: some View {
-        ZStack(alignment: .top) {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.9), location: 0.62),
-                            .init(color: .black.opacity(0.35), location: 0.85),
-                            .init(color: .clear, location: 1),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            LinearGradient(
-                stops: [
-                    .init(color: Color.black.opacity(0.20), location: 0),
-                    .init(color: Color.black.opacity(0.08), location: 0.6),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .frame(height: HomeTopBarLayout.edgeBackgroundHeight)
-        .frame(maxWidth: .infinity)
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-    }
-}
-
-private enum HomeTopBarLayout {
+enum HomeTopBarLayout {
     static let controlHeight: CGFloat = 44
-    static let edgeBackgroundHeight: CGFloat = 126
 }
 
 private struct HomeTopBarTitle: View {
