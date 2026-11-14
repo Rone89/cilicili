@@ -1108,4 +1108,5 @@
 - 用户需求：搜索页种类选择器只有选中项显示文字，未选中只显示图标。
 - 实现：`SearchScopeBar` 按钮 label 由 `Label(图标+文字)` 改为 `HStack{ Image; if selected { Text } }`；选中横向内边距 16（图标+文字胶囊），未选中内边距 0、最小 44×44（纯图标圆形胶囊），切换加 `.smooth(0.25)` 动画。无障碍标签仍含种类名。
 - 验证：`testSearchScopeBarScrollsWithResultsAndSwitchesDirectly` 通过，截图确认选中「用户」=图标+文字实心胶囊、其余=纯图标圆形；Debug 编译通过。
-- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。Build 190 出包与安装记录见后续。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (190) 出包，IPA SHA-256 `8407d4cbcbf6afb16441038f8d6e8eb98f0aa7853496dde7a5e209ee07d4291f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (190)`（bundle ID `app.bamboo2779.brussels691`）。
