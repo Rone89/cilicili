@@ -284,6 +284,33 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testPortraitMoreControlsOpensDanmakuSettings() {
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["-cc.bili.videoDetail.autoplayEnabled.v1", "NO"]
+        )
+        tapPlayerControl(app.buttons["ui.player.more"], in: app)
+
+        let playbackSettings = app.navigationBars["播放设置"]
+        XCTAssertTrue(playbackSettings.waitForExistence(timeout: 5))
+        let entry = app.buttons["弹幕设置"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.tap()
+
+        let danmakuSettings = app.navigationBars["弹幕设置"]
+        XCTAssertTrue(danmakuSettings.waitForExistence(timeout: 5))
+        let portraitVisibility = app.switches["ui.videoDetail.sheet.danmakuSettings.hidesInPortrait"]
+        XCTAssertTrue(portraitVisibility.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sliders["DanmakuKit 弹幕显示区域"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Portrait danmaku settings from playback settings"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        danmakuSettings.buttons.firstMatch.tap()
+        XCTAssertTrue(playbackSettings.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testDanmakuDisplayAreaPersistsAcrossRelaunch() {
         let app = XCUIApplication()
         app.launchArguments = [

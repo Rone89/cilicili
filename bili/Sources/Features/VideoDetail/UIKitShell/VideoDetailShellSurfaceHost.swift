@@ -1782,7 +1782,8 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                     NavigationLink {
                         SurfaceOnlyDanmakuSettingsPage(
                             detailViewModel: detailViewModel,
-                            toggleDanmaku: onToggleDanmaku
+                            toggleDanmaku: onToggleDanmaku,
+                            usesLandscapePanel: false
                         )
                     } label: {
                         Label("弹幕设置", systemImage: "text.bubble")
@@ -2186,7 +2187,8 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
             case .danmaku:
                 SurfaceOnlyDanmakuSettingsPage(
                     detailViewModel: detailViewModel,
-                    toggleDanmaku: onToggleDanmaku
+                    toggleDanmaku: onToggleDanmaku,
+                    usesLandscapePanel: true
                 )
                 .scrollContentBackground(.hidden)
             case .rate:
@@ -3116,17 +3118,30 @@ private struct SurfaceOnlyAudioSwitchingIndicator: View {
 private struct SurfaceOnlyDanmakuSettingsPage: View {
     @ObservedObject var detailViewModel: VideoDetailViewModel
     let toggleDanmaku: () -> Void
+    let usesLandscapePanel: Bool
 
     var body: some View {
-        // 与一级页面共用同一套卡片容器（12pt 内边距、圆角 14、同一底色），
-        // 不再使用 Form，避免 iOS 26 分组卡片的额外内缩与更大圆角。
-        DanmakuSettingsLandscapePanelContent(
-            store: detailViewModel.danmakuSettingsRenderStore,
-            summary: settingsSummary,
-            hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
-            toggleDanmaku: toggleDanmaku,
-            updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) }
-        )
+        Group {
+            if usesLandscapePanel {
+                DanmakuSettingsLandscapePanelContent(
+                    store: detailViewModel.danmakuSettingsRenderStore,
+                    summary: settingsSummary,
+                    hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
+                    toggleDanmaku: toggleDanmaku,
+                    updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) }
+                )
+            } else {
+                DanmakuSettingsSheetContent(
+                    store: detailViewModel.danmakuSettingsRenderStore,
+                    summary: settingsSummary,
+                    hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
+                    toggleDanmaku: toggleDanmaku,
+                    updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) }
+                )
+                .navigationTitle("弹幕设置")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+        }
     }
 
     private var settingsSummary: String {

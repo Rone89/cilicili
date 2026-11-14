@@ -43,7 +43,7 @@ struct DanmakuSyncLaneAllocator {
         guard allowsOverlap else { return nil }
         let lane = Self.earliestFreeLane(in: scrollingFreeAt)
         scrollingCursor = (lane + 1) % count
-        scrollingFreeAt[lane] = reusableAt
+        scrollingFreeAt[lane] = max(scrollingFreeAt[lane], reusableAt)
         return lane
     }
 
@@ -79,7 +79,7 @@ struct DanmakuSyncLaneAllocator {
         }
         guard allowsOverlap else { return nil }
         let lane = Self.earliestFreeLane(in: pool)
-        pool[lane] = startTime + duration
+        pool[lane] = max(pool[lane], startTime + duration)
         return lane
     }
 }
@@ -158,7 +158,7 @@ private final class DanmakuSyncCachedText {
 /// 主线程仅做 0.25s 一次的物化/回收排程，不做逐帧绘制。
 @MainActor
 final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
-    private enum DanmakuSyncMode {
+    private enum DanmakuSyncMode: Equatable {
         case scroll
         case top
         case bottom
@@ -166,6 +166,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     private struct SyncActiveEntry {
         let layer: DanmakuSyncBulletLayer
+        let mode: DanmakuSyncMode
         let startTime: Double
         let endTime: Double
     }
@@ -180,6 +181,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     private static let schedulerInterval: Double = 0.25
     private static let schedulingLookAhead: Double = 2
+    private static let minimumRollingStartInterval: Double = 0.05
     private static let seekResyncThreshold: Double = 1.25
     private static let recycleGrace: Double = 0.2
     /// 排队宽限：弹幕因泳道/容量繁忙而等待超过该时长后放弃。泳道复用最坏
@@ -243,6 +245,10 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         scheduleItems(through: now + Self.schedulingLookAhead, currentTime: now)
     }
 
+    func debugResynchronizeForTesting(at now: Double) {
+        resynchronizePresentation(at: now)
+    }
+
     /// 首颗滚动弹幕动画的 beginTime（媒体时间）：断言迟到弹幕被钳制到右缘进场。
     var debugFirstScrollAnimationBeginTime: Double? {
         for entry in activeEntries {
@@ -251,6 +257,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             }
         }
         return nil
+    }
+
+    var debugScrollAnimationBeginTimes: [Double] {
+        activeEntries.compactMap { entry in
+            entry.layer.animation(forKey: "danmaku.sync.scroll")?.beginTime
+        }.sorted()
     }
 
     /// 诊断：同步层/容器/首个活动子弹的 frame、opacity、contents 状态。
@@ -539,6 +551,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
                 parameters: parameters,
                 configuration: configuration,
                 currentTime: currentTime,
+                horizon: horizon,
                 maximumActiveCount: maximumActiveCount
             ) {
             case .placed, .skipped:
@@ -562,6 +575,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         parameters: SyncLayoutParameters,
         configuration: DanmakuOverlayConfiguration,
         currentTime: Double,
+        horizon: Double,
         maximumActiveCount: Int
     ) -> ItemSchedulingOutcome {
         // 游标会因窗口重发而回退重扫：已物化的物品必须跳过，否则同一句
@@ -580,7 +594,8 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             return .skipped
         }
         let mode: DanmakuSyncMode
-        let effectiveStart = max(plannedStart, currentTime)
+        let requestedStart = max(plannedStart, currentTime)
+        var effectiveStart = requestedStart
         let cached = cachedText(for: item, configuration: configuration)
         // 滚动弹幕按固定速度（pt/秒）计算时长：竖屏画布窄、时长自然更短，
         // 与横屏观感速度一致，泳道周转也更快。静态弹幕仍用固定展示时长。
@@ -597,6 +612,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
                 viewportWidth: viewportWidth,
                 bitmapWidth: cached.size.width
             )
+            guard let spacedStart = rollingStartTime(
+                afterSpacingFromActiveStarts: requestedStart,
+                horizon: horizon,
+                latestAllowedStart: plannedStart + Self.lateEntryGrace
+            ) else { return .busy }
+            effectiveStart = spacedStart
         }
         let allowsOverlap = configuration.settings.danmakuKit.allowsDanmakuOverlap
         let lane: Int?
@@ -663,7 +684,40 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             startTime: effectiveStart,
             duration: duration
         )
-        activeEntries.append(SyncActiveEntry(layer: bulletLayer, startTime: effectiveStart, endTime: endTime))
+        activeEntries.append(SyncActiveEntry(
+            layer: bulletLayer,
+            mode: mode,
+            startTime: effectiveStart,
+            endTime: endTime
+        ))
+    }
+
+    /// Stagger only starts that would bunch against already admitted rolling comments.
+    /// The active list is bounded by the existing load cap, and old starts disappear as
+    /// their layers recycle, so this adds no separate queue or timeline state.
+    private func rollingStartTime(
+        afterSpacingFromActiveStarts requestedStart: Double,
+        horizon: Double,
+        latestAllowedStart: Double
+    ) -> Double? {
+        let existingStarts = activeEntries.compactMap { entry -> Double? in
+            guard entry.mode == .scroll else { return nil }
+            return entry.startTime
+        }.sorted()
+
+        var candidate = requestedStart
+        let spacingTolerance = 0.000_001
+        for existingStart in existingStarts {
+            if candidate >= existingStart + Self.minimumRollingStartInterval - spacingTolerance {
+                continue
+            }
+            if candidate <= existingStart - Self.minimumRollingStartInterval + spacingTolerance {
+                break
+            }
+            candidate = existingStart + Self.minimumRollingStartInterval
+        }
+        guard candidate <= horizon, candidate <= latestAllowedStart else { return nil }
+        return candidate
     }
 
     // MARK: Animation construction

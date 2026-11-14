@@ -45,6 +45,18 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
         XCTAssertTrue((0..<2).contains(overflow!))
     }
 
+    func testOverlapFallbackKeepsLongerLaneReservation() {
+        var allocator = DanmakuSyncLaneAllocator(laneCount: 1)
+        _ = allocator.reserveScrollingLane(at: 0, reusableAt: 10, allowsOverlap: false)
+        _ = allocator.reserveScrollingLane(at: 1, reusableAt: 2, allowsOverlap: true)
+        XCTAssertEqual(allocator.scrollingFreeAt[0], 10)
+
+        _ = allocator.reserveTopLane(at: 0, duration: 10, allowsOverlap: false)
+        _ = allocator.reserveTopLane(at: 0, duration: 10, allowsOverlap: false)
+        _ = allocator.reserveTopLane(at: 1, duration: 1, allowsOverlap: true)
+        XCTAssertEqual(allocator.topFreeAt[0], 10)
+    }
+
     func testOverlapDisabledSkipsWhenAllLanesBusy() {
         var allocator = DanmakuSyncLaneAllocator(laneCount: 2)
         XCTAssertNotNil(allocator.reserveScrollingLane(at: 0, reusableAt: 10, allowsOverlap: false))
@@ -191,10 +203,61 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
         view.debugScheduleForTesting(at: 2.0)
         XCTAssertEqual(view.activeDanmakuCount, 12)
         XCTAssertEqual(view.debugPendingDanmakuCount, 0)
+        let beginsAfterRetry = view.debugScrollAnimationBeginTimes
+        XCTAssertEqual(beginsAfterRetry.count, 12)
+        for (actual, expected) in zip(beginsAfterRetry.suffix(6), [2.0, 2.05, 2.10, 2.15, 2.20, 2.25]) {
+            XCTAssertEqual(actual, expected, accuracy: 0.001)
+        }
 
         view.debugScheduleForTesting(at: 4.0)
         XCTAssertEqual(view.activeDanmakuCount, 12)
         XCTAssertEqual(view.debugPendingDanmakuCount, 0)
+    }
+
+    /// Same-time rolling comments should enter in small, deterministic steps.
+    /// A timestamp already separated from the burst keeps its original media start.
+    func testBunchedRollingStartsAreSpacedWithoutMovingIsolatedTimestamp() throws {
+        let (view, window) = try makeAttachedView(width: 400, height: 200)
+        defer { window.isHidden = true }
+
+        view.apply(configuration: Self.configuration(
+            items: [
+                DanmakuItem(id: "burst-a", time: 0.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "同刻弹幕一"),
+                DanmakuItem(id: "burst-b", time: 0.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "同刻弹幕二"),
+                DanmakuItem(id: "burst-c", time: 0.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "同刻弹幕三"),
+                DanmakuItem(id: "isolated", time: 0.8, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "独立时间戳"),
+            ],
+            settings: DanmakuSettings(danmakuKit: .init(displayArea: .full))
+        ))
+
+        let begins = view.debugScrollAnimationBeginTimes
+        XCTAssertEqual(begins.count, 4)
+        for (actual, expected) in zip(begins, [0.4, 0.45, 0.5, 0.8]) {
+            XCTAssertEqual(actual, expected, accuracy: 0.001)
+        }
+    }
+
+    func testOverlapAllowedStillSpreadsBunchedRollingStarts() throws {
+        let (view, window) = try makeAttachedView(width: 400, height: 200)
+        defer { window.isHidden = true }
+
+        let items = (0..<7).map { index in
+            DanmakuItem(id: "overlap-\(index)", time: 0.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "允许重叠弹幕 \(index)")
+        }
+        view.apply(configuration: Self.configuration(
+            items: items,
+            settings: DanmakuSettings(danmakuKit: .init(
+                displayArea: .full,
+                allowsDanmakuOverlap: true
+            ))
+        ))
+
+        let begins = view.debugScrollAnimationBeginTimes
+        XCTAssertEqual(view.activeDanmakuCount, 7)
+        XCTAssertEqual(begins.count, 7)
+        for pair in zip(begins, begins.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(pair.1 - pair.0, 0.049)
+        }
     }
 
     /// 迟到弹幕（重放回看窗口内）从右缘进场：动画 beginTime 钳制到当前媒体时刻。
@@ -213,6 +276,36 @@ final class DanmakuSynchronizedLayerTests: XCTestCase {
         XCTAssertEqual(view.activeDanmakuCount, 1)
         let beginTime = try XCTUnwrap(view.debugFirstScrollAnimationBeginTime)
         XCTAssertEqual(beginTime, 5.0, accuracy: 0.001)
+    }
+
+    /// A seek rebuild clears old scheduled starts, so replayed comments aren't held
+    /// behind entries that belonged to the pre-seek media timeline.
+    func testTimelineResynchronizationResetsRollingStartSpacing() throws {
+        let (view, window) = try makeAttachedView(width: 400, height: 200)
+        defer { window.isHidden = true }
+
+        view.apply(configuration: Self.configuration(
+            items: [
+                DanmakuItem(id: "replay-a", time: 0.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "重放弹幕一"),
+                DanmakuItem(id: "replay-b", time: 0.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "重放弹幕二"),
+                DanmakuItem(id: "future-a", time: 2.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "未来弹幕一"),
+                DanmakuItem(id: "future-b", time: 2.4, mode: 1, fontSize: 25, color: 0xFFFFFF, text: "未来弹幕二"),
+            ],
+            settings: DanmakuSettings(danmakuKit: .init(displayArea: .full))
+        ))
+        view.debugScheduleForTesting(at: 0.5)
+        let beginsBeforeSeek = view.debugScrollAnimationBeginTimes
+        XCTAssertEqual(beginsBeforeSeek.count, 4)
+        for (actual, expected) in zip(beginsBeforeSeek, [0.4, 0.45, 2.4, 2.45]) {
+            XCTAssertEqual(actual, expected, accuracy: 0.001)
+        }
+
+        view.debugResynchronizeForTesting(at: 0.5)
+        let replayBegins = view.debugScrollAnimationBeginTimes
+        XCTAssertEqual(replayBegins.count, 4)
+        for (actual, expected) in zip(replayBegins.prefix(2), [0.5, 0.55]) {
+            XCTAssertEqual(actual, expected, accuracy: 0.001)
+        }
     }
 
     /// 超过排队宽限的弹幕放弃展示，游标前进（不堆积）。
