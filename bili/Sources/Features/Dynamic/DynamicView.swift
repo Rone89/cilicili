@@ -18,6 +18,7 @@ struct DynamicView: View {
 
 struct DynamicContentRoot: View {
     @Environment(\.isRootTabContent) private var isRootTabContent
+    @Environment(\.showsHiddenRootPageSwitcher) private var showsHiddenRootPageSwitcher
     let api: BiliAPIClient
     @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var sessionStore: SessionStore
@@ -45,6 +46,10 @@ struct DynamicContentRoot: View {
 
     private var visibleFeedKinds: [DynamicFeedKind] {
         libraryStore.visibleDynamicFeedKinds
+    }
+
+    private var usesRootNavigationToolbar: Bool {
+        isRootTabContent && (visibleFeedKinds.count > 1 || showsHiddenRootPageSwitcher)
     }
 
     var body: some View {
@@ -81,16 +86,42 @@ struct DynamicContentRoot: View {
                 DynamicInitialFeedContent(isLoggedIn: sessionStore.isLoggedIn)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 12) {
-            DynamicTopBar(
-                titleState: titleState,
-                kinds: visibleFeedKinds,
-                currentKind: selectedFeed,
-                onSelect: { selectedFeed = $0 }
-            )
+        .safeAreaInset(edge: .top, spacing: usesRootNavigationToolbar ? 0 : 12) {
+            if usesRootNavigationToolbar {
+                Color.clear
+                    .frame(height: 12)
+                    .accessibilityHidden(true)
+            } else {
+                DynamicTopBar(
+                    titleState: titleState,
+                    kinds: visibleFeedKinds,
+                    currentKind: selectedFeed,
+                    onSelect: { selectedFeed = $0 }
+                )
+            }
         }
-        .toolbar(isRootTabContent ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(
+            usesRootNavigationToolbar ? .visible : (isRootTabContent ? .hidden : .visible),
+            for: .navigationBar
+        )
         .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            if usesRootNavigationToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    DynamicTopBarTitle(state: titleState)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+            if usesRootNavigationToolbar && visibleFeedKinds.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    DynamicFeedKindMenuButton(
+                        kinds: visibleFeedKinds,
+                        current: selectedFeed,
+                        onSelect: { selectedFeed = $0 }
+                    )
+                }
+            }
+        }
         .onChange(of: selectedFeed) { _, kind in
             titleState.reset()
             if kind == .up, selectedUP == nil {

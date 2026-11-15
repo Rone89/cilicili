@@ -1,9 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Page-owned dynamic top bar, mirroring the home top bar: a large title that
-/// fades on scroll plus a liquid-glass button that shows the current feed kind
-/// and opens a native single-selection menu to switch kinds.
+/// Custom title row used when the root toolbar is hidden (one visible kind)
+/// and on pushed pages. Multi-kind root pages render the same title and menu
+/// in the native navigation toolbar instead.
 struct DynamicTopBar: View {
     @ObservedObject var titleState: FeedChromeTitleState
     let kinds: [DynamicFeedKind]
@@ -30,7 +30,7 @@ enum DynamicTopBarLayout {
     static let controlHeight: CGFloat = 44
 }
 
-private struct DynamicTopBarTitle: View {
+struct DynamicTopBarTitle: View {
     @ObservedObject var state: FeedChromeTitleState
 
     var body: some View {
@@ -63,7 +63,7 @@ private struct DynamicFeedKindMenu: View {
     }
 }
 
-private struct DynamicFeedKindMenuButton: UIViewRepresentable {
+struct DynamicFeedKindMenuButton: UIViewRepresentable {
     let kinds: [DynamicFeedKind]
     let current: DynamicFeedKind
     let onSelect: (DynamicFeedKind) -> Void

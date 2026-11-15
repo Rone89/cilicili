@@ -8,6 +8,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.openVideoOwnerRouteAction) private var openVideoOwnerRoute
     @Environment(\.navigationHistoryContext) private var navigationHistory
+    @Environment(\.videoDetailUsesTransparentNavigationBar) private var usesTransparentNavigationBar
     let seedVideo: VideoItem
     @ObservedObject var viewModel: VideoDetailViewModel
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -67,6 +68,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
             onSystemChromeVisibilityChange: { isHidden in
                 systemChromeVisibility.wrappedValue = isHidden
             },
+            usesTransparentNavigationBar: usesTransparentNavigationBar,
             onNavigateBack: onNavigateBack
         )
         controller.updateNavigationHistory(navigationHistory)

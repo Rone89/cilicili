@@ -14,7 +14,9 @@ struct RootTabView: View {
     @StateObject var searchViewModelHolder = SearchViewModelHolder()
     @StateObject var searchBottomAccessoryStore = SearchBottomAccessoryStore()
     @State var hostedRootTabs: [AppTab]?
-    @State var selectedTab = Self.initialTab.appTab
+    @State var openedHiddenRootPage = false
+    @State var selectedTab = Self.initialTab == .live ? .home : Self.initialTab.appTab
+    @State var showsHomeLiveFeed = Self.initialTab == .live
     @State var rootTabScrollRequests: [AppTab: RootTabScrollRequest] = [:]
     @State var homeNavigationPath = NavigationPath()
     @State var searchNavigationPath = NavigationPath()
@@ -25,7 +27,6 @@ struct RootTabView: View {
     @FocusState private var isRootSearchFocused: Bool
     @State var mineSearchQuery = ""
     @FocusState var isMineSearchFocused: Bool
-    @State var rootNavigationTitleHiddenByTab: [AppTab: Bool] = [:]
     @State var homeActionStore = HomeFeedScreenActionStore()
     @State var didConsumeStartupVideo = false
     @State var didConsumeStartupLiveRoom = false
@@ -167,15 +168,12 @@ struct RootTabView: View {
             if displayedRootTabs == [.home] {
                 // There is no tab switcher in the one-page configuration. A plain
                 // navigation stack cannot resurrect a tab bar during a pop.
-                rootTabNavigationStack(for: .home, detailPath: $homeNavigationPath)
+                rootTabSlot(.home)
             } else {
                 TabView(selection: tabSelection) {
                     ForEach(displayedRootTabs) { tab in
                         Tab(value: tab, role: tab == .search ? .search : nil) {
-                            rootTabNavigationStack(
-                                for: tab,
-                                detailPath: rootNavigationPathBinding(for: tab)
-                            )
+                            rootTabSlot(tab)
                         } label: {
                             Label(tab.title, systemImage: tab.systemImage)
                         }
@@ -188,23 +186,51 @@ struct RootTabView: View {
         .tabBarMinimizeBehavior(rootTabBarMinimizeBehavior)
     }
 
+    private func rootTabSlot(_ tab: AppTab) -> some View {
+        let page = tab == .home && isShowingHiddenRootPage ? selectedTab : tab
+        return rootTabNavigationStack(
+            for: page,
+            detailPath: rootNavigationPathBinding(for: page),
+            showsPageSwitcher: page != tab
+        )
+        .id(page)
+    }
+
     @ViewBuilder
     private func rootTabNavigationStack(
         for tab: AppTab,
-        detailPath: Binding<NavigationPath>
+        detailPath: Binding<NavigationPath>,
+        showsPageSwitcher: Bool
     ) -> some View {
+        let usesTransparentPlaybackNavigationBar = [.home, .mine, .search, .live].contains(tab)
+            || (tab == .dynamic && (libraryStore.visibleDynamicFeedKinds.count > 1 || showsPageSwitcher))
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
                 .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
-                .toolbarVisibility((tab == .home || tab == .dynamic || tab == .mine || tab == .search) ? .hidden : .visible, for: .navigationBar)
+                .environment(\.showsHiddenRootPageSwitcher, showsPageSwitcher)
                 .toolbarBackground(.automatic, for: .navigationBar)
-                .navigationTitle(rootNavigationTitle(for: tab))
+                .navigationTitle("")
                 .navigationHistoryTitle(tab.title)
                 .toolbarTitleDisplayMode(.inline)
-                .environment(
-                    \.rootNavigationTitleHidden,
-                    rootNavigationTitleBinding(for: tab, detailPath: detailPath)
-                )
+                .toolbar {
+                    if showsPageSwitcher {
+                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu("切换页面", systemImage: "line.3.horizontal.decrease") {
+                                ForEach([AppTab.home] + hiddenRootPages) { page in
+                                    Button {
+                                        selectRootPageFromMenu(page)
+                                    } label: {
+                                        Label(page.title, systemImage: page == tab ? "checkmark" : page.systemImage)
+                                    }
+                                }
+                            }
+                            .labelStyle(.iconOnly)
+                            .tint(.primary)
+                            .accessibilityIdentifier("root.hiddenPageSwitcher")
+                        }
+                    }
+                }
                 .navigationDestination(for: MineOverlayRoute.self) { route in
                     RootMineNavigationDestination(
                         route: route,
@@ -215,18 +241,7 @@ struct RootTabView: View {
                     )
                     .navigationHistoryTitle(route.navigationDisplayTitle)
                 }
-                .navigationDestination(for: AppTab.self) { destination in
-                    rootTabContent(for: destination, detailPath: detailPath)
-                        .navigationTitle(
-                            destination == .search || destination == .mine
-                                || destination == .dynamic
-                                ? "" : destination.title
-                        )
-                        .toolbarTitleDisplayMode(.inline)
-                        .toolbarVisibility(.hidden, for: .tabBar)
-
-                }
-                .videoDestinations()
+                .videoDestinations(usesTransparentNavigationBar: usesTransparentPlaybackNavigationBar)
                 .dynamicDetailDestinations(
                     path: detailPath,
                     api: dependencies.api
@@ -235,8 +250,8 @@ struct RootTabView: View {
         .coordinatesRootTabBarTransitions(
             isDetailPresented: !detailPath.wrappedValue.isEmpty,
             hidesRootTabBar: visibleRootTabs.count == 1,
-            onRootTabTap: selectedTab == tab ? { tabSelection.wrappedValue = tab } : nil,
-            capturesSearchReselection: tab == .search
+            onRootTabTap: selectedTab == tab ? { tabSelection.wrappedValue = showsPageSwitcher ? .home : tab } : nil,
+            capturesSelectedTabTap: tab == .search || showsPageSwitcher
         )
         .navigationHistoryStack(path: detailPath, rootTitle: tab.title)
         // Configure the native scrolling boundary without adding an overlay or changing safe areas.
@@ -265,9 +280,7 @@ struct RootTabView: View {
                         onOpenMessages: {
                             openMineOverlayRoute(.accountMessages)
                         },
-                        onOpenRootPage: { page in
-                            appendActiveRootRoute(page)
-                        }
+                        onOpenRootPage: selectRootPageFromMenu
                     ))
             } else {
                 rootTabContent(for: tab, detailPath: detailPath)
@@ -307,24 +320,6 @@ struct RootTabView: View {
         }
     }
 
-    private func rootNavigationTitle(for tab: AppTab) -> String {
-        if tab == .home || tab == .search || tab == .mine || tab == .dynamic { return "" }
-        return rootNavigationTitleHiddenByTab[tab] == true ? "" : tab.title
-    }
-
-    private func rootNavigationTitleBinding(
-        for tab: AppTab,
-        detailPath: Binding<NavigationPath>
-    ) -> Binding<Bool> {
-        Binding(
-            get: { rootNavigationTitleHiddenByTab[tab] ?? false },
-            set: { isHidden in
-                guard detailPath.wrappedValue.isEmpty else { return }
-                rootNavigationTitleHiddenByTab[tab] = isHidden
-            }
-        )
-    }
-
     private var rootTabBarMinimizeBehavior: TabBarMinimizeBehavior {
         return runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never
     }
@@ -343,6 +338,7 @@ struct RootTabView: View {
             HomeView(
                 viewModel: viewModel,
                 detailPath: detailPath,
+                showsLiveFeed: $showsHomeLiveFeed,
                 actionStore: homeActionStore,
                 launchConfiguration: HomeFeedLaunchConfiguration(
                     autoOpenDetail: shouldAutoOpenDetail,
@@ -354,6 +350,7 @@ struct RootTabView: View {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(.systemBackground))
+                .toolbarVisibility(.hidden, for: .navigationBar)
                 .task {
                     homeViewModelHolder.configure(
                         api: dependencies.api,

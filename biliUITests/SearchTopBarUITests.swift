@@ -16,9 +16,8 @@ final class SearchTopBarUITests: XCTestCase {
         let app = launchFixture()
         XCTAssertTrue(app.staticTexts["search.feed.title"].exists)
         XCTAssertEqual(app.staticTexts["search.feed.title"].label, "搜索")
-        XCTAssertTrue(app.buttons["search.top.button"].exists)
-        XCTAssertTrue(app.buttons["search.filters.menu"].exists)
-        XCTAssertEqual(app.navigationBars.count, 0, app.debugDescription)
+        XCTAssertTrue(app.navigationBars.buttons["search.top.button"].exists, app.debugDescription)
+        XCTAssertTrue(app.navigationBars.buttons["search.filters.menu"].waitForExistence(timeout: 5))
     }
 
     func testSearchButtonRevealsFieldAndCancelRestores() {

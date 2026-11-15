@@ -714,7 +714,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertEqual(AppTab.normalizedVisibleTabs([]), AppTab.defaultVisibleTabs)
         let defaults = makeUserDefaults()
         defaults.set(["search", "unknown", "search", "live"], forKey: "cc.bili.display.visibleRootTabs.v1")
-        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, [.home, .live, .search])
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, [.home, .search])
         defaults.set(["unknown"], forKey: "cc.bili.display.visibleRootTabs.v1")
         XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, AppTab.defaultVisibleTabs)
     }

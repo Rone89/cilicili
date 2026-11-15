@@ -16,9 +16,7 @@ final class MineTopBarUITests: XCTestCase {
         let app = launchFixture()
         XCTAssertTrue(app.staticTexts["mine.feed.title"].exists)
         XCTAssertEqual(app.staticTexts["mine.feed.title"].label, "我的")
-        XCTAssertTrue(app.buttons["mine.search.button"].exists)
-        // Root Mine hides the native navigation bar in favor of the page bar.
-        XCTAssertEqual(app.navigationBars.count, 0, app.debugDescription)
+        XCTAssertTrue(app.navigationBars.buttons["mine.search.button"].exists, app.debugDescription)
     }
 
     func testSearchButtonRevealsFieldFiltersAndCancelRestores() {

@@ -1,9 +1,14 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var videoDetailUsesTransparentNavigationBar = false
+}
+
 struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.dismiss) private var dismiss
     @Environment(\.navigationHistoryContext) private var navigationHistory
+    @Environment(\.videoDetailUsesTransparentNavigationBar) private var usesTransparentNavigationBar
     let seedVideo: VideoItem
     private let playbackOptions: VideoDetailPlaybackOptions
     private let onRequestClose: (() -> Void)?
@@ -34,7 +39,6 @@ struct VideoDetailView: View {
         PlaybackDetailPageHost(
             hidesSystemChrome: $hidesSystemChrome,
             background: .black,
-            navigationBarVisibility: .hidden,
             hidesBackButton: true,
             statusBarStyle: .lightContent,
             performanceContext: .video(seedVideo),
@@ -64,9 +68,19 @@ struct VideoDetailView: View {
                 holder.viewModel?.markRelatedVideoNavigation()
             }
         }
-        .preference(key: VideoDetailStatusBarContrastPreferenceKey.self, value: isStatusBarContrastActive)
-        .onAppear { isStatusBarContrastActive = true }
-        .onDisappear { isStatusBarContrastActive = false }
+        .toolbarVisibility(usesTransparentNavigationBar ? .visible : .hidden, for: .navigationBar)
+        // A shared visible navigation bar inherits the window style. Keep that style
+        // stable through the home transition and use the player's status-bar bridge.
+        .preference(
+            key: VideoDetailStatusBarContrastPreferenceKey.self,
+            value: !usesTransparentNavigationBar && isStatusBarContrastActive
+        )
+        .onAppear {
+            if !usesTransparentNavigationBar { isStatusBarContrastActive = true }
+        }
+        .onDisappear {
+            if isStatusBarContrastActive { isStatusBarContrastActive = false }
+        }
         .navigationHistoryTitle(seedVideo.title)
         .environment(\.navigationHistoryBackAction, historyBackAction)
     }

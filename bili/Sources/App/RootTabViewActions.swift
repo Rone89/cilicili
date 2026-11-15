@@ -19,9 +19,8 @@ extension RootTabView {
         else { return }
 
         didConsumeStartupLiveRoom = true
-        selectAvailableRootTab(.live)
         DispatchQueue.main.async {
-            openLiveRoom(Self.seedLiveRoom(roomID: startLiveRoomID))
+            openLiveRoomFromLink(Self.seedLiveRoom(roomID: startLiveRoomID))
         }
     }
 
@@ -80,7 +79,8 @@ extension RootTabView {
     }
 
     func openLiveRoomFromLink(_ room: LiveRoom) {
-        selectAvailableRootTab(.live)
+        showsHomeLiveFeed = true
+        selectAvailableRootTab(.home)
         openLiveRoom(room)
     }
 

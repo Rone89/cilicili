@@ -364,6 +364,8 @@ final class DynamicDetailFlowUITests: XCTestCase {
         modeMenu.tap()
         XCTAssertTrue(app.buttons["推荐"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["热门"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["直播"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.tabBars.buttons["直播"].exists)
         let menuAttachment = XCTAttachment(screenshot: app.screenshot())
         menuAttachment.name = "home-mode-menu"
         menuAttachment.lifetime = .keepAlways

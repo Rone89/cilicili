@@ -27,63 +27,53 @@ extension EnvironmentValues {
     }
 }
 
-/// Page-owned home top bar.
-///
-/// Unlike the previous native toolbar implementation, this bar lives inside the
-/// home content, so it slides out with the home page on push and slides back on
-/// pop instead of being restored by the navigation chrome mid-transition.
-struct HomeTopBar: View {
-    @Environment(\.homeTopBarActions) private var actions
-    @EnvironmentObject private var libraryStore: LibraryStore
-    @ObservedObject var viewModel: HomeViewModel
-    @ObservedObject var titleState: FeedChromeTitleState
-    let modeActions: HomeFeedModeActions
-    let scrollActions: HomeFeedScrollActions
-    let nativeRefreshActionStore: HomeNativeRefreshActionStore
+struct HomeTopBar: ToolbarContent {
+    let selection: HomePageSelection
+    let titleState: FeedChromeTitleState
+    let hiddenTabs: [AppTab]
+    let actions: HomeTopBarActions
+    let liveViewModel: LiveViewModel?
+    let onSelect: (HomePageSelection) -> Void
 
-    private var hiddenTabs: [AppTab] {
-        [.dynamic, .live, .mine, .search].filter { !libraryStore.visibleRootTabs.contains($0) }
-    }
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            FeedToolbarTitle(title: selection.title, state: titleState, accessibilityID: "home.feed.title")
+        }
+        .sharedBackgroundVisibility(.hidden)
 
-    var body: some View {
-        HStack(spacing: 10) {
-            if titleState.progress <= 0.9 {
-                HomeTopBarTitle(title: viewModel.mode.title, state: titleState)
+        if let liveViewModel {
+            ToolbarItem(placement: .topBarTrailing) {
+                LiveRefreshToolbarButton(
+                    isLoading: liveViewModel.isRefreshing || (liveViewModel.rooms.isEmpty && liveViewModel.state.isLoading)
+                ) {
+                    Task { await liveViewModel.refresh() }
+                }
             }
-            Spacer(minLength: 8)
-            HomeTopBarModeMenu(
-                mode: viewModel.mode,
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        }
+
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            HomeModeMenuButton(
+                selection: selection,
                 hiddenTabs: hiddenTabs,
-                onSelect: switchMode,
+                onSelect: onSelect,
                 onOpenRootPage: actions.onOpenRootPage
             )
-            if hiddenTabs.isEmpty {
-                HomeTopBarMessageButton(actions: actions)
-            }
+            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+
             HomeTopBarProfileButton(actions: actions)
         }
-        .padding(.horizontal, 16)
-        .frame(height: HomeTopBarLayout.controlHeight)
-        .frame(maxWidth: .infinity)
-    }
-
-    private func switchMode(_ mode: HomeFeedMode) {
-        modeActions.switchMode(
-            mode,
-            viewModel: viewModel,
-            scrollActions: scrollActions,
-            nativeRefreshActionStore: nativeRefreshActionStore
-        )
     }
 }
 
-enum HomeTopBarLayout {
+private enum HomeTopBarLayout {
     static let controlHeight: CGFloat = 44
 }
 
-private struct HomeTopBarTitle: View {
+struct FeedToolbarTitle: View {
     let title: String
     @ObservedObject var state: FeedChromeTitleState
+    let accessibilityID: String
 
     var body: some View {
         let progress = state.progress
@@ -94,8 +84,9 @@ private struct HomeTopBarTitle: View {
             .minimumScaleFactor(0.75)
             .fixedSize(horizontal: true, vertical: false)
             .offset(y: -progress * FeedChromeTitleState.slideDistance)
-            .opacity(1 - progress)
-            .accessibilityIdentifier("home.feed.title")
+            .opacity(progress <= 0.9 ? 1 - progress : 0)
+            .accessibilityHidden(progress > 0.9)
+            .accessibilityIdentifier(accessibilityID)
             .accessibilityAddTraits(.isHeader)
             .allowsHitTesting(false)
     }
@@ -106,57 +97,39 @@ private struct HomeTopBarTitle: View {
 /// entries join the same menu as a second group. UIKit's UIMenu keeps the
 /// checkmark on the trailing edge and sizes the menu to its content (narrow),
 /// which SwiftUI's Menu does not guarantee across OS versions.
-private struct HomeTopBarModeMenu: View {
-    let mode: HomeFeedMode
-    let hiddenTabs: [AppTab]
-    let onSelect: (HomeFeedMode) -> Void
-    let onOpenRootPage: (AppTab) -> Void
-
-    var body: some View {
-        HomeModeMenuButton(
-            mode: mode,
-            hiddenTabs: hiddenTabs,
-            onSelect: onSelect,
-            onOpenRootPage: onOpenRootPage
-        )
-        .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-        .glassEffect(.regular.interactive(), in: Circle())
-    }
-}
-
 private struct HomeModeMenuButton: UIViewRepresentable {
-    let mode: HomeFeedMode
+    let selection: HomePageSelection
     let hiddenTabs: [AppTab]
-    let onSelect: (HomeFeedMode) -> Void
+    let onSelect: (HomePageSelection) -> Void
     let onOpenRootPage: (AppTab) -> Void
 
     func makeUIView(context: Context) -> UIButton {
         let button = UIButton(type: .system)
         button.showsMenuAsPrimaryAction = true
         button.tintColor = .label
-        let configuration = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        let configuration = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
         button.setImage(
             UIImage(systemName: "line.3.horizontal.decrease", withConfiguration: configuration),
             for: .normal
         )
         button.accessibilityIdentifier = "home.feed.modeMenu"
-        button.accessibilityLabel = "切换推荐或热门"
+        button.accessibilityLabel = "切换首页页面"
         button.menu = makeMenu()
         return button
     }
 
     func updateUIView(_ button: UIButton, context: Context) {
-        button.accessibilityValue = mode.title
+        button.accessibilityValue = selection.title
         button.menu = makeMenu()
     }
 
     private func makeMenu() -> UIMenu {
-        let modeActions = HomeFeedMode.allCases.map { item in
+        let modeActions = HomePageSelection.menuOrder.map { item in
             UIAction(
                 title: item.title,
-                state: item == mode ? .on : .off
+                state: item == selection ? .on : .off
             ) { _ in
-                guard item != mode else { return }
+                guard item != selection else { return }
                 onSelect(item)
             }
         }
@@ -178,50 +151,6 @@ private struct HomeModeMenuButton: UIViewRepresentable {
         }
         let navSection = UIMenu(title: "", options: .displayInline, children: navActions)
         return UIMenu(title: "", children: [modeSection, navSection])
-    }
-}
-
-private struct HomeTopBarMessageButton: View {
-    @Environment(\.appThemeTintColor) private var appTintColor
-    let actions: HomeTopBarActions
-
-    var body: some View {
-        if let viewModel = actions.accountMessageViewModel {
-            HomeTopBarMessageButtonWithUnread(viewModel: viewModel, action: actions.onOpenMessages)
-        } else {
-            HomeTopBarMessageButtonContent(hasUnread: false, action: actions.onOpenMessages)
-        }
-    }
-}
-
-private struct HomeTopBarMessageButtonWithUnread: View {
-    @ObservedObject var viewModel: AccountMessageCenterViewModel
-    let action: () -> Void
-
-    var body: some View {
-        HomeTopBarMessageButtonContent(hasUnread: viewModel.hasUnreadMessages, action: action)
-    }
-}
-
-private struct HomeTopBarMessageButtonContent: View {
-    @Environment(\.appThemeTintColor) private var appTintColor
-    let hasUnread: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "bell.fill")
-                .symbolRenderingMode(.monochrome)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(hasUnread ? appTintColor : Color.primary)
-                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("账号消息")
-        .accessibilityValue(hasUnread ? "有未读消息" : "全部已读")
-        .accessibilityIdentifier("home.account.messages")
     }
 }
 
@@ -262,35 +191,36 @@ private struct HomeTopBarProfileButtonWithUnread: View {
 private struct HomeTopBarProfileButtonContent: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @EnvironmentObject private var sessionStore: SessionStore
-    @EnvironmentObject private var libraryStore: LibraryStore
     let hasUnread: Bool
     let action: () -> Void
     let onOpenMessages: () -> Void
 
-    private var hasHiddenTabs: Bool {
-        AppTab.allCases.contains { !libraryStore.visibleRootTabs.contains($0) }
-    }
+    // The system capsule extends beyond the trailing button's frame.
+    private let avatarTrailingOffset: CGFloat = 4
 
     var body: some View {
-        ZStack {
-            Group {
-                if hasHiddenTabs {
-                    Menu {
-                        Button("个人空间", systemImage: "person.crop.circle", action: action)
-                        Button("账户消息", systemImage: "bell", action: onOpenMessages)
-                    } label: { avatar }
-                } else {
-                    Button(action: action) { avatar }
-                }
+        let showsUnread = sessionStore.isLoggedIn && hasUnread
+        ZStack(alignment: .topTrailing) {
+            Menu {
+                Button("个人空间", systemImage: "person.crop.circle", action: action)
+                Button("消息", systemImage: "bubble.left.and.bubble.right", action: onOpenMessages)
+            } label: {
+                avatar
+                    .padding(.leading, avatarTrailingOffset * 2)
+                    .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-            .glassEffect(.regular.interactive(), in: Circle())
 
-            // Keep unread status outside the menu's animated source control.
-            Circle().strokeBorder(appTintColor, lineWidth: 2)
-                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-                .opacity(hasHiddenTabs && sessionStore.isLoggedIn && hasUnread ? 1 : 0)
+            // Keep the unread indicator outside the menu's animated source control.
+            Circle()
+                .fill(appTintColor)
+                .frame(width: 8, height: 8)
+                // Inset enough to stay fully inside the circular glass capsule;
+                // the old trailing edge let the dot poke outside the capsule.
+                .padding(.top, 6)
+                .padding(.trailing, 8)
+                .opacity(showsUnread ? 1 : 0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
                 .transaction {
@@ -298,7 +228,8 @@ private struct HomeTopBarProfileButtonContent: View {
                     $0.disablesAnimations = true
                 }
         }
-        .accessibilityLabel(hasHiddenTabs ? "个人空间与账户消息" : "个人空间")
+        .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+        .accessibilityLabel("个人空间与消息")
         .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
         .accessibilityIdentifier("home.account.avatar")
     }
@@ -307,7 +238,7 @@ private struct HomeTopBarProfileButtonContent: View {
         AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
             Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
         }
-        .frame(width: HomeTopBarLayout.controlHeight - 4, height: HomeTopBarLayout.controlHeight - 4)
+        .frame(width: 32, height: 32)
         .clipShape(Circle())
         .accessibilityHidden(true)
     }

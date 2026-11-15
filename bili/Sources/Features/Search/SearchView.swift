@@ -42,19 +42,27 @@ struct SearchView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .top, spacing: 12) {
-            SearchTopBar(
+        .safeAreaInset(edge: .top, spacing: isSearching ? 12 : 0) {
+            SearchTopBarMorph(
                 titleState: titleState,
-                searchText: $searchText,
                 isSearching: $isSearching,
+                searchText: $searchText,
                 isSearchFocused: isSearchFocused,
                 prompt: holder.viewModel?.searchPrompt ?? "搜索",
                 onSubmit: onSubmit,
+                onCancel: cancelSearch,
                 viewModel: holder.viewModel,
                 showsSettings: isRootTabContent
             )
         }
-        .toolbar(isRootTabContent ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
+    }
+
+    private func cancelSearch() {
+        isSearchFocused.wrappedValue = false
+        searchText = ""
+        titleState.reset()
+        withAnimation(.smooth(duration: 0.35)) { isSearching = false }
     }
 }

@@ -4,15 +4,21 @@ import SwiftUI
 struct LiveRoomShellRepresentable: UIViewControllerRepresentable {
     @EnvironmentObject private var dependencies: AppDependencies
     @ObservedObject var viewModel: LiveRoomViewModel
+    let usesTransparentNavigationBar: Bool
     let onNavigateBack: () -> Void
 
     func makeUIViewController(context _: Context) -> LiveRoomShellViewController {
         LiveRoomShellViewController(
             viewModel: viewModel,
             dependencies: dependencies,
+            usesTransparentNavigationBar: usesTransparentNavigationBar,
             onNavigateBack: onNavigateBack
         )
     }
 
     func updateUIViewController(_: LiveRoomShellViewController, context _: Context) {}
+
+    static func dismantleUIViewController(_ controller: LiveRoomShellViewController, coordinator _: Void) {
+        controller.restoreNavigationBarInteraction()
+    }
 }

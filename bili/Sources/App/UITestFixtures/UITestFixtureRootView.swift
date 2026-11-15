@@ -85,7 +85,7 @@ private struct UITestDynamicFeedTabsFixtureView: View {
                 pageWidth: 390
             )
             .environment(\.isRootTabContent, true)
-            .navigationTitle("动态")
+            .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
             .overlay(alignment: .topTrailing) {
                 // Verifies that pushing from the single-kind page (navigation bar
@@ -144,8 +144,7 @@ private struct UITestDynamicFeedTabSettingsFixtureView: View {
     }
 }
 
-/// Hosts the production Mine page root with its page-owned top bar so the
-/// title + glass search button interaction can be exercised deterministically.
+/// Hosts the production Mine page root and its search toolbar.
 private struct UITestMineTopBarFixtureView: View {
     let dependencies: AppDependencies
     @StateObject private var holder = MineViewModelHolder()
@@ -162,7 +161,7 @@ private struct UITestMineTopBarFixtureView: View {
                 onOpenRoute: { _ in }
             )
             .environment(\.isRootTabContent, true)
-            .navigationTitle("我的")
+            .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
         }
         .environmentObject(dependencies)
@@ -171,8 +170,7 @@ private struct UITestMineTopBarFixtureView: View {
     }
 }
 
-/// Hosts the production Search page root with its page-owned top bar so the
-/// title + glass search/settings buttons can be exercised deterministically.
+/// Hosts the production Search page root and its native toolbar.
 private struct UITestSearchTopBarFixtureView: View {
     let dependencies: AppDependencies
     @StateObject private var holder = SearchViewModelHolder()
@@ -190,7 +188,7 @@ private struct UITestSearchTopBarFixtureView: View {
                 onSubmit: { isSearchFocused = false }
             )
             .environment(\.isRootTabContent, true)
-            .navigationTitle("搜索")
+            .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
         }
         .environmentObject(dependencies)

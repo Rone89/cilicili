@@ -1,54 +1,55 @@
 import SwiftUI
-import UIKit
 
-/// Page-owned Mine top bar mirroring the home/dynamic chrome: a large title
-/// that fades on scroll plus a circular liquid-glass search button. Tapping the
-/// button swaps the row for an inline search field that filters the page.
-struct MineTopBar: View {
+/// Page-owned Mine top bar: the fading title sits beside a glass search
+/// capsule that morphs between a 44pt circular search button and a full-width
+/// search field. The morph is driven by the HStack layout change animated with
+/// `.smooth`, avoiding `matchedGeometryEffect` layout cycles in insets.
+struct MineTopBarMorph: View {
     @ObservedObject var titleState: FeedChromeTitleState
-    @Binding var searchText: String
     @Binding var isSearching: Bool
+    @Binding var searchText: String
     var isSearchFocused: FocusState<Bool>.Binding
+    let onCancel: () -> Void
+    /// Whether to show the title (root tab). Pushed destinations hide it
+    /// because the navigation bar already carries one.
+    let showsTitle: Bool
+
+    private let controlHeight: CGFloat = 44
 
     var body: some View {
         HStack(spacing: 10) {
+            if showsTitle, !isSearching, titleState.progress <= 0.9 {
+                MineMorphTitle(state: titleState)
+                    .transition(.opacity)
+            }
+            Spacer(minLength: 0)
             if isSearching {
                 searchField
-                    .transition(.scale(scale: 0.85, anchor: .trailing).combined(with: .opacity))
-                Button("取消") {
-                    isSearchFocused.wrappedValue = false
-                    searchText = ""
-                    isSearching = false
-                    titleState.reset()
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                .fixedSize()
-                .accessibilityIdentifier("mine.search.cancel")
-                .transition(.opacity)
             } else {
-                if titleState.progress <= 0.9 {
-                    MineTopBarTitle(state: titleState)
-                        .transition(.opacity)
-                }
-                Spacer(minLength: 8)
                 searchButton
-                    .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: MineTopBarLayout.controlHeight)
+        .frame(height: controlHeight)
         .frame(maxWidth: .infinity)
-        .animation(.smooth(duration: 0.3), value: isSearching)
+        .animation(.smooth(duration: 0.35), value: isSearching)
     }
 
     private var searchButton: some View {
-        MineSearchGlassButton {
-            isSearching = true
+        Button {
             isSearchFocused.wrappedValue = true
+            withAnimation(.smooth(duration: 0.35)) { isSearching = true }
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: controlHeight, height: controlHeight)
+                .contentShape(Circle())
+                .glassEffect(.regular.interactive(), in: Circle())
         }
-        .frame(width: MineTopBarLayout.controlHeight, height: MineTopBarLayout.controlHeight)
-        .glassEffect(.regular.interactive(), in: Circle())
+        .buttonStyle(.plain)
+        .accessibilityLabel("搜索我的页功能")
+        .accessibilityIdentifier("mine.search.button")
     }
 
     private var searchField: some View {
@@ -72,10 +73,16 @@ struct MineTopBar: View {
                 .accessibilityLabel("清除搜索文字")
                 .accessibilityIdentifier("mine.search.clear")
             }
+
+            Button("取消", action: onCancel)
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .fixedSize()
+                .accessibilityIdentifier("mine.search.cancel")
         }
         .font(.body)
         .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, minHeight: MineTopBarLayout.controlHeight)
+        .frame(maxWidth: .infinity, minHeight: controlHeight)
         .glassEffect(.regular.interactive(), in: Capsule())
         .task {
             await Task.yield()
@@ -84,11 +91,7 @@ struct MineTopBar: View {
     }
 }
 
-enum MineTopBarLayout {
-    static let controlHeight: CGFloat = 44
-}
-
-private struct MineTopBarTitle: View {
+private struct MineMorphTitle: View {
     @ObservedObject var state: FeedChromeTitleState
 
     var body: some View {
@@ -104,40 +107,5 @@ private struct MineTopBarTitle: View {
             .accessibilityIdentifier("mine.feed.title")
             .accessibilityAddTraits(.isHeader)
             .allowsHitTesting(false)
-    }
-}
-
-/// UIKit-backed circular search button so the accessibility identifier is
-/// exposed reliably (matching the home mode-menu button approach).
-private struct MineSearchGlassButton: UIViewRepresentable {
-    let action: () -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        let configuration = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        button.setImage(UIImage(systemName: "magnifyingglass", withConfiguration: configuration), for: .normal)
-        button.tintColor = .label
-        button.accessibilityIdentifier = "mine.search.button"
-        button.accessibilityLabel = "搜索我的页功能"
-        button.addAction(
-            UIAction { _ in context.coordinator.action() },
-            for: .touchUpInside
-        )
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        context.coordinator.action = action
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
-        CGSize(width: MineTopBarLayout.controlHeight, height: MineTopBarLayout.controlHeight)
-    }
-
-    final class Coordinator {
-        var action: () -> Void
-        init(action: @escaping () -> Void) { self.action = action }
     }
 }

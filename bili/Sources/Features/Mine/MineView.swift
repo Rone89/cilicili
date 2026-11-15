@@ -36,15 +36,17 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .safeAreaInset(edge: .top, spacing: 12) {
-            MineTopBar(
+        .safeAreaInset(edge: .top, spacing: isSearching ? 12 : 0) {
+            MineTopBarMorph(
                 titleState: titleState,
-                searchText: $searchText,
                 isSearching: $isSearching,
-                isSearchFocused: isSearchFocused
+                searchText: $searchText,
+                isSearchFocused: isSearchFocused,
+                onCancel: cancelSearch,
+                showsTitle: isRootTabContent
             )
         }
-        .toolbar(isRootTabContent ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {
@@ -63,6 +65,13 @@ struct MineView: View {
                 }
             }
         }
+    }
+
+    private func cancelSearch() {
+        isSearchFocused.wrappedValue = false
+        searchText = ""
+        titleState.reset()
+        withAnimation(.smooth(duration: 0.3)) { isSearching = false }
     }
 
     @ViewBuilder

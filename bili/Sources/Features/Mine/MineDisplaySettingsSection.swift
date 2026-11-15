@@ -152,7 +152,7 @@ struct MineDisplaySettingsSection: View {
                     libraryStore.resetVisibleRootTabs()
                 }
 
-                Text("首页始终显示。隐藏的 Tab 会显示在首页右上角，可点击进入对应页面。")
+                Text("首页始终显示。用右上角的切换菜单可以打开隐藏页面，也可以切回首页。")
                     .appTypography(.settingsSubtitle, fallback: .caption)
                     .foregroundStyle(.secondary)
             } label: {

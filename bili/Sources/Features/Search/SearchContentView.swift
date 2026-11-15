@@ -14,7 +14,7 @@ struct SearchContentView: View {
             titleState: titleState
         )
         .toolbar {
-            // The root tab draws its own top bar (with the settings button);
+            // The root tab supplies the settings item from SearchView;
             // pushed destinations and fixtures keep the native bar menu.
             if !isRootTabContent {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -149,6 +149,7 @@ private struct SearchFilterCapsule: View {
 
 struct SearchFilterToolbarMenu: View {
     @ObservedObject var viewModel: SearchViewModel
+    var iconPointSize: CGFloat = 15
 
     var body: some View {
         Menu {
@@ -156,7 +157,9 @@ struct SearchFilterToolbarMenu: View {
                 orderOptions
             }
         } label: {
-            Image(systemName: "slider.horizontal.3").foregroundStyle(.primary)
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: iconPointSize, weight: .semibold))
+                .foregroundStyle(.primary)
         }
         .tint(.primary)
         .accessibilityLabel("排序方式")

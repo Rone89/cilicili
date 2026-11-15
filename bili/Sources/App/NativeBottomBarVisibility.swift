@@ -8,11 +8,11 @@ extension View {
         isEnabled: Bool = true,
         hidesRootTabBar: Bool = false,
         onRootTabTap: (() -> Void)? = nil,
-        capturesSearchReselection: Bool = false
+        capturesSelectedTabTap: Bool = false
     ) -> some View {
         if isEnabled {
             background(
-                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSearchReselection: capturesSearchReselection)
+                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap)
             )
         } else {
             self
@@ -24,15 +24,15 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
     let isDetailPresented: Bool
     let hidesRootTabBar: Bool
     let onRootTabTap: (() -> Void)?
-    let capturesSearchReselection: Bool
+    let capturesSelectedTabTap: Bool
 
     func makeUIViewController(context _: Context) -> Controller {
-        Controller(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSearchReselection: capturesSearchReselection)
+        Controller(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap)
     }
 
     func updateUIViewController(_ controller: Controller, context _: Context) {
         controller.onRootTabTap = onRootTabTap
-        controller.capturesSearchReselection = capturesSearchReselection
+        controller.capturesSelectedTabTap = capturesSelectedTabTap
         controller.installRootTabTap()
         controller.update(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar)
     }
@@ -43,7 +43,7 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
 
     final class Controller: UIViewController, UIGestureRecognizerDelegate {
         var onRootTabTap: (() -> Void)?
-        var capturesSearchReselection: Bool
+        var capturesSelectedTabTap: Bool
         private lazy var rootTabTap: UITapGestureRecognizer = {
             let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleRootTabTap))
             recognizer.cancelsTouchesInView = false
@@ -56,11 +56,11 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         private var isDetailPresented: Bool
         private var reconcileTask: Task<Void, Never>?
 
-        init(isDetailPresented: Bool, hidesRootTabBar: Bool, onRootTabTap: (() -> Void)?, capturesSearchReselection: Bool) {
+        init(isDetailPresented: Bool, hidesRootTabBar: Bool, onRootTabTap: (() -> Void)?, capturesSelectedTabTap: Bool) {
             self.isDetailPresented = isDetailPresented
             self.hidesRootTabBar = hidesRootTabBar
             self.onRootTabTap = onRootTabTap
-            self.capturesSearchReselection = capturesSearchReselection
+            self.capturesSelectedTabTap = capturesSelectedTabTap
             super.init(nibName: nil, bundle: nil)
         }
 
@@ -115,10 +115,10 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
                 if candidate.accessibilityLabel == selectedTitle,
                    candidate.accessibilityTraits.contains(.button) {
                     let isCollapsed = candidate.accessibilityValue != nil
-                    guard isCollapsed || capturesSearchReselection else { return false }
-                    // A re-tap of the selected Search button otherwise activates search.
-                    // Search fields and ordinary tab changes never enter this branch.
-                    rootTabTap.cancelsTouchesInView = capturesSearchReselection && !isCollapsed
+                    guard isCollapsed || capturesSelectedTabTap else { return false }
+                    // Handle a selected tab tap ourselves when it leaves a menu-only page
+                    // or when the system would activate a Search field.
+                    rootTabTap.cancelsTouchesInView = capturesSelectedTabTap && !isCollapsed
                     return true
                 }
                 touchedView = candidate.superview

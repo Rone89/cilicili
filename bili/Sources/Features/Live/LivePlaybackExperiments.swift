@@ -126,7 +126,6 @@ nonisolated enum LiveRoomVideoDetailLayoutPolicy {
 /// SimpleLive 风格直播页在竖屏同时展示主播栏、播放器、分段内容和底部操作栏。
 /// 播放器不能只按屏幕宽度撑开，否则竖向源或较矮设备会挤掉内容和安全区。
 nonisolated enum LiveRoomSimpleLiveLayoutPolicy {
-    static let headerContentHeight: CGFloat = 58
     static let playerMaximumAspectRatio: CGFloat = 4.0 / 3.0
     static let minimumDetailHeight: CGFloat = 286
 
@@ -148,7 +147,6 @@ nonisolated enum LiveRoomSimpleLiveLayoutPolicy {
             containerSize.height
                 - max(safeAreaTop, 0)
                 - max(safeAreaBottom, 0)
-                - headerContentHeight
                 - max(minimumDetailHeight, 0)
         )
         return min(preferredHeight, availableHeight).rounded(.down)
