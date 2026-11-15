@@ -20,19 +20,25 @@ struct SearchTopBarMorph: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if !isSearching, titleState.progress <= 0.9 {
-                SearchMorphTitle(state: titleState)
-                    .transition(.opacity)
-            }
-            Spacer(minLength: 0)
             if isSearching {
+                // The field is full-width, so the spacer must go: HStack's
+                // inter-child spacing would otherwise land between the
+                // zero-width spacer and the field, adding 10pt to the left
+                // margin only.
                 searchField
-            } else if showsSettings, let viewModel {
-                mergedControls(viewModel: viewModel)
             } else {
-                searchButton
-                    .glassEffect(.regular.interactive(), in: Circle())
-                    .transition(.opacity)
+                if titleState.progress <= 0.9 {
+                    SearchMorphTitle(state: titleState)
+                        .transition(.opacity)
+                }
+                Spacer(minLength: 0)
+                if showsSettings, let viewModel {
+                    mergedControls(viewModel: viewModel)
+                } else {
+                    searchButton
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .transition(.opacity)
+                }
             }
         }
         .padding(.horizontal, 16)

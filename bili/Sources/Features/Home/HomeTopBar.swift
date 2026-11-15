@@ -200,7 +200,7 @@ private struct HomeTopBarProfileButtonContent: View {
 
     var body: some View {
         let showsUnread = sessionStore.isLoggedIn && hasUnread
-        ZStack(alignment: .topTrailing) {
+        ZStack(alignment: .topLeading) {
             Menu {
                 Button("个人空间", systemImage: "person.crop.circle", action: action)
                 Button("消息", systemImage: "bubble.left.and.bubble.right", action: onOpenMessages)
@@ -213,14 +213,14 @@ private struct HomeTopBarProfileButtonContent: View {
             .buttonStyle(.plain)
 
             // Keep the unread indicator outside the menu's animated source control.
-            // The photo is circular, so the badge centers on its upper-right
+            // The photo is circular, so the badge centers on its upper-LEFT
             // edge (45° diagonal) instead of the frame corner, which would
             // float in the gap beside the round photo.
             Circle()
                 .fill(appTintColor)
                 .frame(width: 8, height: 8)
                 .padding(.top, 6)
-                .padding(.trailing, 4)
+                .padding(.leading, 8)
                 .opacity(showsUnread ? 1 : 0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)

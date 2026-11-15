@@ -42,7 +42,7 @@ struct SearchView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .top, spacing: isSearching ? 12 : 0) {
+        .safeAreaInset(edge: .top, spacing: isSearching ? 18 : 0) {
             SearchTopBarMorph(
                 titleState: titleState,
                 isSearching: $isSearching,

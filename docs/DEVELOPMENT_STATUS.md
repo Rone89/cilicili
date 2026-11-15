@@ -1320,3 +1320,14 @@
 - 测试：`SearchTopBarUITests` 断言从 `navigationBars.buttons` 改为 `app.buttons` 适配新层级；搜索输入用例在 typeText 前补 `field.tap()` 消除键盘焦点竞态（前两轮不同断言行失败均为此抖动）。iPhone 18 Pro Max（iOS 27.0）3 项用例全部通过。
 - Release 1.1.4 (192) 出包，IPA SHA-256 `175bdb73fbb8d60b1d08c608fec31da78568e3819e09bd794b119ef62dd3935c`；18pm 证书重签安装 RCe2027 成功，`devicectl` 确认 `cilicili 1.1.4 (192)` 并启动。红点位置与合并胶囊外观待真机目视确认。
 - 分支 `feature/home-title-fade`，修改未提交。
+
+## 2026-11-15 红点移到头像左上 + 搜索态边距对称与 18pt 垂直间距 + Build 193 装机
+
+- 用户反馈三点：1) 未读红点改到头像左上方；2) 我的页唤醒搜索框后离下方内容太近，间距参考首页；3) 我的页/搜索页唤醒搜索框后左右边距不等。
+- 红点：红点中心镜像到圆形照片左上 45° 边缘（`.padding(.top, 6)` / `.padding(.leading, 8)`，ZStack 对齐改 `topLeading`），保持徽章叠压。
+- 左右边距：根因是顶栏 HStack 的 10pt 子视图间距——搜索态下布局为「零宽 Spacer + 全宽搜索框」，10pt 落在搜索框左侧，实测左 26pt / 右 16pt（与用户截图一致）。修复：搜索态移除 Spacer（Mine/Search 两个 TopBar 同改），输入框左缘左移 10pt，两页均为 16/16 对称。
+- 垂直间距：真机实测搜索态胶囊底→卡片顶 12pt；首页工具栏玻璃下方自带呼吸区视觉约 16-18pt。搜索态 safeAreaInset spacing 12→18（Mine/Search 同改），真机+模拟器实测卡片顶 118→124pt。
+- 诊断方法：临时 MarginDiagUITests 截取四态原生截图并输出元素坐标（已删除），自写 margin-measure.swift 扫描像素列（注意 PNG 上下翻转坑，已修）。
+- 测试：SearchTopBarUITests 3 项 + MineTopBarUITests 2 项 + FeedChromeTitleStateTests 全部通过；MineTopBarUITests 一处 `navigationBars.buttons` 旧断言同步改为 `app.buttons`。
+- Release 1.1.4 (193) 出包，IPA SHA-256 `db4739275f7a38aef866740a7b6132001fa0ff7c6cbaf2583610832f171f202f`；18pm 证书重签安装 RCe2027 成功，`devicectl` 确认 `cilicili 1.1.4 (193)` 并启动。红点位置、搜索态对称边距、18pt 间距待真机目视确认。
+- 分支 `feature/home-title-fade`，修改未提交。

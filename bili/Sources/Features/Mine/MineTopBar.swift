@@ -18,14 +18,18 @@ struct MineTopBarMorph: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if showsTitle, !isSearching, titleState.progress <= 0.9 {
-                MineMorphTitle(state: titleState)
-                    .transition(.opacity)
-            }
-            Spacer(minLength: 0)
             if isSearching {
+                // The field is full-width, so the spacer must go: HStack's
+                // inter-child spacing would otherwise land between the
+                // zero-width spacer and the field, adding 10pt to the left
+                // margin only.
                 searchField
             } else {
+                if showsTitle, titleState.progress <= 0.9 {
+                    MineMorphTitle(state: titleState)
+                        .transition(.opacity)
+                }
+                Spacer(minLength: 0)
                 searchButton
             }
         }

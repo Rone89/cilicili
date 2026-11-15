@@ -36,7 +36,7 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .safeAreaInset(edge: .top, spacing: isSearching ? 12 : 0) {
+        .safeAreaInset(edge: .top, spacing: isSearching ? 18 : 0) {
             MineTopBarMorph(
                 titleState: titleState,
                 isSearching: $isSearching,

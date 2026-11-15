@@ -16,7 +16,9 @@ final class MineTopBarUITests: XCTestCase {
         let app = launchFixture()
         XCTAssertTrue(app.staticTexts["mine.feed.title"].exists)
         XCTAssertEqual(app.staticTexts["mine.feed.title"].label, "我的")
-        XCTAssertTrue(app.navigationBars.buttons["mine.search.button"].exists, app.debugDescription)
+        // The mine bar is page-owned (safe-area inset), so the button surfaces
+        // as a plain app button, not a navigation-bar button.
+        XCTAssertTrue(app.buttons["mine.search.button"].exists, app.debugDescription)
     }
 
     func testSearchButtonRevealsFieldFiltersAndCancelRestores() {
