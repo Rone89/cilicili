@@ -213,13 +213,14 @@ private struct HomeTopBarProfileButtonContent: View {
             .buttonStyle(.plain)
 
             // Keep the unread indicator outside the menu's animated source control.
+            // The photo is circular, so the badge centers on its upper-right
+            // edge (45° diagonal) instead of the frame corner, which would
+            // float in the gap beside the round photo.
             Circle()
                 .fill(appTintColor)
                 .frame(width: 8, height: 8)
-                // Inset enough to stay fully inside the circular glass capsule;
-                // the old trailing edge let the dot poke outside the capsule.
                 .padding(.top, 6)
-                .padding(.trailing, 8)
+                .padding(.trailing, 4)
                 .opacity(showsUnread ? 1 : 0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)

@@ -16,8 +16,10 @@ final class SearchTopBarUITests: XCTestCase {
         let app = launchFixture()
         XCTAssertTrue(app.staticTexts["search.feed.title"].exists)
         XCTAssertEqual(app.staticTexts["search.feed.title"].label, "搜索")
-        XCTAssertTrue(app.navigationBars.buttons["search.top.button"].exists, app.debugDescription)
-        XCTAssertTrue(app.navigationBars.buttons["search.filters.menu"].waitForExistence(timeout: 5))
+        // The search button and the settings button share one glass capsule in
+        // the page-owned top bar, so they surface as plain app buttons.
+        XCTAssertTrue(app.buttons["search.top.button"].exists, app.debugDescription)
+        XCTAssertTrue(app.buttons["search.filters.menu"].waitForExistence(timeout: 5))
     }
 
     func testSearchButtonRevealsFieldAndCancelRestores() {
@@ -28,6 +30,7 @@ final class SearchTopBarUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["search.top.cancel"].waitForExistence(timeout: 3))
 
+        field.tap()
         field.typeText("测试")
         XCTAssertEqual(field.value as? String, "测试")
 

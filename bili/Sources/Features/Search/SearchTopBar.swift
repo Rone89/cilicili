@@ -2,7 +2,9 @@ import SwiftUI
 
 /// Page-owned Search top bar mirroring the Mine bar: a fading title beside a
 /// glass search capsule that morphs between a 44pt circular search button and
-/// a full-width search field, plus a circular glass settings button.
+/// a full-width search field. On the root tab the search button and the
+/// settings button share one glass capsule; pushed destinations keep the
+/// standalone circular search button.
 struct SearchTopBarMorph: View {
     @ObservedObject var titleState: FeedChromeTitleState
     @Binding var isSearching: Bool
@@ -25,20 +27,33 @@ struct SearchTopBarMorph: View {
             Spacer(minLength: 0)
             if isSearching {
                 searchField
+            } else if showsSettings, let viewModel {
+                mergedControls(viewModel: viewModel)
             } else {
                 searchButton
-                if showsSettings, let viewModel {
-                    SearchFilterToolbarMenu(viewModel: viewModel, iconPointSize: 18)
-                        .frame(width: controlHeight, height: controlHeight)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .transition(.opacity)
-                }
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 16)
         .frame(height: controlHeight)
         .frame(maxWidth: .infinity)
         .animation(.smooth(duration: 0.35), value: isSearching)
+    }
+
+    /// Root tab: the search button and the settings button share one
+    /// liquid-glass capsule, separated by a hairline divider.
+    private func mergedControls(viewModel: SearchViewModel) -> some View {
+        HStack(spacing: 0) {
+            searchButton
+            Rectangle()
+                .fill(.separator)
+                .frame(width: 0.5, height: controlHeight - 18)
+            SearchFilterToolbarMenu(viewModel: viewModel, iconPointSize: 18)
+                .frame(width: controlHeight, height: controlHeight)
+        }
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .transition(.opacity)
     }
 
     private var searchButton: some View {
@@ -50,8 +65,7 @@ struct SearchTopBarMorph: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: controlHeight, height: controlHeight)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: Circle())
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("搜索")

@@ -1311,3 +1311,12 @@
 - 验证：真机截图（`build/logs/device-191-home.png` + 放大裁剪 `avatar-crop.png`）确认红点已收进玻璃圆内。
 - 注意：本 worktree 另有并行会话未提交改动（RootTab 系列、底栏可见性、直播间等），与本分支顶栏改动共存于同一工作区。Release 191 的代码含双方改动。
 - Release 1.1.4 (191) 出包，IPA SHA-256 `f3b409404427eafaf68bfb00e1968b0eea52a13cb2476e7a17b4c11aa4d2bad5`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (191)`（bundle ID `app.bamboo2779.brussels691`）。真机截图确认首页正常渲染。
+
+## 2026-11-15 红点叠在头像圆边上 + 搜索页按钮合并玻璃胶囊 + Build 192 装机
+
+- 用户反馈两点：1) 未读红点在头像旁边而不是叠在头像上；2) 搜索页搜索按钮和排序按钮应放进同一个液态玻璃容器。
+- 红点：Build 191 真机截图复核确认，红点贴在 44pt 方框右上角，而头像是圆形裁切，方框角落与圆形照片之间有空隙，红点悬在空隙里。改为红点中心落在照片圆右上 45° 边缘上（`.padding(.top, 6)` / `.padding(.trailing, 4)`），呈经典徽章叠压效果，同时仍收在玻璃胶囊内。
+- 搜索页：`SearchTopBarMorph` 在根 Tab 下把搜索按钮和排序菜单按钮合并进一个 `Capsule` 玻璃容器，中间 0.5pt 分隔线；点搜索仍形变为全宽搜索框。推入页面保持独立圆形搜索按钮不变。
+- 测试：`SearchTopBarUITests` 断言从 `navigationBars.buttons` 改为 `app.buttons` 适配新层级；搜索输入用例在 typeText 前补 `field.tap()` 消除键盘焦点竞态（前两轮不同断言行失败均为此抖动）。iPhone 18 Pro Max（iOS 27.0）3 项用例全部通过。
+- Release 1.1.4 (192) 出包，IPA SHA-256 `175bdb73fbb8d60b1d08c608fec31da78568e3819e09bd794b119ef62dd3935c`；18pm 证书重签安装 RCe2027 成功，`devicectl` 确认 `cilicili 1.1.4 (192)` 并启动。红点位置与合并胶囊外观待真机目视确认。
+- 分支 `feature/home-title-fade`，修改未提交。
