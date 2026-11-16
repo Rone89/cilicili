@@ -26,6 +26,50 @@ final class RootTabScrollUITests: XCTestCase {
         XCTAssertEqual(app.tabBars.count, 0)
     }
 
+    func testHomeProfileMenuOpensFromToolbar() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state", "--start-tab", "home",
+            "-cc.bili.display.visibleRootTabs.v1", "(home)",
+        ]
+        app.launch()
+        addTeardownBlock { app.terminate() }
+
+        let modeMenu = app.buttons["home.feed.modeMenu"]
+        let profile = app.buttons["home.account.avatar"]
+        XCTAssertTrue(modeMenu.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(profile.waitForExistence(timeout: 5), app.debugDescription)
+
+        let homeScreenshot = XCTAttachment(screenshot: app.screenshot())
+        homeScreenshot.name = "home-toolbar-capsule"
+        homeScreenshot.lifetime = .keepAlways
+        add(homeScreenshot)
+
+        profile.tap()
+        XCTAssertTrue(app.buttons["个人空间"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["消息"].exists, app.debugDescription)
+
+        let menuScreenshot = XCTAttachment(screenshot: app.screenshot())
+        menuScreenshot.name = "home-profile-menu"
+        menuScreenshot.lifetime = .keepAlways
+        add(menuScreenshot)
+    }
+
+    func testHomeModeMenuKeepsHiddenPageEntries() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-cc.bili.display.visibleRootTabs.v1", "(home)",
+            "-cc.bili.home.avatarNavigationExperimentEnabled.v1", "YES",
+        ]
+        app.launch()
+        addTeardownBlock { app.terminate() }
+
+        let modeMenu = app.buttons["home.feed.modeMenu"]
+        XCTAssertTrue(modeMenu.waitForExistence(timeout: 15), app.debugDescription)
+        modeMenu.tap()
+        XCTAssertTrue(app.buttons["我的"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
     func testEnablingTabFromStandaloneHomePreservesSettingsScroll() {
         let app = XCUIApplication()
         app.launchArguments = [

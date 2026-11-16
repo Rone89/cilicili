@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class VideoDetailSubtitleStore: ObservableObject {
     @Published private(set) var tracks: [VideoSubtitleTrack] = []
+    @Published private(set) var selectableTracksCID: Int?
     @Published private(set) var selectedLan: String?
     @Published private(set) var currentCue: VideoSubtitleCue?
     @Published private(set) var isLoadingTracks = false
@@ -17,8 +18,9 @@ final class VideoDetailSubtitleStore: ObservableObject {
         tracks.first(where: { $0.lan == selectedLan })
     }
 
-    func setTracks(_ tracks: [VideoSubtitleTrack]) {
+    func setTracks(_ tracks: [VideoSubtitleTrack], forCID cid: Int? = nil) {
         self.tracks = VideoSubtitlePreference.sortedTracks(tracks)
+        selectableTracksCID = self.tracks.isEmpty ? nil : cid
         if self.tracks.isEmpty {
             setSelectedLan(nil)
         }

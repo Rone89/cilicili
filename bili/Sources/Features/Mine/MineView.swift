@@ -36,17 +36,26 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
+        .safeAreaPadding(.top, isRootTabContent && !isSearching ? 8 : 0)
+        // Keep the same breathing room below the field as the home toolbar.
         .safeAreaInset(edge: .top, spacing: isSearching ? 18 : 0) {
-            MineTopBarMorph(
+            if isSearching {
+                MineSearchField(
+                    searchText: $searchText,
+                    isSearchFocused: isSearchFocused,
+                    onCancel: cancelSearch
+                )
+            }
+        }
+        .toolbar {
+            MineTopBar(
                 titleState: titleState,
-                isSearching: $isSearching,
-                searchText: $searchText,
-                isSearchFocused: isSearchFocused,
-                onCancel: cancelSearch,
-                showsTitle: isRootTabContent
+                showsTitle: isRootTabContent,
+                isSearching: isSearching,
+                onSearch: beginSearch
             )
         }
-        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(isRootTabContent && isSearching ? .hidden : .visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {
@@ -72,6 +81,11 @@ struct MineView: View {
         searchText = ""
         titleState.reset()
         withAnimation(.smooth(duration: 0.3)) { isSearching = false }
+    }
+
+    private func beginSearch() {
+        isSearchFocused.wrappedValue = true
+        withAnimation(.smooth(duration: 0.35)) { isSearching = true }
     }
 
     @ViewBuilder

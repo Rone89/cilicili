@@ -42,21 +42,35 @@ struct SearchView: View {
                 }
             }
         }
+        .safeAreaPadding(.top, isRootTabContent && !isSearching ? 8 : 0)
+        // Keep the same breathing room below the field as the home toolbar.
         .safeAreaInset(edge: .top, spacing: isSearching ? 18 : 0) {
-            SearchTopBarMorph(
+            if isSearching {
+                SearchQueryField(
+                    searchText: $searchText,
+                    isSearchFocused: isSearchFocused,
+                    prompt: holder.viewModel?.searchPrompt ?? "搜索",
+                    onSubmit: onSubmit,
+                    onCancel: cancelSearch
+                )
+            }
+        }
+        .toolbar {
+            SearchTopBar(
                 titleState: titleState,
-                isSearching: $isSearching,
-                searchText: $searchText,
-                isSearchFocused: isSearchFocused,
-                prompt: holder.viewModel?.searchPrompt ?? "搜索",
-                onSubmit: onSubmit,
-                onCancel: cancelSearch,
+                isRootTabContent: isRootTabContent,
+                isSearching: isSearching,
                 viewModel: holder.viewModel,
-                showsSettings: isRootTabContent
+                onSearch: beginSearch
             )
         }
-        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(isRootTabContent && isSearching ? .hidden : .visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
+    }
+
+    private func beginSearch() {
+        isSearchFocused.wrappedValue = true
+        withAnimation(.smooth(duration: 0.35)) { isSearching = true }
     }
 
     private func cancelSearch() {

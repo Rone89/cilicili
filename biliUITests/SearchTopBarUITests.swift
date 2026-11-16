@@ -16,15 +16,29 @@ final class SearchTopBarUITests: XCTestCase {
         let app = launchFixture()
         XCTAssertTrue(app.staticTexts["search.feed.title"].exists)
         XCTAssertEqual(app.staticTexts["search.feed.title"].label, "搜索")
-        // The search button and the settings button share one glass capsule in
-        // the page-owned top bar, so they surface as plain app buttons.
-        XCTAssertTrue(app.buttons["search.top.button"].exists, app.debugDescription)
-        XCTAssertTrue(app.buttons["search.filters.menu"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.navigationBars.buttons["search.top.button"].exists,
+            app.debugDescription
+        )
+        XCTAssertTrue(
+            app.navigationBars.buttons["search.filters.menu"].waitForExistence(timeout: 5),
+            app.debugDescription
+        )
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "search-toolbar-idle"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testSearchButtonRevealsFieldAndCancelRestores() {
         let app = launchFixture()
-        app.buttons["search.top.button"].tap()
+        let searchButton = app.buttons["search.top.button"]
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"),
+            object: searchButton
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 5), .completed, app.debugDescription)
+        searchButton.tap()
 
         let field = app.textFields["search.top.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))

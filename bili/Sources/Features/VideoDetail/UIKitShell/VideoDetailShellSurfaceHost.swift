@@ -667,6 +667,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     @State private var portraitMoreControlsRequestID: UUID?
     @State private var isMoreControlsButtonPressed = false
     @State private var isVideoListenQueuePresented = false
+    @State private var isQualitySelectionPresented = false
+    @State private var hasSelectableSubtitleTracks = false
 
     private var isLandscape: Bool {
         rotationCoordinator.chromeLandscape
@@ -915,6 +917,17 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 detailViewModel.scheduleDanmakuLoadIfNeeded()
             }
         }
+        .onDisappear {
+            setQualitySelectionPresented(false)
+        }
+        .onReceive(detailViewModel.$isShowingQualitySelection.removeDuplicates()) { isShowing in
+            guard isQualitySelectionPresented != isShowing else { return }
+            isQualitySelectionPresented = isShowing
+        }
+        .onChange(of: rotationCoordinator.isSystemRotationTransitioning) { _, isTransitioning in
+            guard isTransitioning else { return }
+            setQualitySelectionPresented(false)
+        }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
             guard usesNarrowObservation else { return }
             context.lifecycleActions.onPlayerChanged()
@@ -924,6 +937,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             // 旋转控件预热会在 bare transition 中短暂翻转该值，不能把它当成
             // 用户真实进入横屏，否则刚弹出的竖屏菜单会被预热流程立即关闭。
             guard !isBareSurfaceTransitionActive else { return }
+            setQualitySelectionPresented(false)
             if isLandscape {
                 portraitMoreControlsRequestID = nil
                 onDismissMoreControls()
@@ -931,7 +945,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 detailViewModel.isShowingSubtitleSelection = false
             } else {
                 isMoreControlsPresented = false
-                }
+            }
         }
         .onChange(of: overlaySnapshot.playbackContentMode) { _, mode in
             if mode != .audioOnly {
@@ -939,6 +953,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             }
             guard mode == .audioOnly else { return }
             isMoreControlsPresented = false
+            setQualitySelectionPresented(false)
             portraitMoreControlsRequestID = nil
             onDismissMoreControls()
             if isLandscape {
@@ -952,13 +967,15 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             withTransaction(transaction) {
                 isMoreControlsPresented = false
                 isVideoListenQueuePresented = false
-                    isMoreControlsButtonPressed = false
+                setQualitySelectionPresented(false)
+                isMoreControlsButtonPressed = false
                 portraitMoreControlsRequestID = nil
             }
             onDismissMoreControls()
             playbackControlsVisibility.cancelAutoHide()
         }
         .onChange(of: playbackControlsHideRequestGeneration) { _, _ in
+            setQualitySelectionPresented(false)
             playbackControlsVisibility.hide(animated: false)
         }
         .onChange(of: surfaceState.isUserSeeking) { _, isUserSeeking in
@@ -971,6 +988,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         .onReceive(runtimeSettings.$snapshot.dropFirst()) { _ in
             guard usesNarrowObservation else { return }
             experimentState.recordSettingsStatePublish()
+        }
+        .onReceive(subtitleControlAvailabilityPublisher) { hasTracks in
+            hasSelectableSubtitleTracks = hasTracks
         }
         .sheet(isPresented: $isVideoListenQueuePresented) {
             NavigationStack {
@@ -1056,7 +1076,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             isSecondaryControlsPresented: keepsChromeMounted
                 && (isMoreControlsPresented
                     || portraitMoreControlsRequestID != nil
-                    || isVideoListenQueuePresented),
+                    || isVideoListenQueuePresented
+                    || isQualitySelectionPresented),
             ignoresContainerSafeArea: true,
             keepsPlayerSurfaceStable: true,
             fullscreenMode: fullscreenMode,
@@ -1081,11 +1102,63 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     /// 非听书模式下的 accessory 槽位：字幕（CC）按钮 + 全屏状态时的更多播放设置按钮。
     private var subtitleAndMoreControlsAccessory: some View {
         HStack(spacing: controlMetrics.controlSpacing) {
-            subtitleControlButton
+            if hasSelectableSubtitleTracks {
+                subtitleControlButton
+            }
+
+            qualityMenuControl
 
             if usesFullscreenStatusChrome {
                 moreControlsButton
             }
+        }
+    }
+
+    private var subtitleControlAvailabilityPublisher: AnyPublisher<Bool, Never> {
+        let store = detailViewModel.subtitleRenderStore
+        return Publishers.CombineLatest(
+            store.$selectableTracksCID,
+            detailViewModel.$selectedCID
+        )
+        .map { values in
+            guard let tracksCID = values.0 else { return false }
+            return tracksCID == values.1
+        }
+        .removeDuplicates()
+        .eraseToAnyPublisher()
+    }
+
+    private var qualityMenuControl: some View {
+        VideoDetailInlineQualityMenuControl(
+            store: detailViewModel.playbackRenderStore.qualityControlStore,
+            metrics: controlMetrics,
+            isLandscape: isLandscape,
+            onPress: {
+                guard !isLandscape else { return }
+                playbackControlsVisibility.cancelAutoHide()
+                setQualitySelectionPresented(true)
+            },
+            onMenuWillOpen: {
+                guard isLandscape else { return }
+                playbackControlsVisibility.cancelAutoHide()
+            },
+            onMenuDidClose: {
+                guard isLandscape else { return }
+                playbackControlsVisibility.showAndSchedule(
+                    showsPlaybackControls: keepsChromeMounted,
+                    isLayoutTransitioning: isBareSurfaceTransitionActive
+                )
+            },
+            selectPlayVariant: { detailViewModel.selectPlayVariant($0) }
+        )
+    }
+
+    private func setQualitySelectionPresented(_ isPresented: Bool) {
+        if isQualitySelectionPresented != isPresented {
+            isQualitySelectionPresented = isPresented
+        }
+        if detailViewModel.isShowingQualitySelection != isPresented {
+            detailViewModel.isShowingQualitySelection = isPresented
         }
     }
 
@@ -2034,8 +2107,8 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
         let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
         let background = Color(UIColor.systemBackground.resolvedColor(with: traits))
         let shape = UnevenRoundedRectangle(
-            topLeadingRadius: 24,
-            bottomLeadingRadius: 24,
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
             style: .continuous
         )
         return VStack(spacing: 0) {
@@ -2704,7 +2777,7 @@ private struct SurfaceOnlyLandscapeToggleRow: View {
     }
 }
 
-private struct SurfaceOnlyLandscapeMenuRow: View {
+struct SurfaceOnlyLandscapeMenuRow: View {
     let title: String
     let subtitle: String?
     let systemImage: String
@@ -2839,6 +2912,7 @@ private struct SurfaceOnlyQualityChoicesPage: View {
                     }
                 }
                 .disabled(item.isDisabled)
+                .opacity(item.isDisabled ? 0.45 : 1)
             }
         }
         .scrollContentBackground(.hidden)

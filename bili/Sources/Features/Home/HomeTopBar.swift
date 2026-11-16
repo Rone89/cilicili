@@ -52,22 +52,29 @@ struct HomeTopBar: ToolbarContent {
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
         }
 
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            HomeModeMenuButton(
-                selection: selection,
-                hiddenTabs: hiddenTabs,
-                onSelect: onSelect,
-                onOpenRootPage: actions.onOpenRootPage
-            )
-            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+        ToolbarItem(placement: .topBarTrailing) {
+            HStack(spacing: HomeTopBarLayout.capsuleActionSpacing) {
+                HomeModeMenuButton(
+                    selection: selection,
+                    hiddenTabs: hiddenTabs,
+                    onSelect: onSelect,
+                    onOpenRootPage: actions.onOpenRootPage
+                )
+                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
 
-            HomeTopBarProfileButton(actions: actions)
+                HomeTopBarProfileButton(actions: actions)
+                    .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+            }
+            .frame(height: HomeTopBarLayout.controlHeight)
+            .glassEffect(.regular.interactive(), in: Capsule())
         }
+        .sharedBackgroundVisibility(.hidden)
     }
 }
 
 private enum HomeTopBarLayout {
     static let controlHeight: CGFloat = 44
+    static let capsuleActionSpacing: CGFloat = 20
 }
 
 struct FeedToolbarTitle: View {
@@ -195,44 +202,39 @@ private struct HomeTopBarProfileButtonContent: View {
     let action: () -> Void
     let onOpenMessages: () -> Void
 
-    // The system capsule extends beyond the trailing button's frame.
-    private let avatarTrailingOffset: CGFloat = 4
-
     var body: some View {
         let showsUnread = sessionStore.isLoggedIn && hasUnread
-        ZStack(alignment: .topLeading) {
-            Menu {
-                Button("个人空间", systemImage: "person.crop.circle", action: action)
-                Button("消息", systemImage: "bubble.left.and.bubble.right", action: onOpenMessages)
-            } label: {
-                avatar
-                    .padding(.leading, avatarTrailingOffset * 2)
-                    .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-
-            // Keep the unread indicator outside the menu's animated source control.
-            // The photo is circular, so the badge centers on its upper-LEFT
-            // edge (45° diagonal) instead of the frame corner, which would
-            // float in the gap beside the round photo.
-            Circle()
-                .fill(appTintColor)
-                .frame(width: 8, height: 8)
-                .padding(.top, 6)
-                .padding(.leading, 8)
-                .opacity(showsUnread ? 1 : 0)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-                .transaction {
-                    $0.animation = nil
-                    $0.disablesAnimations = true
-                }
+        Menu {
+            Button("个人空间", systemImage: "person.crop.circle", action: action)
+            Button("消息", systemImage: "bubble.left.and.bubble.right", action: onOpenMessages)
+        } label: {
+            avatar
+                .overlay(alignment: .topLeading) { unreadDot(showsUnread: showsUnread) }
+                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+                .contentShape(Circle())
         }
-        .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+        .buttonStyle(.plain)
         .accessibilityLabel("个人空间与消息")
         .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
         .accessibilityIdentifier("home.account.avatar")
+    }
+
+    /// Unread badge overlaid on the avatar view itself so its position rides
+    /// with whatever transform the toolbar/Menu applies to the label content —
+    /// as a ZStack sibling it drifted away from the photo on device (193).
+    /// The center sits on the photo circle's upper-left edge (45° diagonal).
+    private func unreadDot(showsUnread: Bool) -> some View {
+        Circle()
+            .fill(appTintColor)
+            .frame(width: 8, height: 8)
+            .offset(x: 1, y: 1)
+            .opacity(showsUnread ? 1 : 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .transaction {
+                $0.animation = nil
+                $0.disablesAnimations = true
+            }
     }
 
     private var avatar: some View {

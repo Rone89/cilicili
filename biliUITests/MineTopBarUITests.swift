@@ -16,9 +16,14 @@ final class MineTopBarUITests: XCTestCase {
         let app = launchFixture()
         XCTAssertTrue(app.staticTexts["mine.feed.title"].exists)
         XCTAssertEqual(app.staticTexts["mine.feed.title"].label, "我的")
-        // The mine bar is page-owned (safe-area inset), so the button surfaces
-        // as a plain app button, not a navigation-bar button.
-        XCTAssertTrue(app.buttons["mine.search.button"].exists, app.debugDescription)
+        XCTAssertTrue(
+            app.navigationBars.buttons["mine.search.button"].exists,
+            app.debugDescription
+        )
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "mine-toolbar-idle"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testSearchButtonRevealsFieldFiltersAndCancelRestores() {
@@ -29,6 +34,7 @@ final class MineTopBarUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["mine.search.cancel"].waitForExistence(timeout: 3))
 
+        field.tap()
         field.typeText("设置")
         XCTAssertEqual(field.value as? String, "设置")
 
