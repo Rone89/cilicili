@@ -236,6 +236,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     /// 当前布局解析出的滚动泳道数（显示区域占比验证用）。
     var debugScrollLaneCount: Int { layoutParameters?.scrollLaneCount ?? 0 }
     var debugContentFrameHeight: CGFloat { layoutParameters?.contentFrame.height ?? 0 }
+    var debugContentFrame: CGRect? { layoutParameters?.contentFrame }
 
     /// 以显式媒体时刻驱动一次排程/回收（单测与诊断用，绕过真实播放器时钟）。
     func debugScheduleForTesting(at now: Double) {
@@ -879,15 +880,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     private func resolveLayoutParameters(for configuration: DanmakuOverlayConfiguration) -> SyncLayoutParameters {
         let settings = configuration.settings.normalized
-        let topPadding = configuration.topInset + CGFloat(settings.danmakuKit.topPadding)
-        let bottomPadding = configuration.bottomInset + CGFloat(settings.danmakuKit.bottomPadding)
-        let clampedTopPadding = min(max(topPadding, 0), bounds.height)
-        let clampedBottomPadding = min(max(bottomPadding, 0), max(0, bounds.height - clampedTopPadding))
-        let contentFrame = CGRect(
-            x: 0,
-            y: clampedTopPadding,
-            width: bounds.width,
-            height: max(0, bounds.height - clampedTopPadding - clampedBottomPadding)
+        let contentFrame = DanmakuVideoViewport.insetContentFrame(
+            in: bounds,
+            aspectRatio: configuration.videoAspectRatio,
+            topInset: configuration.topInset,
+            bottomInset: configuration.bottomInset,
+            settings: settings.danmakuKit
         )
         let font = DanmakuRenderPolicy.font(
             for: DanmakuItem(

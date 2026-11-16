@@ -737,6 +737,158 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testManualFullscreenDefersSystemChromeHidingUntilSystemTransitionBegins() throws {
+        let dependencies = AppDependencies()
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(dependencies.libraryStore)
+
+        let landscapeVideo = try JSONDecoder.bili.decode(VideoItem.self, from: Data(
+            #"{"bvid":"BVManualFullscreenTiming","title":"手动全屏时序测试","dimension":{"width":1920,"height":1080}}"#.utf8
+        ))
+        let landscapeModel = VideoDetailViewModel(
+            seedVideo: landscapeVideo,
+            api: dependencies.api,
+            libraryStore: dependencies.libraryStore,
+            sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService
+        )
+        var landscapeChromeChanges = [Bool]()
+        let landscapeBridge = VideoDetailRotationBridgeViewController(
+            initialVideo: landscapeVideo,
+            viewModel: landscapeModel,
+            runtimeSettings: runtime,
+            dependencies: dependencies,
+            openVideoOwnerRoute: nil,
+            selectedContentTab: .constant(.detail),
+            onShowNetworkDiagnostics: {},
+            onShowFavoriteFolders: {},
+            onShowCoinPicker: {},
+            onOpenCommentComposer: { _ in },
+            onShowDanmakuSettings: {},
+            onPresentPlayerMoreControls: { _, _ in },
+            onDismissPlayerMoreControls: {},
+            onReply: { _ in },
+            onSystemChromeVisibilityChange: { landscapeChromeChanges.append($0) },
+            onNavigateBack: {}
+        )
+        defer { landscapeBridge.prepareForDismantle(); landscapeModel.stopPlaybackForNavigation() }
+        landscapeBridge.loadViewIfNeeded()
+
+        landscapeBridge.requestVideoDetailFullscreen()
+        XCTAssertTrue(
+            landscapeChromeChanges.isEmpty,
+            "Landscape manual fullscreen must wait for viewWillTransition before mutating safe area / toolbar visibility."
+        )
+        XCTAssertFalse(landscapeBridge.prefersStatusBarHidden)
+
+        let transition = ToolbarRotationTestCoordinator()
+        landscapeBridge.viewWillTransition(to: CGSize(width: 874, height: 402), with: transition)
+        XCTAssertEqual(landscapeChromeChanges, [true])
+        XCTAssertTrue(landscapeBridge.prefersStatusBarHidden)
+
+        let portraitVideo = try JSONDecoder.bili.decode(VideoItem.self, from: Data(
+            #"{"bvid":"BVPortraitManualFullscreen","title":"竖屏全屏测试","dimension":{"width":1080,"height":1920}}"#.utf8
+        ))
+        let portraitModel = VideoDetailViewModel(
+            seedVideo: portraitVideo,
+            api: dependencies.api,
+            libraryStore: dependencies.libraryStore,
+            sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService
+        )
+        var portraitChromeChanges = [Bool]()
+        let portraitBridge = VideoDetailRotationBridgeViewController(
+            initialVideo: portraitVideo,
+            viewModel: portraitModel,
+            runtimeSettings: runtime,
+            dependencies: dependencies,
+            openVideoOwnerRoute: nil,
+            selectedContentTab: .constant(.detail),
+            onShowNetworkDiagnostics: {},
+            onShowFavoriteFolders: {},
+            onShowCoinPicker: {},
+            onOpenCommentComposer: { _ in },
+            onShowDanmakuSettings: {},
+            onPresentPlayerMoreControls: { _, _ in },
+            onDismissPlayerMoreControls: {},
+            onReply: { _ in },
+            onSystemChromeVisibilityChange: { portraitChromeChanges.append($0) },
+            onNavigateBack: {}
+        )
+        defer { portraitBridge.prepareForDismantle(); portraitModel.stopPlaybackForNavigation() }
+        portraitBridge.loadViewIfNeeded()
+
+        portraitBridge.requestVideoDetailFullscreen()
+        XCTAssertEqual(
+            portraitChromeChanges,
+            [true],
+            "Portrait fake-fullscreen does not trigger system rotation and must hide chrome immediately."
+        )
+        XCTAssertTrue(portraitBridge.prefersStatusBarHidden)
+    }
+
+    @MainActor
+    func testLandscapeFullscreenPreservesPortraitSafeAreaInsetsAcrossRotationExit() throws {
+        let dependencies = AppDependencies()
+        let model = try makeAspectRatioContainerModel(dependencies: dependencies, width: 1920, height: 1080)
+        defer { model.viewModel.stopPlaybackForNavigation() }
+        let coordinator = model.rotationCoordinator
+        coordinator.activate(isLandscape: false)
+
+        let portraitInsets = UIEdgeInsets(top: 62, left: 0, bottom: 34, right: 0)
+        model.applySafeAreaInsetsIfAppropriate(portraitInsets, isPortraitContainer: true)
+        XCTAssertEqual(model.rootSafeAreaInsets, portraitInsets)
+        XCTAssertEqual(model.contentState.bottomInset, 34)
+
+        // Entering landscape must not overwrite the portrait insets with fullscreen top=0.
+        coordinator.beginSystemTransition(toLandscape: true)
+        model.beginSystemRotation(toLandscape: true)
+        let landscapeInsets = UIEdgeInsets(top: 0, left: 62, bottom: 21, right: 62)
+        model.applySafeAreaInsetsIfAppropriate(landscapeInsets, isPortraitContainer: false)
+        _ = coordinator.finishSystemTransition(toLandscape: true, currentOrientation: .landscapeRight)
+        model.finishSystemRotation()
+        model.applySafeAreaInsetsIfAppropriate(landscapeInsets, isPortraitContainer: false)
+        model.applySafeAreaInsetsIfAppropriate(landscapeInsets, isPortraitContainer: true)
+        XCTAssertEqual(model.rootSafeAreaInsets, portraitInsets)
+        XCTAssertEqual(model.contentState.bottomInset, 34)
+
+        // Frame 0 of returning to portrait (.preparingPortrait) must keep portrait safeAreaTop.
+        coordinator.beginSystemTransition(toLandscape: false)
+        model.beginSystemRotation(toLandscape: false)
+        let transitionPortraitLayout = model.layout(
+            in: CGSize(width: 402, height: 874),
+            safeAreaTop: model.rootSafeAreaInsets.top,
+            rotationCoordinator: coordinator
+        )
+        XCTAssertEqual(transitionPortraitLayout.playerFrame.minY, 62)
+        XCTAssertEqual(transitionPortraitLayout.contentFrame.minY, 62)
+
+        // Transient top=0 while status bar is still animating back must not drop layout to y=0.
+        model.applySafeAreaInsetsIfAppropriate(
+            UIEdgeInsets(top: 0, left: 0, bottom: 34, right: 0),
+            isPortraitContainer: true
+        )
+        XCTAssertEqual(model.rootSafeAreaInsets.top, 62)
+
+        _ = coordinator.finishSystemTransition(toLandscape: false, currentOrientation: .portrait)
+        model.finishSystemRotation()
+        XCTAssertEqual(model.rootSafeAreaInsets, portraitInsets)
+
+        // Cold-start in landscape (no prior cached portrait insets) still accepts >0 portrait insets mid-exit.
+        let coldLandscapeModel = try makeAspectRatioContainerModel(dependencies: dependencies, width: 1920, height: 1080)
+        defer { coldLandscapeModel.viewModel.stopPlaybackForNavigation() }
+        let coldCoordinator = coldLandscapeModel.rotationCoordinator
+        coldCoordinator.activate(isLandscape: true)
+        coldCoordinator.beginSystemTransition(toLandscape: false)
+        coldLandscapeModel.beginSystemRotation(toLandscape: false)
+        coldLandscapeModel.applySafeAreaInsetsIfAppropriate(
+            UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0),
+            isPortraitContainer: true
+        )
+        XCTAssertEqual(coldLandscapeModel.rootSafeAreaInsets.top, 59)
+    }
+
+    @MainActor
     func testPortraitFullscreenDoesNotRequestSystemRotation() {
         let coordinator = PlaybackRotationCoordinator()
         coordinator.activate(isLandscape: false)

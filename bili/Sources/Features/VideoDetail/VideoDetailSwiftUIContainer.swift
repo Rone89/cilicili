@@ -25,6 +25,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     #endif
     @Published private(set) var navigationHistory: NavigationHistoryContext?
     @Published var rootSafeAreaInsets = UIEdgeInsets.zero
+    private(set) var lastEmbeddedSafeAreaInsets: UIEdgeInsets?
     private(set) var interactiveScrollOffset: CGFloat = 0
 
     private var cancellables = Set<AnyCancellable>()
@@ -97,6 +98,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         contentState.suppressesInteractiveContentActions = true
         if !toLandscape {
             currentPlayerHeight = nil
+            if let lastEmbeddedSafeAreaInsets {
+                applyRootSafeAreaInsetsWithoutAnimation(lastEmbeddedSafeAreaInsets)
+            }
         }
     }
 
@@ -110,6 +114,51 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         isBareSurfaceTransitionActive = false
         retainsChromeDuringBareSurfaceTransition = false
         contentState.suppressesInteractiveContentActions = false
+    }
+
+    /// 全屏/横屏布局不消费顶部安全区，也不展示竖屏底部内容区。仅在非全屏竖屏态
+    /// 采集并保留嵌入安全区，确保横屏退回竖屏首帧即有正确顶栏安全区而不偏上。
+    func canApplySafeAreaInsets(
+        _ insets: UIEdgeInsets,
+        isPortraitContainer: Bool
+    ) -> Bool {
+        guard !rotationCoordinator.layoutLandscape,
+              !rotationCoordinator.isPortraitFullscreen,
+              isPortraitContainer
+        else { return false }
+        if rotationCoordinator.isTransitioning,
+           insets.top <= 0,
+           rootSafeAreaInsets.top > 0 || (lastEmbeddedSafeAreaInsets?.top ?? 0) > 0 {
+            return false
+        }
+        return true
+    }
+
+    func applySafeAreaInsetsIfAppropriate(
+        _ insets: UIEdgeInsets,
+        isPortraitContainer: Bool
+    ) {
+        guard canApplySafeAreaInsets(insets, isPortraitContainer: isPortraitContainer) else {
+            return
+        }
+        lastEmbeddedSafeAreaInsets = insets
+        applyRootSafeAreaInsetsWithoutAnimation(insets)
+    }
+
+    private func applyRootSafeAreaInsetsWithoutAnimation(_ insets: UIEdgeInsets) {
+        guard rootSafeAreaInsets != insets || contentState.bottomInset != insets.bottom else {
+            return
+        }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            if rootSafeAreaInsets != insets {
+                rootSafeAreaInsets = insets
+            }
+            if contentState.bottomInset != insets.bottom {
+                contentState.bottomInset = insets.bottom
+            }
+        }
     }
 
     func setContentUpdatesDeferred(_ deferred: Bool) {
@@ -604,6 +653,8 @@ private struct VideoDetailInteractivePlayerLayer: View {
             bounds: size
         )
 
+        let suppressesRotationAnimation = rotationCoordinator.isTransitioning || layout.usesFullscreenLayout
+
         ZStack(alignment: .topLeading) {
             // Keep the player stage opaque while the stable player/surface is
             // still being created. The content layer uses the light grouped
@@ -612,6 +663,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                 .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
                 .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
                 .allowsHitTesting(false)
+                .disablingRotationTransaction(suppressesRotationAnimation)
                 .zIndex(1)
 
             if let playerViewModel = model.surfacePlayerViewModel {
@@ -635,6 +687,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                 )
                 .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
                 .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                .disablingRotationTransaction(suppressesRotationAnimation)
                 .zIndex(2)
 
                 if showsCollapsedChrome && !layout.usesFullscreenLayout {
@@ -646,6 +699,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                     )
                     .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
                     .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                    .disablingRotationTransaction(suppressesRotationAnimation)
                     .zIndex(3)
                 }
             } else {
@@ -668,6 +722,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                 }
                 .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
                 .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                .disablingRotationTransaction(suppressesRotationAnimation)
                 .zIndex(2)
             }
         }
@@ -784,6 +839,9 @@ struct VideoDetailSwiftUIContainer: View {
                     !layout.usesFullscreenLayout
                         && !model.contentState.suppressesInteractiveContentActions
                 )
+                .disablingRotationTransaction(
+                    rotationCoordinator.isTransitioning || layout.usesFullscreenLayout
+                )
 
                 VideoDetailInteractivePlayerLayer(
                     model: model,
@@ -818,6 +876,17 @@ struct VideoDetailSwiftUIContainer: View {
             \.videoDetailActionButtonStyle,
             dependencies.libraryStore.videoDetailActionButtonStyle
         )
+    }
+}
+
+@MainActor
+private extension View {
+    func disablingRotationTransaction(_ isDisabled: Bool) -> some View {
+        transaction { transaction in
+            if isDisabled {
+                transaction.animation = nil
+            }
+        }
     }
 }
 
@@ -971,18 +1040,58 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        scheduleRootSafeAreaInsetsSyncIfNeeded()
+    }
+
+    private func scheduleRootSafeAreaInsetsSyncIfNeeded() {
         let insets = playerSafeAreaInsets
-        if contentModel.rootSafeAreaInsets != insets {
-            DispatchQueue.main.async { [weak self] in
-                guard let self,
-                      self.playerSafeAreaInsets == insets,
-                      self.contentModel.rootSafeAreaInsets != insets else { return }
-                self.contentModel.rootSafeAreaInsets = insets
-                if self.contentModel.contentState.bottomInset != insets.bottom {
-                    self.contentModel.contentState.bottomInset = insets.bottom
-                }
-            }
+        let isPortraitContainer = isPortraitContainerBounds
+        guard shouldConsiderSafeAreaInsetsUpdate(
+            insets,
+            isPortraitContainer: isPortraitContainer
+        ) else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.playerSafeAreaInsets == insets
+            else { return }
+            self.contentModel.applySafeAreaInsetsIfAppropriate(
+                insets,
+                isPortraitContainer: self.isPortraitContainerBounds
+            )
         }
+    }
+
+    private func syncRootSafeAreaInsetsImmediatelyIfNeeded() {
+        guard view.window != nil,
+              !rotationCoordinator.layoutLandscape,
+              !rotationCoordinator.isPortraitFullscreen,
+              !rotationCoordinator.isTransitioning,
+              isPortraitContainerBounds
+        else {
+            view.setNeedsLayout()
+            return
+        }
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        contentModel.applySafeAreaInsetsIfAppropriate(
+            playerSafeAreaInsets,
+            isPortraitContainer: isPortraitContainerBounds
+        )
+    }
+
+    private var isPortraitContainerBounds: Bool {
+        view.bounds.height >= view.bounds.width && view.bounds.width > 0
+    }
+
+    private func shouldConsiderSafeAreaInsetsUpdate(
+        _ insets: UIEdgeInsets,
+        isPortraitContainer: Bool
+    ) -> Bool {
+        guard contentModel.canApplySafeAreaInsets(insets, isPortraitContainer: isPortraitContainer) else {
+            return false
+        }
+        return contentModel.rootSafeAreaInsets != insets
+            || contentModel.contentState.bottomInset != insets.bottom
     }
 
     private var playerSafeAreaInsets: UIEdgeInsets {
@@ -1015,10 +1124,12 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
     func finishSystemRotation() {
         contentModel.finishSystemRotation()
+        syncRootSafeAreaInsetsImmediatelyIfNeeded()
     }
 
     func recoverStableLayout() {
         contentModel.recoverStableLayout()
+        syncRootSafeAreaInsetsImmediatelyIfNeeded()
     }
 
     func dismissPlayerMoreControls() {

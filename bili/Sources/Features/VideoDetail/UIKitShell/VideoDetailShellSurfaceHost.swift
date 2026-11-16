@@ -42,6 +42,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     }
 
     private let state: State
+    private weak var detailViewModel: VideoDetailViewModel?
     private let overlayState: VideoDetailShellOverlayState
     private let experimentState: VideoDetailPerformanceExperimentState
     private let libraryStore: LibraryStore
@@ -86,16 +87,20 @@ final class VideoDetailShellSurfaceHost: UIView {
             experimentState: experimentState
         )
         self.state = state
+        self.detailViewModel = detailViewModel
         self.overlayState = overlayState
         self.experimentState = experimentState
         self.libraryStore = dependencies.libraryStore
         playerViewModel.setBackgroundPlaybackEnabled(
             dependencies.libraryStore.backgroundPlaybackEnabled
         )
+        playerViewModel.setAutomaticPictureInPictureFromInlineAllowed(
+            dependencies.libraryStore.pictureInPictureEnabled
+        )
         self.rotationCoordinator = rotationCoordinator
         self.surfaceHostView = DirectUIKitPlayerSurfaceHostView(
             viewModel: playerViewModel,
-            isPictureInPictureEnabled: dependencies.libraryStore.pictureInPictureEnabled
+            isPictureInPictureEnabled: dependencies.libraryStore.allowsPictureInPictureController
                 && !playerViewModel.isAudioOnlyPlayback
         )
         let overlayRoot = PlayerOverlayHostRoot(
@@ -163,17 +168,22 @@ final class VideoDetailShellSurfaceHost: UIView {
             }
             .store(in: &cancellables)
 
-        dependencies.libraryStore.$pictureInPictureEnabled
-            .removeDuplicates()
-            .sink { [weak self] isEnabled in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.surfaceHostView.setPictureInPictureEnabled(
-                        isEnabled && !self.state.playerViewModel.isAudioOnlyPlayback
-                    )
-                }
+        Publishers.CombineLatest(
+            dependencies.libraryStore.$pictureInPictureEnabled,
+            dependencies.libraryStore.$autoPictureInPictureOnExitEnabled
+        )
+        .removeDuplicates { $0 == $1 }
+        .sink { [weak self] isPictureInPictureEnabled, isAutoExitMiniPlayerEnabled in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.surfaceHostView.setPictureInPictureEnabled(
+                    (isPictureInPictureEnabled || isAutoExitMiniPlayerEnabled)
+                        && !self.state.playerViewModel.isAudioOnlyPlayback,
+                    allowsAutomaticInline: isPictureInPictureEnabled
+                )
             }
-            .store(in: &cancellables)
+        }
+        .store(in: &cancellables)
 
         rotationCoordinator.$isSystemRotationTransitioning
             .removeDuplicates()
@@ -183,11 +193,13 @@ final class VideoDetailShellSurfaceHost: UIView {
                         self?.state.requestPlaybackControlsHideForRotation()
                     }
                 } else {
-                    // 转场结束后强制一次布局：若 SwiftUI 提案仍停在旋转前尺寸，
-                    // bounds 不会再变化，layoutSubviews 的互换判据纠正需要这次
-                    // 主动布局才有机会执行。
+                    // 转场结束后强制校准布局，并在下一个主线程周期再核一次，避免延迟到来的 SwiftUI 提案覆写。
                     Task { @MainActor [weak self] in
                         guard let self, !self.isTornDown else { return }
+                        self.setNeedsLayout()
+                        self.layoutIfNeeded()
+                        await Task.yield()
+                        guard !self.isTornDown, !self.rotationCoordinator.isTransitioning else { return }
                         self.setNeedsLayout()
                         self.layoutIfNeeded()
                     }
@@ -203,8 +215,11 @@ final class VideoDetailShellSurfaceHost: UIView {
     }
 
     override func layoutSubviews() {
+        let didReconcileFullscreenFrame = reconcileFullscreenBoundsIfNeeded()
         super.layoutSubviews()
-        reconcileSwappedFullscreenBounds()
+        if didReconcileFullscreenFrame {
+            surfaceHostView.refreshLayoutImmediately()
+        }
 #if DEBUG
         guard bounds != lastReportedDiagnosticOverlayBounds else { return }
         guard overlayHostingController.view.bounds.size == bounds.size else { return }
@@ -213,25 +228,41 @@ final class VideoDetailShellSurfaceHost: UIView {
 #endif
     }
 
-    /// 旋转后宿主尺寸若恰好是旋转前窗口的宽高互换值，说明 SwiftUI 的布局提案没跟上
-    /// 旋转，播放表面会停在竖屏全屏尺寸上（画面按竖屏比例居中、偏位）。此处以窗口
-    /// 真实尺寸为准纠正自身 frame。仅在转场结束后执行，避免打断正在进行的旋转动画；
-    /// 转场结束由 isSystemRotationTransitioning 订阅强制一次布局保证必然触发。
-    /// 内联小窗尺寸不满足宽高互换判据，不会被误伤。
-    private func reconcileSwappedFullscreenBounds() {
-        guard !rotationCoordinator.isTransitioning else { return }
-        guard let window else { return }
+    /// 旋转或手动全屏结束后校准宿主边界：除窗口宽高精确互换的残留外，还覆盖横屏全屏态下的
+    /// 任意非全窗尺寸或 origin 偏移（例如手动点击全屏前状态栏/底栏隐藏触发的异步竖屏布局覆盖）。
+    /// 放在 `super.layoutSubviews()` 之前执行，避免子视图和播放层先按旧尺寸排版一次。
+    @discardableResult
+    private func reconcileFullscreenBoundsIfNeeded() -> Bool {
+        guard !rotationCoordinator.isTransitioning else { return false }
+        guard rotationCoordinator.isLandscape || rotationCoordinator.isPortraitFullscreen else {
+            return false
+        }
+        guard let window else { return false }
         let windowSize = window.bounds.size
-        guard windowSize.width > 1, windowSize.height > 1 else { return }
+        guard windowSize.width > 1, windowSize.height > 1 else { return false }
         let currentSize = bounds.size
         let isSwapped = abs(currentSize.width - windowSize.height) <= 1
             && abs(currentSize.height - windowSize.width) <= 1
-        guard isSwapped, currentSize != windowSize else { return }
-        guard let superview else { return }
+            && currentSize != windowSize
+        let expectsFullWindow = rotationCoordinator.isPortraitFullscreen
+            || (rotationCoordinator.isLandscape && windowSize.width > windowSize.height)
+        guard isSwapped || expectsFullWindow else { return false }
+        guard let superview else { return false }
         let target = superview.convert(window.bounds, from: window)
-        guard frame != target else { return }
-        layer.removeAllAnimations()
-        frame = target
+        let hasFrameMismatch = abs(frame.minX - target.minX) > 0.5
+            || abs(frame.minY - target.minY) > 0.5
+            || abs(frame.width - target.width) > 0.5
+            || abs(frame.height - target.height) > 0.5
+        let hasPendingLayerAnimations = !(layer.animationKeys()?.isEmpty ?? true)
+        guard hasFrameMismatch || hasPendingLayerAnimations else { return false }
+        UIView.performWithoutAnimation {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            removeLayerAnimationsRecursively()
+            frame = target
+            CATransaction.commit()
+        }
+        return true
     }
 
     func attach(to parent: UIViewController) {
@@ -239,6 +270,20 @@ final class VideoDetailShellSurfaceHost: UIView {
         guard overlayHostingController.parent == nil else { return }
         parent.addChild(overlayHostingController)
         overlayHostingController.didMove(toParent: parent)
+    }
+
+    func prepareForMiniPlayerExitIfDismantled() {
+        guard !isTornDown, let detailViewModel else { return }
+        guard !detailViewModel.isAwaitingRelatedVideoReturnPlayback else { return }
+        let isRemovedFromStack = detailViewModel.isRouteRemovedFromNavigationStack?() ?? true
+        guard isRemovedFromStack else { return }
+        detailViewModel.markExitingVideoDetailRoute()
+        let preferredWindow = window
+        let frameInWindow = bounds.width > 16 ? convert(bounds, to: preferredWindow) : nil
+        _ = detailViewModel.handoffToSystemMiniPlayerIfEligible(
+            preferredFrameInWindow: frameInWindow,
+            preferredWindow: preferredWindow
+        )
     }
 
     func tearDown() {
@@ -350,8 +395,9 @@ final class VideoDetailShellSurfaceHost: UIView {
         )
         surfaceHostView.setPlayerViewModel(playerViewModel)
         surfaceHostView.setPictureInPictureEnabled(
-            libraryStore.pictureInPictureEnabled
-                && !playerViewModel.isAudioOnlyPlayback
+            libraryStore.allowsPictureInPictureController
+                && !playerViewModel.isAudioOnlyPlayback,
+            allowsAutomaticInline: libraryStore.pictureInPictureEnabled
         )
     }
 
@@ -859,12 +905,15 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 }
 
                 if !isAudioOnlyPlayback {
+                    let danmakuExtra = danmakuExtraInsets(in: proxy.size, videoInsets: videoInsets)
                     VideoDetailPlayerSurfaceDanmakuLayer(
                         store: detailViewModel.danmakuRenderStore,
                         playerViewModel: viewModel,
                         usesLandscapePlaybackChrome: danmakuUsesLandscapePlaybackChrome,
                         logicalCanvasSize: danmakuCanvasSize,
                         videoAspectRatio: videoAspectRatio,
+                        additionalTopInset: danmakuExtra.top + (isPortraitFullscreen ? 8 : 0),
+                        additionalBottomInset: danmakuExtra.bottom,
                         // The bare-surface flag also covers control-tree
                         // prewarming. Danmaku must only see the real UIKit
                         // rotation transition; prewarm should not pause or
@@ -881,6 +930,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                         clock: viewModel.playbackClock,
                         cid: detailViewModel.selectedCID,
                         isFullscreen: configuration.isFullscreenActive,
+                        contentInsets: videoInsets,
                         loadTracks: { await detailViewModel.loadSubtitleTracksForCurrentVideo() }
                     )
                     .allowsHitTesting(false)
@@ -1006,7 +1056,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
     private var fullscreenMode: PlayerFullscreenMode? {
         guard !isAudioOnlyPlayback else { return nil }
-        return isLandscape ? .landscape(.landscapeRight) : nil
+        if isLandscape { return .landscape(.landscapeRight) }
+        return isPortraitFullscreen ? .portrait : nil
     }
 
     private var danmakuUsesLandscapePlaybackChrome: Bool {
@@ -1025,7 +1076,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private var effectivePictureInPictureEnabled: Bool {
-        runtimeSettings.pictureInPictureEnabled && !isAudioOnlyPlayback
+        runtimeSettings.allowsPictureInPictureController && !isAudioOnlyPlayback
     }
 
     private var keepsChromeMounted: Bool {
@@ -1341,30 +1392,35 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private func visibleVideoInsets(in size: CGSize) -> EdgeInsets {
-        guard configuration.isFullscreenActive,
-              size.width > 1,
-              size.height > 1,
-              videoAspectRatio > 0.1
-        else { return EdgeInsets() }
-
-        let containerAspect = size.width / size.height
-        let horizontalInset: CGFloat
-        let verticalInset: CGFloat
-        if videoAspectRatio > containerAspect {
-            let fittedHeight = size.width / videoAspectRatio
-            horizontalInset = 0
-            verticalInset = max(0, (size.height - fittedHeight) / 2)
-        } else {
-            let fittedWidth = size.height * videoAspectRatio
-            horizontalInset = max(0, (size.width - fittedWidth) / 2)
-            verticalInset = 0
-        }
-
+        guard configuration.isFullscreenActive else { return EdgeInsets() }
+        let insets = DanmakuVideoViewport.fullscreenContentInsets(
+            in: size,
+            videoAspectRatio: videoAspectRatio,
+            isPortraitFullscreen: isPortraitFullscreen
+        )
         return EdgeInsets(
-            top: verticalInset,
-            leading: horizontalInset,
-            bottom: verticalInset,
-            trailing: horizontalInset
+            top: insets.top,
+            leading: insets.leading,
+            bottom: insets.bottom,
+            trailing: insets.trailing
+        )
+    }
+
+    private func danmakuExtraInsets(
+        in size: CGSize,
+        videoInsets: EdgeInsets
+    ) -> (top: CGFloat, bottom: CGFloat) {
+        guard isPortraitFullscreen, size.width > 1, size.height > 1 else {
+            return (0, 0)
+        }
+        let canvas = DanmakuVideoViewport.scrollingCanvas(
+            in: CGRect(origin: .zero, size: size),
+            aspectRatio: videoAspectRatio
+        )
+        let canvasBottomInset = max(0, size.height - canvas.maxY)
+        return (
+            top: max(0, videoInsets.top - canvas.minY),
+            bottom: max(0, videoInsets.bottom - canvasBottomInset)
         )
     }
 
@@ -1895,23 +1951,16 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                 }
 
                 if !detailViewModel.isVideoListenModeEnabled {
-                    Toggle(isOn: Binding(
-                        get: { libraryStore.pictureInPictureEnabled },
-                        set: { libraryStore.setPictureInPictureEnabled($0) }
-                    )) {
-                        Label("画中画播放", systemImage: "pip")
+                    NavigationLink {
+                        SurfaceOnlyPictureInPictureAndBackgroundPage(
+                            libraryStore: libraryStore,
+                            viewModel: viewModel,
+                            usesLandscapePanel: false
+                        )
+                    } label: {
+                        Label("画中画&后台播放", systemImage: "pip")
                     }
-
-                    Toggle(isOn: Binding(
-                        get: { libraryStore.backgroundPlaybackEnabled },
-                        set: {
-                            libraryStore.setBackgroundPlaybackEnabled($0)
-                            viewModel.setBackgroundPlaybackEnabled($0)
-                        }
-                    )) {
-                        Label("后台播放", systemImage: "speaker.wave.2")
-                    }
-                    .accessibilityIdentifier("ui.player.backgroundPlayback")
+                    .accessibilityIdentifier("ui.player.pipAndBackgroundMenu")
                 }
 
                 if showsRecoveryTestEntry && !detailViewModel.isVideoListenModeEnabled {
@@ -2166,6 +2215,7 @@ private enum SurfaceOnlyLandscapeMoreControlsPage {
     case playbackOrder
     case sleepTimer
     case danmaku
+    case pictureInPictureAndBackground
     case rate
 
     var title: String {
@@ -2184,6 +2234,8 @@ private enum SurfaceOnlyLandscapeMoreControlsPage {
             return "定时关闭"
         case .danmaku:
             return "弹幕设置"
+        case .pictureInPictureAndBackground:
+            return "画中画&后台播放"
         case .rate:
             return "倍速"
         }
@@ -2264,6 +2316,12 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     usesLandscapePanel: true
                 )
                 .scrollContentBackground(.hidden)
+            case .pictureInPictureAndBackground:
+                SurfaceOnlyPictureInPictureAndBackgroundPage(
+                    libraryStore: libraryStore,
+                    viewModel: viewModel,
+                    usesLandscapePanel: true
+                )
             case .rate:
                 ratePage
             }
@@ -2371,24 +2429,15 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     }
 
                     if !detailViewModel.isVideoListenModeEnabled {
-                        SurfaceOnlyLandscapeToggleRow(
-                            title: "画中画播放",
+                        SurfaceOnlyLandscapeMenuRow(
+                            title: "画中画&后台播放",
                             systemImage: "pip",
                             accessory: nil,
-                            isOn: Binding(
-                                get: { libraryStore.pictureInPictureEnabled },
-                                set: { libraryStore.setPictureInPictureEnabled($0) }
-                            )
-                        )
-
-                        Divider().padding(.leading, 44)
-
-                        SurfaceOnlyLandscapeToggleRow(
-                            title: "后台播放",
-                            systemImage: "speaker.wave.2",
-                            accessory: nil,
-                            isOn: backgroundPlaybackBinding
-                        )
+                            showsChevron: true
+                        ) {
+                            page = .pictureInPictureAndBackground
+                        }
+                        .accessibilityIdentifier("ui.player.pipAndBackgroundMenu")
 
                         Divider().padding(.leading, 44)
                     }
@@ -2698,16 +2747,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
 
     private var videoFormatTitle: String {
         SurfaceOnlyPlaybackFormatText.videoFormatTitle(for: viewModel.engineDiagnostics)
-    }
-
-    private var backgroundPlaybackBinding: Binding<Bool> {
-        Binding(
-            get: { libraryStore.backgroundPlaybackEnabled },
-            set: {
-                libraryStore.setBackgroundPlaybackEnabled($0)
-                viewModel.setBackgroundPlaybackEnabled($0)
-            }
-        )
     }
 
     private var showsVideoListenModeToggle: Bool {
@@ -3238,6 +3277,100 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
         )
     }
 
+}
+
+private struct SurfaceOnlyPictureInPictureAndBackgroundPage: View {
+    @ObservedObject var libraryStore: LibraryStore
+    @ObservedObject var viewModel: PlayerStateViewModel
+    let usesLandscapePanel: Bool
+
+    var body: some View {
+        if usesLandscapePanel {
+            ScrollView {
+                VStack(spacing: 10) {
+                    VStack(spacing: 0) {
+                        SurfaceOnlyLandscapeToggleRow(
+                            title: "应用外画中画播放",
+                            systemImage: "pip",
+                            accessory: nil,
+                            isOn: outsideAppPictureInPictureBinding
+                        )
+                        .accessibilityIdentifier("ui.player.pictureInPicture")
+
+                        Divider().padding(.leading, 44)
+
+                        SurfaceOnlyLandscapeToggleRow(
+                            title: "应用内画中画播放",
+                            systemImage: "pip.enter",
+                            accessory: nil,
+                            isOn: inAppPictureInPictureOnExitBinding
+                        )
+                        .accessibilityIdentifier("ui.player.autoPictureInPictureOnExit")
+
+                        Divider().padding(.leading, 44)
+
+                        SurfaceOnlyLandscapeToggleRow(
+                            title: "后台播放",
+                            systemImage: "speaker.wave.2",
+                            accessory: nil,
+                            isOn: backgroundPlaybackBinding
+                        )
+                        .accessibilityIdentifier("ui.player.backgroundPlayback")
+                    }
+                    .surfaceOnlyLandscapeGlassGroup()
+                }
+                .padding(12)
+            }
+        } else {
+            Form {
+                Section {
+                    Toggle(isOn: outsideAppPictureInPictureBinding) {
+                        Label("应用外画中画播放", systemImage: "pip")
+                    }
+                    .accessibilityIdentifier("ui.player.pictureInPicture")
+
+                    Toggle(isOn: inAppPictureInPictureOnExitBinding) {
+                        Label("应用内画中画播放", systemImage: "pip.enter")
+                    }
+                    .accessibilityIdentifier("ui.player.autoPictureInPictureOnExit")
+
+                    Toggle(isOn: backgroundPlaybackBinding) {
+                        Label("后台播放", systemImage: "speaker.wave.2")
+                    }
+                    .accessibilityIdentifier("ui.player.backgroundPlayback")
+                } footer: {
+                    Text("应用外画中画会在切出 App 时自动开启系统小窗；应用内画中画会在播放中退出视频页时以小窗继续播放。")
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("画中画&后台播放")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var outsideAppPictureInPictureBinding: Binding<Bool> {
+        Binding(
+            get: { libraryStore.pictureInPictureEnabled },
+            set: { libraryStore.setPictureInPictureEnabled($0) }
+        )
+    }
+
+    private var inAppPictureInPictureOnExitBinding: Binding<Bool> {
+        Binding(
+            get: { libraryStore.autoPictureInPictureOnExitEnabled },
+            set: { libraryStore.setAutoPictureInPictureOnExitEnabled($0) }
+        )
+    }
+
+    private var backgroundPlaybackBinding: Binding<Bool> {
+        Binding(
+            get: { libraryStore.backgroundPlaybackEnabled },
+            set: {
+                libraryStore.setBackgroundPlaybackEnabled($0)
+                viewModel.setBackgroundPlaybackEnabled($0)
+            }
+        )
+    }
 }
 
 private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {

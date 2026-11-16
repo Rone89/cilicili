@@ -10,6 +10,7 @@ struct SearchView: View {
     var isSearchFocused: FocusState<Bool>.Binding
     let onSubmit: () -> Void
     @State private var isSearching = false
+    @State private var containerWidth: CGFloat = 0
     @StateObject private var titleState = FeedChromeTitleState()
 
     init(
@@ -42,41 +43,39 @@ struct SearchView: View {
                 }
             }
         }
-        .safeAreaPadding(.top, isRootTabContent && !isSearching ? 8 : 0)
-        // Keep the same breathing room below the field as the home toolbar.
-        .safeAreaInset(edge: .top, spacing: isSearching ? 18 : 0) {
-            if isSearching {
-                SearchQueryField(
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
+            if width > 0 {
+                containerWidth = width
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 18) {
+            if isRootTabContent {
+                SearchMorphTopBar(
+                    titleState: titleState,
+                    isSearching: $isSearching,
+                    containerWidth: containerWidth,
+                    viewModel: holder.viewModel,
                     searchText: $searchText,
                     isSearchFocused: isSearchFocused,
-                    prompt: holder.viewModel?.searchPrompt ?? "搜索",
-                    onSubmit: onSubmit,
-                    onCancel: cancelSearch
+                    onSubmit: onSubmit
                 )
             }
         }
         .toolbar {
-            SearchTopBar(
-                titleState: titleState,
-                isRootTabContent: isRootTabContent,
-                isSearching: isSearching,
-                viewModel: holder.viewModel,
-                onSearch: beginSearch
-            )
+            if !isRootTabContent {
+                SearchTopBar(
+                    titleState: titleState,
+                    isRootTabContent: isRootTabContent,
+                    isSearching: $isSearching,
+                    containerWidth: containerWidth,
+                    viewModel: holder.viewModel,
+                    searchText: $searchText,
+                    isSearchFocused: isSearchFocused,
+                    onSubmit: onSubmit
+                )
+            }
         }
-        .toolbarVisibility(isRootTabContent && isSearching ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
-    }
-
-    private func beginSearch() {
-        isSearchFocused.wrappedValue = true
-        withAnimation(.smooth(duration: 0.35)) { isSearching = true }
-    }
-
-    private func cancelSearch() {
-        isSearchFocused.wrappedValue = false
-        searchText = ""
-        titleState.reset()
-        withAnimation(.smooth(duration: 0.35)) { isSearching = false }
     }
 }

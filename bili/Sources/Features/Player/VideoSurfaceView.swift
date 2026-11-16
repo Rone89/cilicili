@@ -501,14 +501,24 @@ final class VideoSurfaceContainerView: UIView {
     /// 时做一次尺寸校正，作为与调用时机无关的兜底。
     private func synchronizePlayerLayerFrames() {
         guard drawableView.bounds.width > 1, drawableView.bounds.height > 1 else { return }
+        if disablesImplicitLayoutAnimations {
+            drawableView.layer.removeAllAnimations()
+        }
         guard let sublayers = drawableView.layer.sublayers, !sublayers.isEmpty else { return }
         let target = CGRect(origin: .zero, size: drawableView.bounds.size)
+        let targetPosition = CGPoint(x: target.midX, y: target.midY)
         for case let playerLayer as AVPlayerLayer in sublayers {
-            guard playerLayer.frame != target else { continue }
+            let hasAnimations = !(playerLayer.animationKeys()?.isEmpty ?? true)
+            guard playerLayer.frame != target || playerLayer.position != targetPosition || hasAnimations else {
+                continue
+            }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            playerLayer.removeAllAnimations()
             playerLayer.frame = target
+            playerLayer.position = targetPosition
             playerLayer.setNeedsLayout()
+            playerLayer.layoutIfNeeded()
             CATransaction.commit()
         }
     }

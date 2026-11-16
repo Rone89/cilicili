@@ -53,10 +53,16 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
         bindSurface(to: playerViewModel, startsPlayback: playerViewModel.wantsAutoplay)
     }
 
-    func setPictureInPictureEnabled(_ isEnabled: Bool) {
+    func setPictureInPictureEnabled(
+        _ isEnabled: Bool,
+        allowsAutomaticInline: Bool? = nil
+    ) {
         guard !isTornDown else { return }
         isPictureInPictureEnabled = isEnabled
         surfaceView.setPictureInPictureEnabled(isEnabled)
+        if let allowsAutomaticInline {
+            viewModel.setAutomaticPictureInPictureFromInlineAllowed(allowsAutomaticInline)
+        }
         viewModel.setPictureInPictureEnabled(isEnabled)
     }
 

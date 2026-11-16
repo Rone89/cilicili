@@ -129,6 +129,11 @@ struct RootTabView: View {
                 isRootSearchFocused = false
             }
         }
+        .onChange(of: mineNavigationPath.count) { _, count in
+            if count > 0 {
+                isMineSearchFocused = false
+            }
+        }
         .onChange(of: isRootSearchFocused) { _, isFocused in
             searchBottomAccessoryStore.isSearchFocused = isFocused
         }
@@ -208,12 +213,22 @@ struct RootTabView: View {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
                 .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
                 .environment(\.showsHiddenRootPageSwitcher, showsPageSwitcher)
+                .environment(
+                    \.rootHiddenPageSwitcher,
+                    showsPageSwitcher && [.search, .mine].contains(tab)
+                        ? RootHiddenPageSwitcher(
+                            currentPage: tab,
+                            pages: [.home] + hiddenRootPages,
+                            onSelect: { selectRootPageFromMenu($0) }
+                        )
+                        : nil
+                )
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .navigationTitle("")
                 .navigationHistoryTitle(tab.title)
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar {
-                    if showsPageSwitcher {
+                    if showsPageSwitcher && ![.search, .mine].contains(tab) {
                         ToolbarSpacer(.fixed, placement: .topBarTrailing)
                         ToolbarItem(placement: .topBarTrailing) {
                             Menu("切换页面", systemImage: "line.3.horizontal.decrease") {

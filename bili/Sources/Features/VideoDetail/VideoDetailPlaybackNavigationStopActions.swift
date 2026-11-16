@@ -1,8 +1,85 @@
 import Foundation
+import UIKit
 
 extension VideoDetailViewModel {
+    func markExitingVideoDetailRoute() {
+        isExitingVideoDetailRoute = true
+    }
+
+    func clearExitingVideoDetailRoute() {
+        isExitingVideoDetailRoute = false
+    }
+
+    @discardableResult
+    func handoffToSystemMiniPlayerIfEligible(
+        preferredFrameInWindow: CGRect? = nil,
+        preferredWindow: UIWindow? = nil
+    ) -> Bool {
+        guard !isPlaybackInvalidatedForNavigation else { return false }
+        guard !didTransferToSystemMiniPlayer else { return false }
+        if !isExitingVideoDetailRoute, isRouteRemovedFromNavigationStack?() == true {
+            isExitingVideoDetailRoute = true
+        }
+        guard isExitingVideoDetailRoute else { return false }
+        guard !isAwaitingRelatedVideoReturnPlayback else { return false }
+        guard libraryStore.autoPictureInPictureOnExitEnabled else { return false }
+        guard playbackOptions != .performanceTest else { return false }
+        guard playbackContentMode == .video else { return false }
+        guard let playerViewModel = stablePlayerViewModel,
+              SystemMiniPlayerCoordinator.shared.canStartMiniPlayer(for: playerViewModel)
+        else { return false }
+
+        let session = SystemMiniPlayerCoordinator.RetainedSession(
+            video: detail,
+            selectedCID: selectedCID,
+            playVariants: playVariants,
+            selectedPlayVariant: selectedPlayVariant,
+            currentPlayURLData: currentPlayURLData,
+            isDanmakuEnabled: isDanmakuEnabled,
+            hasResolvedDetailMetadata: hasResolvedDetailMetadata,
+            stablePlayerIdentity: stablePlayerIdentity,
+            playerViewModel: playerViewModel,
+            recordsPlaybackHistory: playbackOptions.recordsPlaybackHistory,
+            api: api,
+            libraryStore: libraryStore
+        )
+        guard SystemMiniPlayerCoordinator.shared.beginMiniPlayer(
+            with: session,
+            preferredFrameInWindow: preferredFrameInWindow,
+            preferredWindow: preferredWindow
+        ) else {
+            return false
+        }
+
+        didTransferToSystemMiniPlayer = true
+        isPlaybackInvalidatedForNavigation = true
+        isPlaybackTerminatedForNavigation = true
+        navigationState.isPlaybackStopPending = false
+
+        // Freeze the last video frame on the outgoing detail page while it
+        // slides away so transferring the live `AVPlayerLayer` never flashes black.
+        if let snapshot = playerViewModel.makePlaybackTransitionSnapshot() {
+            playbackTransitionState.snapshot = snapshot
+            playbackTransitionState.fallbackCoverURL = playbackTransitionCoverURL()
+            playbackTransitionState.opacity = 1
+        }
+
+        stablePlayerViewModel = nil
+        stablePlayerIdentity = nil
+        stablePlayerErrorCancellable = nil
+        stablePlayerFirstFrameCancellable = nil
+        syncPlayerIdentityRenderStore()
+        clearPlaybackTransitionPlayer()
+        cancelPlaybackWorkForNavigation()
+        resetPlaybackRecoveryStateForNavigation()
+        return true
+    }
+
     func stopPlaybackForNavigation() {
         guard !isPlaybackInvalidatedForNavigation else { return }
+        if handoffToSystemMiniPlayerIfEligible() {
+            return
+        }
         let resumeTime = currentPlaybackResumeTime()
         capturePlaybackStateForNavigation(resumeTime: resumeTime)
         flushPlaybackProgressForNavigation(resumeTime: resumeTime)
@@ -34,27 +111,40 @@ extension VideoDetailViewModel {
 
     private func flushPlaybackProgressForNavigation(resumeTime: TimeInterval) {
         guard playbackOptions.recordsPlaybackHistory else { return }
+        Self.flushPlaybackHistoryProgress(
+            video: detail,
+            cid: selectedCID ?? detail.cid,
+            resumeTime: resumeTime,
+            libraryStore: libraryStore,
+            api: api
+        )
+    }
+
+    static func flushPlaybackHistoryProgress(
+        video: VideoItem,
+        cid: Int?,
+        resumeTime: TimeInterval,
+        libraryStore: LibraryStore,
+        api: BiliAPIClient
+    ) {
         guard !libraryStore.incognitoModeEnabled else { return }
         guard resumeTime.isFinite,
               resumeTime >= TimeInterval(libraryStore.playbackHistorySyncThresholdSeconds)
         else { return }
-        let cid = selectedCID ?? detail.cid
-        let duration = detail.duration.map(TimeInterval.init)
+        let duration = video.duration.map(TimeInterval.init)
         libraryStore.recordPlaybackProgress(
-            video: detail,
+            video: video,
             cid: cid,
             progress: resumeTime,
             duration: duration
         )
-        let api = api
-        let detail = detail
         Task {
             try? await api.reportVideoHistory(
-                aid: detail.aid,
+                aid: video.aid,
                 cid: cid,
                 progress: resumeTime,
                 duration: duration,
-                bvid: detail.bvid
+                bvid: video.bvid
             )
         }
     }

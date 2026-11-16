@@ -83,6 +83,7 @@ struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var playerPerformanceOverlayEnabled = false
     var videoRotationFrameReportOverlayEnabled = false
     var pictureInPictureEnabled = false
+    var autoPictureInPictureOnExitEnabled = false
     var appTintColorHex = LibraryStore.defaultAppTintColorHex
     var defaultPlaybackRate = 1.0
     var showsNetworkDiagnosticsButton = false
@@ -103,6 +104,10 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
     var playerPerformanceOverlayEnabled: Bool { snapshot.playerPerformanceOverlayEnabled }
     var videoRotationFrameReportOverlayEnabled: Bool { snapshot.videoRotationFrameReportOverlayEnabled }
     var pictureInPictureEnabled: Bool { snapshot.pictureInPictureEnabled }
+    var autoPictureInPictureOnExitEnabled: Bool { snapshot.autoPictureInPictureOnExitEnabled }
+    var allowsPictureInPictureController: Bool {
+        snapshot.pictureInPictureEnabled || snapshot.autoPictureInPictureOnExitEnabled
+    }
     var appTintColor: Color { AppThemeTintColor.color(for: snapshot.appTintColorHex) }
     var defaultPlaybackRate: Double { snapshot.defaultPlaybackRate }
     var showsNetworkDiagnosticsButton: Bool { snapshot.showsNetworkDiagnosticsButton }
@@ -133,6 +138,7 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
             playerPerformanceOverlayEnabled: libraryStore.playerPerformanceOverlayEnabled,
             videoRotationFrameReportOverlayEnabled: libraryStore.videoRotationFrameReportOverlayEnabled,
             pictureInPictureEnabled: libraryStore.pictureInPictureEnabled,
+            autoPictureInPictureOnExitEnabled: libraryStore.autoPictureInPictureOnExitEnabled,
             appTintColorHex: libraryStore.appTintColorHex,
             defaultPlaybackRate: libraryStore.defaultPlaybackRate,
             showsNetworkDiagnosticsButton: libraryStore.showsVideoDetailNetworkDiagnosticsButton,

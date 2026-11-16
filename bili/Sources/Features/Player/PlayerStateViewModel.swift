@@ -405,6 +405,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     var onNextTrackRequested: (@MainActor () -> Void)?
     var onPreviousTrackRequested: (@MainActor () -> Void)?
     var restoreUserInterfaceForPictureInPictureStop: (() async -> Bool)?
+    var onPictureInPictureDidStart: (@MainActor () -> Void)?
+    var onPictureInPictureDidStop: (@MainActor () -> Void)?
+    var onPictureInPictureFailedToStart: (@MainActor () -> Void)?
     /// 弹幕同步层后端的媒体时钟宿主；引擎不支持（直播/测试桩）时为 nil。
     var danmakuSyncPlayer: AVPlayer? {
         engine.danmakuSyncPlayer
@@ -547,10 +550,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var isSurfaceMigrating = false
     private var currentPlaybackSurfaceReadyGeneration: Int?
     private var isNativePictureInPictureActive = false
+    private var allowsAutomaticPictureInPictureFromInline = true
     private var shouldPausePlaybackAfterPictureInPictureStops = false
     private var pictureInPictureStartRetryTask: Task<Void, Never>?
     private var pictureInPictureInlineRecoveryTask: Task<Void, Never>?
     private var pictureInPictureStartRetryGeneration = 0
+    private var pictureInPicturePossibleObservation: NSKeyValueObservation?
+    private var pictureInPictureMiniPlayerStartTimeoutTask: Task<Void, Never>?
+    private var pictureInPictureMiniPlayerFailureHandler: (@MainActor () -> Void)?
     private var audioSessionCancellables = Set<AnyCancellable>()
     private var audioInterruptionState = VideoListenAudioInterruptionState()
     private var sponsorBlockSkipReportTasks: [UUID: Task<Void, Never>] = [:]
@@ -740,6 +747,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         pictureInPictureStartRetryTask?.cancel()
         pictureInPictureStartRetryTask = nil
         pictureInPictureStartRetryGeneration &+= 1
+        pictureInPicturePossibleObservation?.invalidate()
+        pictureInPicturePossibleObservation = nil
+        pictureInPictureMiniPlayerStartTimeoutTask?.cancel()
+        pictureInPictureMiniPlayerStartTimeoutTask = nil
+        pictureInPictureMiniPlayerFailureHandler = nil
         audioSessionCancellables.removeAll()
         sponsorBlockSkipReportTasks.values.forEach { $0.cancel() }
         sponsorBlockSkipReportTasks.removeAll()
@@ -749,6 +761,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         onPlaybackEnded = nil
         onNextTrackRequested = nil
         onPreviousTrackRequested = nil
+        onPictureInPictureDidStart = nil
+        onPictureInPictureDidStop = nil
+        onPictureInPictureFailedToStart = nil
         timeObserver?.invalidate()
         let engine = engine
         Task { @MainActor in
@@ -3254,6 +3269,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         onPlaybackFailureWithReason = nil
         onBufferingPressure = nil
         onFirstFramePresented = nil
+        onPictureInPictureDidStart = nil
+        onPictureInPictureDidStop = nil
+        onPictureInPictureFailedToStart = nil
         onSponsorBlockSegmentSkipped = nil
         engine.onPlaybackStateChange = nil
         engine.onPlaybackIntentChange = nil
@@ -4016,6 +4034,120 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
+    var isEligibleForExitPictureInPicture: Bool {
+        guard !isTerminated,
+              playbackContentMode == .video,
+              !streamSource.isLiveStream
+        else { return false }
+        return isPlaying || (wantsAutoplay && (hasPresentedPlayback || isBuffering))
+    }
+
+    func setAutomaticPictureInPictureFromInlineAllowed(_ allowed: Bool) {
+        guard allowsAutomaticPictureInPictureFromInline != allowed else { return }
+        allowsAutomaticPictureInPictureFromInline = allowed
+        let effectiveAutoInline = isPictureInPictureEnabled && allowed
+        pictureInPictureController?.canStartPictureInPictureAutomaticallyFromInline = effectiveAutoInline
+        applyPictureInPicturePreferenceToNativePlaybackController()
+    }
+
+    func startPictureInPictureForMiniPlayer(
+        maxWaitNanoseconds: UInt64 = 1_500_000_000,
+        onFailure: @escaping @MainActor () -> Void
+    ) {
+        cancelMiniPlayerPictureInPictureStartTracking()
+        guard !isTerminated, playbackContentMode == .video else {
+            onFailure()
+            return
+        }
+        if !isPictureInPictureEnabled {
+            setPictureInPictureEnabled(true)
+        } else {
+            configurePictureInPictureIfNeeded()
+        }
+        if pictureInPictureController == nil, engine.supportsPictureInPicture {
+            if !engine.isPictureInPictureActive {
+                engine.togglePictureInPicture()
+            }
+            syncPictureInPictureState()
+            if !isPictureInPictureActive {
+                onFailure()
+            }
+            return
+        }
+        guard let controller = pictureInPictureController else {
+            onFailure()
+            return
+        }
+        if controller.isPictureInPictureActive {
+            syncPictureInPictureState()
+            return
+        }
+
+        pictureInPictureMiniPlayerFailureHandler = onFailure
+        if controller.isPictureInPicturePossible {
+            controller.startPictureInPicture()
+        } else {
+            pictureInPicturePossibleObservation = controller.observe(
+                \.isPictureInPicturePossible,
+                options: [.initial, .new]
+            ) { [weak self, weak controller] observedController, _ in
+                Task { @MainActor [weak self, weak controller] in
+                    guard let self,
+                          !self.isTerminated,
+                          let controller,
+                          self.pictureInPictureController === controller,
+                          observedController === controller,
+                          controller.isPictureInPicturePossible
+                    else { return }
+                    self.pictureInPicturePossibleObservation?.invalidate()
+                    self.pictureInPicturePossibleObservation = nil
+                    if !controller.isPictureInPictureActive {
+                        controller.startPictureInPicture()
+                    }
+                }
+            }
+        }
+
+        let retryGeneration = advancePictureInPictureStartRetryGeneration()
+        pictureInPictureMiniPlayerStartTimeoutTask = Task { @MainActor [weak self, weak controller] in
+            // If `startPictureInPicture()` was issued mid-pop-transition, AVKit may
+            // ignore the initial frame call; re-attempt once the transition settles.
+            for waitStepNanoseconds in [90_000_000, 180_000_000] as [UInt64] {
+                try? await Task.sleep(nanoseconds: waitStepNanoseconds)
+                guard let self,
+                      !Task.isCancelled,
+                      !self.isTerminated,
+                      self.pictureInPictureStartRetryGeneration == retryGeneration
+                else { return }
+                if controller?.isPictureInPictureActive == true || self.isPictureInPictureActive {
+                    self.cancelMiniPlayerPictureInPictureStartTracking()
+                    return
+                }
+                if let controller, controller.isPictureInPicturePossible {
+                    controller.startPictureInPicture()
+                }
+            }
+
+            let remainingNanoseconds = maxWaitNanoseconds > 270_000_000
+                ? maxWaitNanoseconds - 270_000_000
+                : 200_000_000
+            try? await Task.sleep(nanoseconds: remainingNanoseconds)
+            guard let self,
+                  !Task.isCancelled,
+                  !self.isTerminated,
+                  self.pictureInPictureStartRetryGeneration == retryGeneration
+            else { return }
+            let started = controller?.isPictureInPictureActive == true || self.isPictureInPictureActive
+            guard !started else {
+                self.cancelMiniPlayerPictureInPictureStartTracking()
+                return
+            }
+            let failure = self.pictureInPictureMiniPlayerFailureHandler
+            self.cancelMiniPlayerPictureInPictureStartTracking()
+            failure?()
+        }
+    }
+
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         let effectiveIsEnabled = isEnabled && playbackContentMode == .video
         guard isPictureInPictureEnabled != effectiveIsEnabled else {
@@ -4023,7 +4155,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
         isPictureInPictureEnabled = effectiveIsEnabled
         engine.setPictureInPictureEnabled(effectiveIsEnabled)
-        pictureInPictureController?.canStartPictureInPictureAutomaticallyFromInline = effectiveIsEnabled
+        pictureInPictureController?.canStartPictureInPictureAutomaticallyFromInline =
+            effectiveIsEnabled && allowsAutomaticPictureInPictureFromInline
         surfaceView?.setPictureInPictureEnabled(effectiveIsEnabled)
         applyPictureInPicturePreferenceToNativePlaybackController()
         if !effectiveIsEnabled {
@@ -4072,6 +4205,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         shouldPausePlaybackAfterPictureInPictureStops = false
         syncPictureInPictureState()
         releasePictureInPictureControllerIfDisabled()
+        cancelMiniPlayerPictureInPictureStartTracking()
+        onPictureInPictureDidStop?()
+        guard !isTerminated else { return }
 
         guard !shouldPause else {
             pictureInPictureInlineRecoveryTask?.cancel()
@@ -6146,7 +6282,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private func cancelPictureInPictureStartRetryTask() {
         pictureInPictureStartRetryTask?.cancel()
         pictureInPictureStartRetryTask = nil
+        cancelMiniPlayerPictureInPictureStartTracking()
         advancePictureInPictureStartRetryGeneration()
+    }
+
+    private func cancelMiniPlayerPictureInPictureStartTracking() {
+        pictureInPicturePossibleObservation?.invalidate()
+        pictureInPicturePossibleObservation = nil
+        pictureInPictureMiniPlayerStartTimeoutTask?.cancel()
+        pictureInPictureMiniPlayerStartTimeoutTask = nil
+        pictureInPictureMiniPlayerFailureHandler = nil
     }
 
     private func clearPictureInPictureStartRetryTaskIfCurrent(_ generation: Int) {
@@ -6375,7 +6520,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
         let controller = AVPictureInPictureController(contentSource: contentSource)
         controller.delegate = self
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.canStartPictureInPictureAutomaticallyFromInline =
+            isPictureInPictureEnabled && allowsAutomaticPictureInPictureFromInline
         pictureInPictureController = controller
         didConfigurePictureInPicture = true
     }
@@ -6396,7 +6542,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         let isSupportedAndEnabled = isPictureInPictureEnabled
             && AVPictureInPictureController.isPictureInPictureSupported()
         nativePlaybackController.allowsPictureInPicturePlayback = isSupportedAndEnabled
-        nativePlaybackController.canStartPictureInPictureAutomaticallyFromInline = isSupportedAndEnabled
+        nativePlaybackController.canStartPictureInPictureAutomaticallyFromInline =
+            isSupportedAndEnabled && allowsAutomaticPictureInPictureFromInline
     }
 
     private func invalidatePictureInPicturePlaybackState() {
@@ -6508,6 +6655,19 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
                 return
             }
             self.isPictureInPictureActive = true
+            self.cancelMiniPlayerPictureInPictureStartTracking()
+        }
+    }
+
+    nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor [weak self] in
+            guard let self,
+                  !self.isTerminated,
+                  self.pictureInPictureController === pictureInPictureController
+            else { return }
+            self.isPictureInPictureActive = true
+            self.cancelMiniPlayerPictureInPictureStartTracking()
+            self.onPictureInPictureDidStart?()
         }
     }
 
@@ -6558,6 +6718,10 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
             self.isPictureInPictureActive = false
             self.releasePictureInPictureControllerIfDisabled()
             self.errorMessage = "画中画启动失败：\(error.localizedDescription)"
+            let failureHandler = self.pictureInPictureMiniPlayerFailureHandler
+            self.cancelMiniPlayerPictureInPictureStartTracking()
+            failureHandler?()
+            self.onPictureInPictureFailedToStart?()
         }
     }
 }

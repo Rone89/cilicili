@@ -150,6 +150,7 @@ private struct SearchFilterCapsule: View {
 struct SearchFilterToolbarMenu: View {
     @ObservedObject var viewModel: SearchViewModel
     var iconPointSize: CGFloat = 15
+    var controlSize: CGFloat? = nil
 
     var body: some View {
         Menu {
@@ -160,6 +161,8 @@ struct SearchFilterToolbarMenu: View {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: iconPointSize, weight: .semibold))
                 .foregroundStyle(.primary)
+                .frame(width: controlSize, height: controlSize)
+                .contentShape(Circle())
         }
         .tint(.primary)
         .accessibilityLabel("排序方式")

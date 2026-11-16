@@ -3,102 +3,83 @@ import SwiftUI
 struct SearchTopBar: ToolbarContent {
     let titleState: FeedChromeTitleState
     let isRootTabContent: Bool
-    let isSearching: Bool
+    @Binding var isSearching: Bool
+    let containerWidth: CGFloat
     let viewModel: SearchViewModel?
-    let onSearch: () -> Void
-
-    private let controlHeight: CGFloat = 44
+    @Binding var searchText: String
+    var isSearchFocused: FocusState<Bool>.Binding
+    let onSubmit: () -> Void
 
     var body: some ToolbarContent {
-        if !isSearching {
-            if isRootTabContent {
-                ToolbarItem(placement: .topBarLeading) {
-                    FeedToolbarTitle(
-                        title: AppTab.search.title,
-                        state: titleState,
-                        accessibilityID: "search.feed.title"
-                    )
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
-
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 0) {
-                    searchButton
-                    if isRootTabContent, let viewModel {
-                        Rectangle()
-                            .fill(.separator)
-                            .frame(width: 0.5, height: controlHeight - 18)
-                        SearchFilterToolbarMenu(viewModel: viewModel, iconPointSize: 18)
-                            .frame(width: controlHeight, height: controlHeight)
-                    }
-                }
-                .frame(height: controlHeight)
-                .glassEffect(.regular.interactive(), in: Capsule())
-            }
-            .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(placement: .topBarTrailing) {
+            SearchMorphTopBar(
+                titleState: titleState,
+                isSearching: $isSearching,
+                containerWidth: containerWidth,
+                viewModel: viewModel,
+                searchText: $searchText,
+                isSearchFocused: isSearchFocused,
+                onSubmit: onSubmit,
+                isRootTabContent: isRootTabContent
+            )
         }
-    }
-
-    private var searchButton: some View {
-        Button(action: onSearch) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: controlHeight, height: controlHeight)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("搜索")
-        .accessibilityIdentifier("search.top.button")
+        .sharedBackgroundVisibility(.hidden)
     }
 }
 
-struct SearchQueryField: View {
+struct SearchMorphTopBar: View {
+    @ObservedObject var titleState: FeedChromeTitleState
+    @Binding var isSearching: Bool
+    let containerWidth: CGFloat
+    let viewModel: SearchViewModel?
     @Binding var searchText: String
     var isSearchFocused: FocusState<Bool>.Binding
-    let prompt: String
     let onSubmit: () -> Void
-    let onCancel: () -> Void
+    var isRootTabContent: Bool = true
 
     private let controlHeight: CGFloat = 44
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            TextField(prompt, text: $searchText)
-                .focused(isSearchFocused)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .onSubmit(onSubmit)
-                .accessibilityIdentifier("search.top.field")
-            if !searchText.isEmpty {
-                Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+        RootMorphSearchTopBar(
+            titleState: titleState,
+            configuration: RootMorphSearchTopBarConfiguration(
+                title: AppTab.search.title,
+                titleAccessibilityID: "search.feed.title",
+                searchPrompt: viewModel?.searchPrompt ?? "搜索",
+                searchButtonAccessibilityLabel: "搜索",
+                searchButtonAccessibilityID: "search.top.button",
+                fieldAccessibilityID: "search.top.field",
+                clearAccessibilityID: "search.top.clear",
+                cancelAccessibilityID: "search.top.cancel",
+                trailingExpandedGlassID: "searchFilterControl",
+                containerWidth: containerWidth,
+                dismissesFocusOnNonEmptySubmit: false
+            ),
+            isSearching: $isSearching,
+            searchText: $searchText,
+            isSearchFocused: isSearchFocused,
+            isRootTabContent: isRootTabContent,
+            onSubmit: onSubmit,
+            compactAccessory: {
+                if let viewModel {
+                    Rectangle()
+                        .fill(.separator)
+                        .frame(width: 0.5, height: controlHeight - 18)
+                    SearchFilterToolbarMenu(viewModel: viewModel, iconPointSize: 18)
+                        .frame(width: controlHeight, height: controlHeight)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("清除搜索文字")
-                .accessibilityIdentifier("search.top.clear")
+            },
+            expandedTrailingAccessory: { closeButton in
+                if let viewModel {
+                    SearchFilterToolbarMenu(
+                        viewModel: viewModel,
+                        iconPointSize: 18,
+                        controlSize: controlHeight
+                    )
+                } else {
+                    closeButton
+                }
             }
-
-            Button("取消", action: onCancel)
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                .fixedSize()
-                .accessibilityIdentifier("search.top.cancel")
-        }
-        .font(.body)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, minHeight: controlHeight)
-        .glassEffect(.regular.interactive(), in: Capsule())
-        .padding(.horizontal, 16)
-        .task {
-            await Task.yield()
-            isSearchFocused.wrappedValue = true
-        }
+        )
     }
 }

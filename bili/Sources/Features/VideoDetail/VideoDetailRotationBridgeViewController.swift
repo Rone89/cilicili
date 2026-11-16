@@ -122,6 +122,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             contentController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         contentController.didMove(toParent: self)
+        contentController.viewModel.isRouteRemovedFromNavigationStack = { [weak self] in
+            guard let self else { return true }
+            return self.isRemovedOrLeavingNavigationHierarchy
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -137,6 +141,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         super.viewDidAppear(animated)
         isViewActive = true
         didRegisterNavigationStopCompletion = false
+        contentController.viewModel.clearExitingVideoDetailRoute()
         rotationCoordinator.activate(
             isLandscape: resolvedLandscapeForRecovery,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
@@ -162,24 +167,87 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         super.viewWillDisappear(animated)
         navigationBarTouchPassthrough.end()
         isViewActive = false
-        finishPlaybackStopAfterNavigationTransition()
+        let isLeavingHierarchy = isRemovedOrLeavingNavigationHierarchy
+        if isLeavingHierarchy {
+            contentController.viewModel.markExitingVideoDetailRoute()
+        }
+        let preferredWindow = view.window
+        let playerFrameInWindow = contentController.playerFrame.width > 16
+            ? contentController.view.convert(contentController.playerFrame, to: preferredWindow)
+            : nil
+        finishPlaybackStopAfterNavigationTransition(
+            isLeavingHierarchy: isLeavingHierarchy,
+            preferredFrameInWindow: playerFrameInWindow,
+            preferredWindow: preferredWindow
+        )
         contentController.dismissPlayerMoreControls()
         recoverInterruptedRotationIfNeeded(reason: "viewWillDisappear")
         cancelRotationTasks()
         rotationCoordinator.deactivate(in: view.window?.windowScene)
-        contentController.setBackgroundRenderFreezeActive(
-            !isMovingFromParent
-                && !isBeingDismissed
-                && navigationController?.isBeingDismissed != true
-        )
+        contentController.setBackgroundRenderFreezeActive(!isLeavingHierarchy)
         releaseSystemBackGestureOwnership()
     }
 
-    private func finishPlaybackStopAfterNavigationTransition() {
+    private func resolveDestinationHostingController(
+        in navigationController: UINavigationController
+    ) -> UIViewController? {
+        var cursor: UIViewController? = self
+        while let controller = cursor {
+            if controller.parent === navigationController {
+                return controller
+            }
+            if controller.parent is UINavigationController || controller.parent is UITabBarController {
+                break
+            }
+            cursor = controller.parent
+        }
+        return nil
+    }
+
+    /// Detects both button pops and interactive swipe-back pops across UIKit and
+    /// SwiftUI `NavigationStack` while ignoring child pushes (e.g. related videos,
+    /// uploader pages) on top of this controller.
+    private var isRemovedOrLeavingNavigationHierarchy: Bool {
+        if navigationController?.isBeingDismissed == true {
+            return true
+        }
+        var cursor: UIViewController? = self
+        while let controller = cursor {
+            if controller.isMovingFromParent || controller.isBeingDismissed {
+                return true
+            }
+            if controller.parent is UINavigationController || controller.parent is UITabBarController {
+                break
+            }
+            cursor = controller.parent
+        }
+        guard let navigationController else { return true }
+        if let destinationVC = resolveDestinationHostingController(in: navigationController) {
+            return !navigationController.viewControllers.contains(where: { $0 === destinationVC })
+        }
+        return false
+    }
+
+    private func finishPlaybackStopAfterNavigationTransition(
+        isLeavingHierarchy: Bool,
+        preferredFrameInWindow: CGRect?,
+        preferredWindow: UIWindow?
+    ) {
         guard !didRegisterNavigationStopCompletion else { return }
         didRegisterNavigationStopCompletion = true
 
         let finish = { [weak self] in
+            guard let self else { return }
+            let viewModel = self.contentController.viewModel
+            if isLeavingHierarchy || self.isRemovedOrLeavingNavigationHierarchy {
+                viewModel.markExitingVideoDetailRoute()
+                if viewModel.handoffToSystemMiniPlayerIfEligible(
+                    preferredFrameInWindow: preferredFrameInWindow,
+                    preferredWindow: preferredWindow
+                ) {
+                    return
+                }
+            }
             _ = Task { @MainActor [weak self] in
                 await Task.yield()
                 self?.contentController.viewModel.finishPlaybackStopAfterNavigationTransition()
@@ -190,8 +258,11 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             finish()
             return
         }
-        transitionCoordinator.animate(alongsideTransition: nil) { context in
-            guard !context.isCancelled else { return }
+        transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
+            guard !context.isCancelled else {
+                self?.contentController.viewModel.clearExitingVideoDetailRoute()
+                return
+            }
             finish()
         }
     }
@@ -215,6 +286,19 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     func prepareForDismantle() {
         guard !didPrepareForDismantle else { return }
         didPrepareForDismantle = true
+        let viewModel = contentController.viewModel
+        viewModel.isRouteRemovedFromNavigationStack = nil
+        if !viewModel.isAwaitingRelatedVideoReturnPlayback {
+            viewModel.markExitingVideoDetailRoute()
+            let preferredWindow = view.window
+            let playerFrameInWindow = contentController.playerFrame.width > 16
+                ? contentController.view.convert(contentController.playerFrame, to: preferredWindow)
+                : nil
+            _ = viewModel.handoffToSystemMiniPlayerIfEligible(
+                preferredFrameInWindow: playerFrameInWindow,
+                preferredWindow: preferredWindow
+            )
+        }
         navigationBarTouchPassthrough.end()
         setImmersivePlayback(false)
         recoverInterruptedRotationIfNeeded(reason: "dismantle")
@@ -247,10 +331,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             contentController.dismissPlayerMoreControls()
         }
         transitionCoordinator.animate(alongsideTransition: { [weak self] _ in
-            self?.contentController.view.layoutIfNeeded()
             self?.setNeedsStatusBarAppearanceUpdate()
             self?.setNeedsUpdateOfHomeIndicatorAutoHidden()
             self?.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+            self?.contentController.view.layoutIfNeeded()
         }, completion: { [weak self] _ in
             guard let self, self.rotationGeneration == generation else { return }
             self.contentController.markSystemTransitionEnded()
@@ -263,8 +347,8 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     private func requestFullscreen() {
-        setImmersivePlayback(true)
         if contentController.isPortraitVideo {
+            setImmersivePlayback(true)
             rotationCoordinator.setPortraitFullscreen(true)
             updateOrientationLock()
             setNeedsStatusBarAppearanceUpdate()
@@ -272,12 +356,25 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             return
         }
         let scene = view.window?.windowScene
+        if scene?.effectiveGeometry.interfaceOrientation.isLandscape == true {
+            setImmersivePlayback(true)
+            rotationCoordinator.reconcileStableState(
+                isLandscape: true,
+                isPortraitFullscreen: false
+            )
+            contentController.recoverStableLayout()
+            return
+        }
+        // Defer hiding the bottom toolbar and status bar until `viewWillTransition`
+        // so portrait safe-area/toolbar animations do not race with `requestGeometryUpdate`.
         rotationCoordinator.allowLandscape(in: scene)
         let target = rotationPolicy.preferredLandscapeInterfaceOrientation(
             currentInterfaceOrientation: scene?.effectiveGeometry.interfaceOrientation,
             deviceOrientation: UIDevice.current.orientation
         )
-        rotationCoordinator.requestGeometryUpdate(to: target, in: scene)
+        rotationCoordinator.requestGeometryUpdate(to: target, in: scene) { [weak self] _ in
+            self?.reconcileOrientationStateAfterRejectedRequest()
+        }
     }
 
     private func requestExitFullscreen() {
@@ -291,8 +388,31 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             return
         }
         let scene = view.window?.windowScene
+        if scene?.effectiveGeometry.interfaceOrientation.isPortrait == true {
+            setImmersivePlayback(false)
+            rotationCoordinator.reconcileStableState(
+                isLandscape: false,
+                isPortraitFullscreen: false
+            )
+            contentController.recoverStableLayout()
+            return
+        }
         rotationCoordinator.allowLandscape(in: scene)
-        rotationCoordinator.requestGeometryUpdate(to: .portrait, in: scene)
+        rotationCoordinator.requestGeometryUpdate(to: .portrait, in: scene) { [weak self] _ in
+            self?.reconcileOrientationStateAfterRejectedRequest()
+        }
+    }
+
+    private func reconcileOrientationStateAfterRejectedRequest() {
+        guard isViewActive, !didPrepareForDismantle else { return }
+        guard !rotationCoordinator.isSystemRotationTransitioning else { return }
+        let landscape = resolvedLandscapeForRecovery
+        rotationCoordinator.reconcileStableState(
+            isLandscape: landscape,
+            isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
+        )
+        setImmersivePlayback(landscape || rotationCoordinator.isPortraitFullscreen)
+        contentController.recoverStableLayout()
     }
 
     private func handleBackButton() {

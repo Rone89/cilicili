@@ -133,6 +133,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
     @Published private(set) var pictureInPictureEnabled: Bool
+    @Published private(set) var autoPictureInPictureOnExitEnabled: Bool
     @Published private(set) var backgroundPlaybackEnabled: Bool
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var resourceLoadingResumePacketWarmupEnabled: Bool
@@ -217,6 +218,7 @@ final class LibraryStore: ObservableObject {
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
     private static let pictureInPictureEnabledKey = "cc.bili.playback.pictureInPictureEnabled.v1"
+    private static let autoPictureInPictureOnExitEnabledKey = "cc.bili.playback.autoPictureInPictureOnExitEnabled.v1"
     private static let backgroundPlaybackEnabledKey = "cc.bili.playback.backgroundPlaybackEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
     private static let resourceLoadingResumePacketWarmupEnabledKey = ResourceLoadingExperiment.Feature
@@ -635,6 +637,8 @@ final class LibraryStore: ObservableObject {
         self.danmakuSynchronizedLayerRendererEnabled = userDefaults.object(forKey: Self.danmakuSynchronizedLayerRendererEnabledKey) as? Bool ?? true
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
+        self.autoPictureInPictureOnExitEnabled =
+            userDefaults.object(forKey: Self.autoPictureInPictureOnExitEnabledKey) as? Bool ?? false
         self.backgroundPlaybackEnabled = userDefaults.object(forKey: Self.backgroundPlaybackEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
             userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
@@ -1230,9 +1234,18 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.sponsorBlockEnabledKey)
     }
 
+    var allowsPictureInPictureController: Bool {
+        pictureInPictureEnabled || autoPictureInPictureOnExitEnabled
+    }
+
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         pictureInPictureEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
+    }
+
+    func setAutoPictureInPictureOnExitEnabled(_ isEnabled: Bool) {
+        autoPictureInPictureOnExitEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.autoPictureInPictureOnExitEnabledKey)
     }
 
     func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {

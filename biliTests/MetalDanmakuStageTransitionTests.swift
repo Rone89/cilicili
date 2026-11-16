@@ -154,4 +154,82 @@ final class MetalDanmakuStageTransitionTests: XCTestCase {
             XCTAssertFalse(timeline.hasActiveFontScaleSettle(at: 10.07))
         }
     }
+
+    func testFullscreenContentInsetsConstrainPortraitFullscreenToCenteredNineSixteenBox() {
+        let screenSize = CGSize(width: 440, height: 956)
+        let nineSixteenHeight = screenSize.width * 16.0 / 9.0
+        let expectedNineSixteenInset = (screenSize.height - nineSixteenHeight) / 2
+
+        let nineSixteen = DanmakuVideoViewport.fullscreenContentInsets(
+            in: screenSize,
+            videoAspectRatio: 9.0 / 16.0,
+            isPortraitFullscreen: true
+        )
+        XCTAssertEqual(nineSixteen.top, expectedNineSixteenInset, accuracy: 0.01)
+        XCTAssertEqual(nineSixteen.bottom, expectedNineSixteenInset, accuracy: 0.01)
+        XCTAssertEqual(nineSixteen.leading, 0, accuracy: 0.01)
+        XCTAssertEqual(nineSixteen.trailing, 0, accuracy: 0.01)
+
+        // 3:4 portrait video fits inside 9:16 and uses its own larger vertical letterbox insets.
+        let threeFour = DanmakuVideoViewport.fullscreenContentInsets(
+            in: screenSize,
+            videoAspectRatio: 3.0 / 4.0,
+            isPortraitFullscreen: true
+        )
+        let threeFourExpected = (screenSize.height - screenSize.width / (3.0 / 4.0)) / 2
+        XCTAssertEqual(threeFour.top, threeFourExpected, accuracy: 0.01)
+        XCTAssertEqual(threeFour.bottom, threeFourExpected, accuracy: 0.01)
+
+        // Ultra-tall 9:20 portrait video still keeps portrait fullscreen chrome within the center 9:16 zone.
+        let ultraTall = DanmakuVideoViewport.fullscreenContentInsets(
+            in: screenSize,
+            videoAspectRatio: 9.0 / 20.0,
+            isPortraitFullscreen: true
+        )
+        XCTAssertEqual(ultraTall.top, expectedNineSixteenInset, accuracy: 0.01)
+        XCTAssertEqual(ultraTall.bottom, expectedNineSixteenInset, accuracy: 0.01)
+
+        // Landscape fullscreen continues using pure video aspect-fit without forcing vertical 9:16 padding.
+        let landscape = DanmakuVideoViewport.fullscreenContentInsets(
+            in: CGSize(width: 956, height: 440),
+            videoAspectRatio: 16.0 / 9.0,
+            isPortraitFullscreen: false
+        )
+        XCTAssertEqual(landscape.top, 0, accuracy: 0.01)
+        XCTAssertEqual(landscape.bottom, 0, accuracy: 0.01)
+    }
+
+    func testInsetContentFrameConstrainsDanmakuKitAndSyncLayerToCenteredNineSixteenViewport() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 440, height: 956)
+        let nineSixteenHeight = bounds.width * 16.0 / 9.0
+        let nineSixteenInset = (bounds.height - nineSixteenHeight) / 2
+        let settings = DanmakuSettings(
+            hidesInPortrait: false,
+            danmakuKit: DanmakuKitRenderSettings(displayArea: .full, allowsDanmakuOverlap: true)
+        )
+        let config = DanmakuOverlayConfiguration(
+            items: [],
+            itemsRevision: 1,
+            currentTime: 0,
+            isPlaying: false,
+            playbackRate: 1,
+            isEnabled: true,
+            hasPresentedPlayback: true,
+            isLoadShedding: false,
+            settings: settings,
+            topInset: 8,
+            bottomInset: 84,
+            videoAspectRatio: 9.0 / 16.0
+        )
+
+        let kitView = DanmakuKitOverlayView(frame: bounds)
+        kitView.apply(configuration: config)
+        let innerDanmakuView = try XCTUnwrap(kitView.subviews.first)
+        XCTAssertEqual(innerDanmakuView.frame.minY, nineSixteenInset + 8, accuracy: 0.5)
+        XCTAssertEqual(innerDanmakuView.frame.maxY, bounds.height - nineSixteenInset - 84, accuracy: 0.5)
+
+        let syncView = DanmakuSynchronizedLayerView(frame: bounds)
+        syncView.apply(configuration: config)
+        XCTAssertEqual(syncView.debugContentFrameHeight, nineSixteenHeight - 8 - 84, accuracy: 0.5)
+    }
 }

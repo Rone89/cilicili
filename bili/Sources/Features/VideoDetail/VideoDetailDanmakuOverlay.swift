@@ -8,6 +8,8 @@ struct VideoDetailDanmakuOverlay: View {
     let usesLandscapePlaybackChrome: Bool
     let logicalCanvasSize: CGSize?
     let videoAspectRatio: CGFloat?
+    var additionalTopInset: CGFloat = 0
+    var additionalBottomInset: CGFloat = 0
     let isLayoutTransitioning: Bool
     let onPlaybackTime: (TimeInterval, Bool) -> Void
     @StateObject private var state = VideoDetailDanmakuOverlayState()
@@ -30,8 +32,8 @@ struct VideoDetailDanmakuOverlay: View {
             settings: snapshot.settings,
             // 横屏全屏：顶部不再预留，弹幕可顶到最上沿（100% 时铺满除底部
             // 控件区以外的区域）；底部仍为进度条/控件让位。
-            topInset: usesLandscapePlaybackChrome ? 0 : 8,
-            bottomInset: usesLandscapePlaybackChrome ? 84 : 54,
+            topInset: (usesLandscapePlaybackChrome ? 0 : 8) + max(0, additionalTopInset),
+            bottomInset: (usesLandscapePlaybackChrome ? 84 : 54) + max(0, additionalBottomInset),
             isLayoutTransitioning: isLayoutTransitioning,
             playbackClock: clock,
             onPlaybackTime: onPlaybackTime,

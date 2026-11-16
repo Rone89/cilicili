@@ -705,6 +705,10 @@ final class VideoDetailFlowUITests: XCTestCase {
         portraitAttachment.name = "Geometry portrait before fullscreen"
         portraitAttachment.lifetime = .keepAlways
         add(portraitAttachment)
+        let portraitPlayerFrame = app.descendants(matching: .any)["ui.videoDetail.playerFrame"].firstMatch
+        XCTAssertTrue(portraitPlayerFrame.waitForExistence(timeout: 5))
+        let initialPortraitPlayerMinY = portraitPlayerFrame.frame.minY
+        XCTAssertGreaterThanOrEqual(initialPortraitPlayerMinY, 40)
         tapPlayerControl(fullscreen, in: app)
 
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -768,6 +772,12 @@ final class VideoDetailFlowUITests: XCTestCase {
             object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [portraitWindow], timeout: 10), .completed)
+        XCTAssertEqual(
+            portraitPlayerFrame.frame.minY,
+            initialPortraitPlayerMinY,
+            accuracy: 2,
+            "Exiting landscape back to portrait must keep the player below the top safe area immediately."
+        )
         let statusControlsHidden = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 !fullscreenTime.exists && !fullscreenBattery.exists
@@ -1029,11 +1039,33 @@ final class VideoDetailFlowUITests: XCTestCase {
 
     @MainActor
     func testVideoDetailMoreControlsToggleBackgroundPlayback() {
-        let app = launchVideoDetail(waitForDetailMarker: false)
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["-cc.bili.playback.backgroundPlaybackEnabled.v1", "NO"]
+        )
         revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
         XCTAssertTrue(more.waitForExistence(timeout: 5))
         tapPlayerControl(more, in: app)
+
+        let playbackSettings = app.navigationBars["播放设置"]
+        XCTAssertTrue(playbackSettings.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.switches["ui.player.pictureInPicture"].exists)
+        XCTAssertFalse(app.switches["ui.player.autoPictureInPictureOnExit"].exists)
+        XCTAssertFalse(app.switches["ui.player.backgroundPlayback"].exists)
+
+        let pipMenu = app.buttons["ui.player.pipAndBackgroundMenu"]
+        XCTAssertTrue(pipMenu.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(pipMenu.label.contains("画中画&后台播放"))
+        pipMenu.tap()
+
+        let pipPage = app.navigationBars["画中画&后台播放"]
+        XCTAssertTrue(pipPage.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["应用外画中画播放"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["应用内画中画播放"].exists)
+        XCTAssertTrue(app.staticTexts["后台播放"].exists)
+        XCTAssertTrue(app.switches["ui.player.pictureInPicture"].exists)
+        XCTAssertTrue(app.switches["ui.player.autoPictureInPictureOnExit"].exists)
 
         let backgroundPlayback = app.switches["ui.player.backgroundPlayback"]
         XCTAssertTrue(backgroundPlayback.waitForExistence(timeout: 5))
@@ -1050,6 +1082,51 @@ final class VideoDetailFlowUITests: XCTestCase {
             XCTWaiter.wait(for: [backgroundPlaybackEnabled], timeout: 3),
             .completed
         )
+    }
+
+    @MainActor
+    func testVideoDetailMoreControlsToggleAutoPictureInPictureOnExit() {
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["-cc.bili.playback.autoPictureInPictureOnExitEnabled.v1", "NO"]
+        )
+        revealPlayerControls(in: app)
+        let more = app.buttons["ui.player.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        tapPlayerControl(more, in: app)
+
+        let pipMenu = app.buttons["ui.player.pipAndBackgroundMenu"]
+        XCTAssertTrue(pipMenu.waitForExistence(timeout: 5), app.debugDescription)
+        pipMenu.tap()
+
+        XCTAssertTrue(app.navigationBars["画中画&后台播放"].waitForExistence(timeout: 5))
+
+        let autoMiniPlayer = app.switches["ui.player.autoPictureInPictureOnExit"]
+        XCTAssertTrue(autoMiniPlayer.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(autoMiniPlayer.value as? String, "0")
+
+        autoMiniPlayer.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)
+        ).tap()
+        let autoMiniPlayerEnabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "1"),
+            object: autoMiniPlayer
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [autoMiniPlayerEnabled], timeout: 3),
+            .completed
+        )
+
+        // 收起设置面板后右滑退出详情页，确认导航回首页且不崩溃或卡死
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+        XCTAssertTrue(app.navigationBars["画中画&后台播放"].waitForNonExistence(timeout: 5))
+
+        app.swipeRight()
+        let homeTab = app.buttons["首页"].firstMatch
+        XCTAssertTrue(homeTab.waitForExistence(timeout: 5))
+        XCTAssertTrue(homeTab.isHittable)
+        let picker = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), app.debugDescription)
     }
 
     @MainActor

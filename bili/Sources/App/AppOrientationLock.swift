@@ -34,9 +34,10 @@ enum AppOrientationLock {
 
     static func requestGeometryUpdate(
         to orientations: UIInterfaceOrientationMask,
-        in scene: UIWindowScene?
+        in scene: UIWindowScene?,
+        onError: (@MainActor (Error) -> Void)? = nil
     ) {
-        requestGeometryUpdate(to: orientations, in: scenes(matching: scene))
+        requestGeometryUpdate(to: orientations, in: scenes(matching: scene), onError: onError)
     }
 
     private static func scenes(matching scene: UIWindowScene?) -> [UIWindowScene] {
@@ -60,12 +61,18 @@ enum AppOrientationLock {
 
     private static func requestGeometryUpdate(
         to orientations: UIInterfaceOrientationMask,
-        in scenes: [UIWindowScene]
+        in scenes: [UIWindowScene],
+        onError: (@MainActor (Error) -> Void)? = nil
     ) {
         scenes.forEach { scene in
             scene.requestGeometryUpdate(
                 UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: orientations)
-            ) { _ in }
+            ) { error in
+                guard let onError else { return }
+                Task { @MainActor in
+                    onError(error)
+                }
+            }
         }
     }
 }

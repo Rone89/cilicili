@@ -7,9 +7,20 @@ struct VideoDetailPlaybackNavigationState {
     var shouldResumePlaybackAfterCancelledNavigation = false
     var pendingNavigationResumeTime: TimeInterval?
     var hasPendingNavigationInterruption = false
+    var isExitingVideoDetailRoute = false
+    var didTransferToSystemMiniPlayer = false
 }
 
 extension VideoDetailViewModel {
+    var isExitingVideoDetailRoute: Bool {
+        get { navigationState.isExitingVideoDetailRoute }
+        set { navigationState.isExitingVideoDetailRoute = newValue }
+    }
+
+    var didTransferToSystemMiniPlayer: Bool {
+        get { navigationState.didTransferToSystemMiniPlayer }
+        set { navigationState.didTransferToSystemMiniPlayer = newValue }
+    }
     var isPlaybackInvalidatedForNavigation: Bool {
         get { navigationState.isPlaybackInvalidatedForNavigation }
         set { navigationState.isPlaybackInvalidatedForNavigation = newValue }

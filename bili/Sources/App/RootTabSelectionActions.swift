@@ -1,7 +1,22 @@
 import SwiftUI
 
+struct RootHiddenPageSwitcher {
+    let currentPage: AppTab
+    let pages: [AppTab]
+    let onSelect: (AppTab) -> Void
+}
+
+private struct RootHiddenPageSwitcherKey: EnvironmentKey {
+    static let defaultValue: RootHiddenPageSwitcher? = nil
+}
+
 extension EnvironmentValues {
     @Entry var showsHiddenRootPageSwitcher = false
+
+    var rootHiddenPageSwitcher: RootHiddenPageSwitcher? {
+        get { self[RootHiddenPageSwitcherKey.self] }
+        set { self[RootHiddenPageSwitcherKey.self] = newValue }
+    }
 }
 
 extension RootTabView {

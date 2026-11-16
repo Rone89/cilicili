@@ -62,6 +62,50 @@ enum DanmakuVideoViewport {
         return CGRect(x: bounds.minX + (bounds.width - width) / 2, y: bounds.minY,
                       width: width, height: bounds.height)
     }
+
+    static func insetContentFrame(
+        in bounds: CGRect,
+        aspectRatio: CGFloat?,
+        topInset: CGFloat,
+        bottomInset: CGFloat,
+        settings: DanmakuKitRenderSettings
+    ) -> CGRect {
+        let canvas = scrollingCanvas(in: bounds, aspectRatio: aspectRatio)
+        let clampedTop = min(max(topInset + CGFloat(settings.topPadding), 0), canvas.height)
+        let clampedBottom = min(
+            max(bottomInset + CGFloat(settings.bottomPadding), 0),
+            max(0, canvas.height - clampedTop)
+        )
+        return CGRect(
+            x: canvas.minX,
+            y: canvas.minY + clampedTop,
+            width: canvas.width,
+            height: max(0, canvas.height - clampedTop - clampedBottom)
+        )
+    }
+
+    /// 计算全屏态下播放器叠层与控件应遵循的可视区四周边距；竖屏视频全屏时
+    /// 额外保证上下至少收拢至屏幕居中的 9:16（宽:高）区域内。
+    static func fullscreenContentInsets(
+        in size: CGSize,
+        videoAspectRatio: CGFloat,
+        isPortraitFullscreen: Bool
+    ) -> (top: CGFloat, leading: CGFloat, bottom: CGFloat, trailing: CGFloat) {
+        guard size.width.isFinite, size.height.isFinite,
+              size.width > 1, size.height > 1,
+              videoAspectRatio.isFinite, videoAspectRatio > 0.1
+        else { return (0, 0, 0, 0) }
+
+        let fitted = aspectFit(in: CGRect(origin: .zero, size: size), aspectRatio: videoAspectRatio)
+        var verticalInset = max(0, (size.height - fitted.height) / 2)
+        let horizontalInset = max(0, (size.width - fitted.width) / 2)
+        if isPortraitFullscreen {
+            let nineSixteenHeight = min(size.height, size.width * 16.0 / 9.0)
+            let nineSixteenInset = max(0, (size.height - nineSixteenHeight) / 2)
+            verticalInset = max(verticalInset, nineSixteenInset)
+        }
+        return (verticalInset, horizontalInset, verticalInset, horizontalInset)
+    }
 }
 
 struct MetalDanmakuRenderStage {

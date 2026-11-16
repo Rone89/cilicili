@@ -7,6 +7,13 @@ extension VideoDetailViewModel {
         scheduleDanmakuLoadIfNeeded()
         scheduleRelatedLoadIfNeeded()
         scheduleUploaderAndInteractionLoadIfNeeded()
+        beginInitialCommentsLoadIfNeeded(waitForPlaybackStart: false)
+        if !hasResolvedDetailMetadata {
+            scheduleFullDetailLoadIfNeeded(
+                priority: .utility,
+                waitsForFirstFrame: false
+            )
+        }
         guard stablePlayerViewModel == nil else { return }
 
         if selectedPlayVariant?.isPlayable == true {

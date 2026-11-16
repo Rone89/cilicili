@@ -132,10 +132,11 @@ final class PlaybackRotationCoordinator: ObservableObject {
     @discardableResult
     func requestGeometryUpdate(
         to target: UIInterfaceOrientationMask,
-        in scene: UIWindowScene?
+        in scene: UIWindowScene?,
+        onError: (@MainActor (Error) -> Void)? = nil
     ) -> Bool {
         guard let target = requestCoalescer.submit(target) else { return false }
-        AppOrientationLock.requestGeometryUpdate(to: target, in: scene)
+        AppOrientationLock.requestGeometryUpdate(to: target, in: scene, onError: onError)
         return true
     }
 

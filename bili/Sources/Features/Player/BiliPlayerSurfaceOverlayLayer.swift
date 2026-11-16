@@ -60,9 +60,10 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                 .zIndex(7)
             }
 
+            let topAccessoryPadding = max(0, state.contentInsets.top) + (state.presentation == .embedded ? 10 : 16)
             if state.showsInlineLoadingProgress, !state.isUserSeeking, !networkUnavailable {
                 PlayerInlineLoadingIndicator(message: "正在缓冲")
-                .padding(.top, state.presentation == .embedded ? 10 : 16)
+                .padding(.top, topAccessoryPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .zIndex(6)
@@ -73,7 +74,7 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                     phase: speedBoostModel.phase,
                     displayedRate: speedBoostModel.displayedRate
                 )
-                    .padding(.top, state.presentation == .embedded ? 10 : 16)
+                    .padding(.top, topAccessoryPadding)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     .zIndex(6)

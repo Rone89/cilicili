@@ -47,4 +47,44 @@ extension VideoDetailViewModel {
             }
         }
     }
+
+    func adoptRetainedMiniPlayerSession(_ session: SystemMiniPlayerCoordinator.RetainedSession) {
+        let playerViewModel = session.playerViewModel
+        detail = session.video
+        selectedCID = session.selectedCID
+        playVariants = session.playVariants
+        selectedPlayVariant = session.selectedPlayVariant
+        currentPlayURLData = session.currentPlayURLData
+        isDanmakuEnabled = session.isDanmakuEnabled
+        hasResolvedDetailMetadata = session.hasResolvedDetailMetadata
+        stablePlayerIdentity = session.stablePlayerIdentity
+        isAwaitingInitialManualPlayback = false
+        isAwaitingRelatedVideoReturnPlayback = false
+        state = .loaded
+        playURLState = .loaded
+
+        configureStablePlayerStartupCallbacks(playerViewModel)
+        playerViewModel.setAutomaticPictureInPictureFromInlineAllowed(
+            libraryStore.pictureInPictureEnabled
+        )
+        playerViewModel.setPictureInPictureEnabled(
+            libraryStore.allowsPictureInPictureController
+        )
+        playerViewModel.beginSurfaceMigrationHold()
+        stablePlayerViewModel = playerViewModel
+        syncCommentsRenderStore()
+        syncPlayerIdentityRenderStore()
+
+        if let variant = session.selectedPlayVariant {
+            observePlaybackErrors(playerViewModel, variant: variant)
+        }
+        applySponsorBlockSegmentsToPlayer()
+        scheduleSponsorBlockSegmentsAfterFirstFrame()
+        if !session.isRestoringUserInterface {
+            Task { @MainActor [weak playerViewModel] in
+                await Task.yield()
+                playerViewModel?.stopPictureInPictureIfNeeded()
+            }
+        }
+    }
 }

@@ -86,6 +86,7 @@ extension RootTabView {
 
     func openLiveRoom(_ room: LiveRoom) {
         AppOrientationLock.restorePortrait()
+        SystemMiniPlayerCoordinator.shared.stopActiveMiniPlayer()
         if !activeRootNavigationPathIsEmpty {
             ActivePlaybackCoordinator.shared.stopActivePlayback()
         }
@@ -106,6 +107,7 @@ extension RootTabView {
 
     func openVideo(_ video: VideoItem) {
         AppOrientationLock.restorePortrait()
+        SystemMiniPlayerCoordinator.shared.prepareForOpeningVideo(video)
         PlayerMetricsLog.record(.routeOpen, metricsID: video.bvid, title: video.title)
         if libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled {
             PlaybackDetailPerformanceMonitor.shared.beginNavigation(
@@ -113,7 +115,9 @@ extension RootTabView {
                 detail: "source=openVideo \(VideoDetailFormalPerformancePolicy.navigationTraceDetail)"
             )
         }
-        beginPlaybackPreload(for: video)
+        if !SystemMiniPlayerCoordinator.shared.hasRetainedSession(for: video) {
+            beginPlaybackPreload(for: video)
+        }
         if !activeRootNavigationPathIsEmpty {
             ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
         }
@@ -134,6 +138,7 @@ extension RootTabView {
 
     func openVideoComment(_ route: VideoCommentRoute) {
         AppOrientationLock.restorePortrait()
+        SystemMiniPlayerCoordinator.shared.prepareForOpeningVideo(route.video)
         PlayerMetricsLog.record(.routeOpen, metricsID: route.video.bvid, title: route.video.title)
         if libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled {
             PlaybackDetailPerformanceMonitor.shared.beginNavigation(
@@ -141,7 +146,9 @@ extension RootTabView {
                 detail: "source=openVideoComment \(VideoDetailFormalPerformancePolicy.navigationTraceDetail)"
             )
         }
-        beginPlaybackPreload(for: route.video)
+        if !SystemMiniPlayerCoordinator.shared.hasRetainedSession(for: route.video) {
+            beginPlaybackPreload(for: route.video)
+        }
         if !activeRootNavigationPathIsEmpty {
             ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
         }
@@ -207,17 +214,27 @@ extension RootTabView {
     func restoreVideoPlaybackUIForPictureInPicture(_ video: VideoItem) async -> Bool {
         AppOrientationLock.restorePortrait()
 
-        beginPlaybackPreload(for: video)
+        if !SystemMiniPlayerCoordinator.shared.hasRetainedSession(for: video) {
+            beginPlaybackPreload(for: video)
+        }
         didConsumeStartupVideo = true
-        var restoredPath = NavigationPath()
-        restoredPath.append(video)
+        let targetCount = activeRootNavigationPathCount + 1
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            replaceActiveRootNavigationPath(with: restoredPath)
+            appendActiveRootRoute(video)
         }
 
-        await Task.yield()
-        return activeRootNavigationPathCount == 1
+        // Wait briefly until SwiftUI creates the detail view and claims the live
+        // PiP player so AVKit zooms back directly into the mounted detail view.
+        for _ in 0..<25 {
+            await Task.yield()
+            if !SystemMiniPlayerCoordinator.shared.hasRetainedSession(for: video),
+               activeRootNavigationPathCount >= targetCount {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 12_000_000)
+        }
+        return activeRootNavigationPathCount >= targetCount
     }
 }

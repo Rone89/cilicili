@@ -22,6 +22,7 @@ final class DanmakuKitOverlayView: UIView {
     private var settings: DanmakuSettings = .default
     private var topInset: CGFloat = 0
     private var bottomInset: CGFloat = 0
+    private var videoAspectRatio: CGFloat?
     private var isLayoutTransitioning = false
     private var displayedUntil: [String: TimeInterval] = [:]
     private var emoteLoadTasks: [URL: Task<Void, Never>] = [:]
@@ -104,7 +105,8 @@ final class DanmakuKitOverlayView: UIView {
         isLoadShedding newIsLoadShedding: Bool,
         settings newSettings: DanmakuSettings,
         topInset newTopInset: CGFloat,
-        bottomInset newBottomInset: CGFloat
+        bottomInset newBottomInset: CGFloat,
+        videoAspectRatio newVideoAspectRatio: CGFloat? = nil
     ) {
         let normalizedSettings = newSettings.normalized
         let previousShouldRender = shouldRender
@@ -112,7 +114,21 @@ final class DanmakuKitOverlayView: UIView {
         let previousEffectiveTime = effectivePlaybackTime()
         let previousIsPlaying = isPlaying
         let previousPlaybackRate = playbackRate
+        let sanitizedAspectRatio = newVideoAspectRatio.flatMap {
+            $0.isFinite && $0 > 0.1 ? $0 : nil
+        }
+        let aspectRatioChanged: Bool = {
+            switch (videoAspectRatio, sanitizedAspectRatio) {
+            case (nil, nil):
+                return false
+            case let (lhs?, rhs?):
+                return abs(lhs - rhs) > 0.001
+            default:
+                return true
+            }
+        }()
         let settingsChanged = settings != normalizedSettings
+            || aspectRatioChanged
             || abs(topInset - max(0, newTopInset)) > 0.5
             || abs(bottomInset - max(0, newBottomInset)) > 0.5
         let itemsChanged = itemsRevision != newRevision
@@ -138,6 +154,7 @@ final class DanmakuKitOverlayView: UIView {
         settings = normalizedSettings
         topInset = max(0, newTopInset)
         bottomInset = max(0, newBottomInset)
+        videoAspectRatio = sanitizedAspectRatio
         let preservesStage = isLayoutTransitioning
         if preservesStage {
             configurePlaybackRate()
@@ -274,16 +291,13 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     private func configureRenderer() {
-        let topPadding = topInset + CGFloat(settings.danmakuKit.topPadding)
-        let bottomPadding = bottomInset + CGFloat(settings.danmakuKit.bottomPadding)
-        let clampedTopPadding = min(max(topPadding, 0), bounds.height)
-        let clampedBottomPadding = min(max(bottomPadding, 0), max(0, bounds.height - clampedTopPadding))
-        // Use the inset content frame so top and bottom lanes stay clear of player controls.
-        let frame = CGRect(
-            x: 0,
-            y: clampedTopPadding,
-            width: bounds.width,
-            height: max(0, bounds.height - clampedTopPadding - clampedBottomPadding)
+        // Use the aspect-fitted inset content frame so lanes stay clear of letterbox bars and controls.
+        let frame = DanmakuVideoViewport.insetContentFrame(
+            in: bounds,
+            aspectRatio: videoAspectRatio,
+            topInset: topInset,
+            bottomInset: bottomInset,
+            settings: settings.danmakuKit
         )
         configurePlaybackRate()
         let configuration = RendererConfiguration(frame: frame, settings: settings.danmakuKit)

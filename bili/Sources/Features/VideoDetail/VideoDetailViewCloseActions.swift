@@ -10,13 +10,12 @@ struct VideoDetailViewCloseActions {
     func dismissVideoDetail(
         presentationState: Binding<VideoDetailViewPresentationState>
     ) {
-        guard !presentationState.wrappedValue.isClosingDetail else { return }
-        presentationState.wrappedValue.isClosingDetail = true
-        holder.viewModel?.stopPlaybackForNavigation()
-        if let onRequestClose {
-            onRequestClose()
-        } else {
-            dismiss()
+        performExit(presentationState: presentationState) {
+            if let onRequestClose {
+                onRequestClose()
+            } else {
+                dismiss()
+            }
         }
     }
 
@@ -25,15 +24,25 @@ struct VideoDetailViewCloseActions {
     func popOneVideoLevel(
         presentationState: Binding<VideoDetailViewPresentationState>
     ) {
+        performExit(presentationState: presentationState) {
+            if let onPopOne {
+                onPopOne()
+            } else if let onRequestClose {
+                onRequestClose()
+            } else {
+                dismiss()
+            }
+        }
+    }
+
+    private func performExit(
+        presentationState: Binding<VideoDetailViewPresentationState>,
+        navigate: () -> Void
+    ) {
         guard !presentationState.wrappedValue.isClosingDetail else { return }
         presentationState.wrappedValue.isClosingDetail = true
+        holder.viewModel?.markExitingVideoDetailRoute()
         holder.viewModel?.stopPlaybackForNavigation()
-        if let onPopOne {
-            onPopOne()
-        } else if let onRequestClose {
-            onRequestClose()
-        } else {
-            dismiss()
-        }
+        navigate()
     }
 }

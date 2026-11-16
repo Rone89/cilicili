@@ -47,7 +47,8 @@ extension DanmakuKitOverlayView: DanmakuOverlayRendering {
         apply(items: c.items, itemsRevision: c.itemsRevision, currentTime: c.currentTime,
               isPlaying: c.isPlaying, playbackRate: c.playbackRate, isEnabled: c.isEnabled,
               hasPresentedPlayback: c.hasPresentedPlayback, isLoadShedding: c.isLoadShedding,
-              settings: c.settings, topInset: c.topInset, bottomInset: c.bottomInset)
+              settings: c.settings, topInset: c.topInset, bottomInset: c.bottomInset,
+              videoAspectRatio: c.videoAspectRatio)
     }
 }
 

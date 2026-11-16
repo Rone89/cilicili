@@ -11,6 +11,7 @@ final class LiveRoomViewModelHolder: ObservableObject {
 
     func configure(room: LiveRoom, api: BiliAPIClient, libraryStore: LibraryStore) {
         guard viewModel == nil else { return }
+        SystemMiniPlayerCoordinator.shared.stopActiveMiniPlayer()
         let viewModel = LiveRoomViewModel(seedRoom: room, api: api, libraryStore: libraryStore)
         self.viewModel = viewModel
         cleanupPlayback = { [viewModel] in

@@ -418,6 +418,198 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
         XCTAssertEqual(host.bounds.size, windowSize)
     }
 
+    func testPortraitFullscreenConstrainsControlsAndDanmakuToCenteredNineSixteenArea() async throws {
+        let dependencies = AppDependencies()
+        let detail = try makeDetail(dependencies: dependencies)
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(dependencies.libraryStore)
+        let previousMetalPref = dependencies.libraryStore.metalDanmakuRendererExperimentEnabled
+        dependencies.libraryStore.setMetalDanmakuRendererExperimentEnabled(false)
+        defer {
+            dependencies.libraryStore.setMetalDanmakuRendererExperimentEnabled(previousMetalPref)
+        }
+
+        let player = makePlayer()
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+        let host = makeShellHost(
+            player: player,
+            detail: detail,
+            dependencies: dependencies,
+            runtime: runtime,
+            rotationCoordinator: coordinator
+        )
+        let parent = UIViewController()
+        parent.loadViewIfNeeded()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let portraitSize = CGSize(width: 440, height: 956)
+        window.frame = CGRect(origin: .zero, size: portraitSize)
+        window.rootViewController = parent
+        window.makeKeyAndVisible()
+        window.frame = CGRect(origin: .zero, size: portraitSize)
+        defer { window.isHidden = true; window.rootViewController = nil; previousWindow?.makeKey() }
+        parent.view.frame = window.bounds
+        parent.view.addSubview(host)
+        host.attach(to: parent)
+        defer {
+            host.tearDown()
+            host.removeFromSuperview()
+            player.stop()
+        }
+
+        host.frame = window.bounds
+        host.setVideoAspectRatio(9.0 / 16.0)
+        coordinator.setPortraitFullscreen(true)
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+
+        let nineSixteenHeight = portraitSize.width * 16.0 / 9.0
+        let nineSixteenMinY = (portraitSize.height - nineSixteenHeight) / 2
+        let nineSixteenMaxY = portraitSize.height - nineSixteenMinY
+
+        let deadline = ContinuousClock.now + .seconds(3)
+        var moreButtonFrameInWindow: CGRect?
+        var danmakuContentFrameInWindow: CGRect?
+        while ContinuousClock.now < deadline {
+            host.setNeedsLayout()
+            host.layoutIfNeeded()
+            if let moreButton = findView(withIdentifier: "ui.player.more", in: host) {
+                let converted = moreButton.convert(moreButton.bounds, to: window)
+                if converted.height > 1, converted.maxY <= nineSixteenMaxY {
+                    moreButtonFrameInWindow = converted
+                }
+            }
+            if let danmakuHost = findDanmakuHost(in: host) {
+                if let syncView = danmakuHost.subviews.first as? DanmakuSynchronizedLayerView,
+                   let contentFrame = syncView.debugContentFrame,
+                   contentFrame.height > 1 {
+                    let converted = syncView.convert(contentFrame, to: window)
+                    if converted.minY >= nineSixteenMinY, converted.maxY <= nineSixteenMaxY {
+                        danmakuContentFrameInWindow = converted
+                    }
+                } else if let kitView = danmakuHost.subviews.first as? DanmakuKitOverlayView,
+                          let innerCanvas = kitView.subviews.first,
+                          innerCanvas.frame.height > 1 {
+                    let converted = innerCanvas.convert(innerCanvas.bounds, to: window)
+                    if converted.minY >= nineSixteenMinY, converted.maxY <= nineSixteenMaxY {
+                        danmakuContentFrameInWindow = converted
+                    }
+                }
+            }
+            if moreButtonFrameInWindow != nil, danmakuContentFrameInWindow != nil {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(15))
+        }
+
+        let buttonFrame = try XCTUnwrap(
+            moreButtonFrameInWindow,
+            "Portrait fullscreen bottom controls must sit inside the centered 9:16 region instead of the bottom letterbox bar."
+        )
+        XCTAssertGreaterThanOrEqual(buttonFrame.minY, nineSixteenMinY)
+        XCTAssertLessThanOrEqual(buttonFrame.maxY, nineSixteenMaxY)
+
+        let danmakuFrame = try XCTUnwrap(
+            danmakuContentFrameInWindow,
+            "Portrait fullscreen danmaku canvas must stay inside the centered 9:16 region."
+        )
+        XCTAssertGreaterThanOrEqual(danmakuFrame.minY, nineSixteenMinY + 7.5)
+        XCTAssertLessThanOrEqual(danmakuFrame.maxY, nineSixteenMaxY - 83.5)
+    }
+
+    func testShellHostReconcilesShiftedAndInlineResidueBoundsInLandscapeFullscreen() async throws {
+        let dependencies = AppDependencies()
+        let detail = try makeDetail(dependencies: dependencies)
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(dependencies.libraryStore)
+        let player = makePlayer()
+        let coordinator = PlaybackRotationCoordinator()
+        let host = makeShellHost(
+            player: player,
+            detail: detail,
+            dependencies: dependencies,
+            runtime: runtime,
+            rotationCoordinator: coordinator
+        )
+        let parent = UIViewController()
+        parent.loadViewIfNeeded()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let landscapeSize = CGSize(width: 874, height: 402)
+        window.frame = CGRect(origin: .zero, size: landscapeSize)
+        window.rootViewController = parent
+        window.makeKeyAndVisible()
+        window.frame = CGRect(origin: .zero, size: landscapeSize)
+        XCTAssertEqual(window.bounds.size, landscapeSize)
+        defer { window.isHidden = true; window.rootViewController = nil; previousWindow?.makeKey() }
+        parent.view.frame = window.bounds
+        parent.view.addSubview(host)
+        host.attach(to: parent)
+        defer {
+            host.tearDown()
+            host.removeFromSuperview()
+            player.stop()
+        }
+
+        coordinator.beginSystemTransition(toLandscape: true)
+        _ = coordinator.finishSystemTransition(toLandscape: true, currentOrientation: .landscapeRight)
+
+        // 1) Inline portrait residue caused by pre-rotation chrome/safe-area update.
+        host.frame = CGRect(x: 0, y: 59, width: 402, height: 226)
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(host.frame, CGRect(origin: .zero, size: landscapeSize))
+
+        // 2) Safe-area cropped or origin-drifted frame after rotation completes.
+        host.frame = CGRect(x: 0, y: 44, width: 874, height: 358)
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(host.frame, CGRect(origin: .zero, size: landscapeSize))
+
+        // 3) Stale CoreAnimation animation left on host layer.
+        let staleAnim = CABasicAnimation(keyPath: "position")
+        staleAnim.duration = 0.35
+        host.layer.add(staleAnim, forKey: "position")
+        host.frame = CGRect(x: -100, y: 200, width: 402, height: 874)
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(host.frame, CGRect(origin: .zero, size: landscapeSize))
+        XCTAssertTrue(host.layer.animationKeys()?.isEmpty ?? true)
+    }
+
+    func testSurfaceContainerStripsLayerAnimationsWhenResyncingPlayerLayerFrame() async throws {
+        let player = makePlayer()
+        let surface = VideoSurfaceContainerView()
+        surface.disablesImplicitLayoutAnimations = true
+        surface.configureBoundsRefresh(for: player, synchronously: true)
+        surface.setPlayerViewModel(player, prefersNativePlaybackControls: false)
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        defer {
+            surface.detachPlayerSurface()
+            player.stop()
+        }
+
+        let targetSize = CGSize(width: 874, height: 402)
+        surface.frame = CGRect(origin: .zero, size: targetSize)
+        surface.setNeedsLayout()
+        surface.layoutIfNeeded()
+
+        let layer = try XCTUnwrap(surface.drawableView.layer.sublayers?.compactMap { $0 as? AVPlayerLayer }.first)
+        let staleAnimation = CABasicAnimation(keyPath: "position")
+        staleAnimation.duration = 0.5
+        layer.add(staleAnimation, forKey: "position")
+        layer.frame = CGRect(x: 0, y: 120, width: 402, height: 226)
+
+        surface.setNeedsLayout()
+        surface.layoutIfNeeded()
+
+        XCTAssertEqual(layer.frame, CGRect(origin: .zero, size: targetSize))
+        XCTAssertTrue(layer.animationKeys()?.isEmpty ?? true)
+    }
+
     private func makeDetail(dependencies: AppDependencies) throws -> VideoDetailViewModel {
         let video = try JSONDecoder.bili.decode(VideoItem.self,
             from: Data(#"{"bvid":"BVQualityTransitionProbe","title":"Quality transition probe","cid":1}"#.utf8))
@@ -496,6 +688,18 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
     private func findSurface(in view: UIView) -> VideoSurfaceContainerView? {
         if let surface = view as? VideoSurfaceContainerView { return surface }
         return view.subviews.lazy.compactMap { self.findSurface(in: $0) }.first
+    }
+
+    private func findDanmakuHost(in view: UIView) -> DanmakuRendererHostView? {
+        if let host = view as? DanmakuRendererHostView { return host }
+        return view.subviews.lazy.compactMap { self.findDanmakuHost(in: $0) }.first
+    }
+
+    private func findView(withIdentifier identifier: String, in view: UIView) -> UIView? {
+        if view.accessibilityIdentifier == identifier { return view }
+        return view.subviews.lazy.compactMap {
+            self.findView(withIdentifier: identifier, in: $0)
+        }.first
     }
 
     private func layerMatchesSurface(_ surface: VideoSurfaceContainerView, size: CGSize) -> Bool {

@@ -10,6 +10,7 @@ struct VideoDetailPlayerSurfaceSubtitleLayer: View {
     let clock: PlayerPlaybackClock
     let cid: Int?
     let isFullscreen: Bool
+    var contentInsets: EdgeInsets = EdgeInsets()
     let loadTracks: () async -> Void
 
     /// PiliPlus 默认值。
@@ -28,9 +29,14 @@ struct VideoDetailPlayerSurfaceSubtitleLayer: View {
     }
 
     private var bottomPadding: CGFloat {
-        controlsVisibilityAreVisible
+        let base = controlsVisibilityAreVisible
             ? max(Layout.bottomPadding, Layout.bottomPaddingWithControls)
             : Layout.bottomPadding
+        return base + max(0, contentInsets.bottom)
+    }
+
+    private var horizontalPadding: CGFloat {
+        Layout.horizontalPadding + max(0, max(contentInsets.leading, contentInsets.trailing))
     }
 
     private var controlsVisibilityAreVisible: Bool {
@@ -52,7 +58,7 @@ struct VideoDetailPlayerSurfaceSubtitleLayer: View {
                         Color.black.opacity(Layout.backgroundOpacity),
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                     )
-                    .padding(.horizontal, Layout.horizontalPadding)
+                    .padding(.horizontal, horizontalPadding)
                     .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 1)
                     .padding(.bottom, bottomPadding)
                     .animation(.easeOut(duration: 0.2), value: bottomPadding)
@@ -67,6 +73,7 @@ struct VideoDetailPlayerSurfaceSubtitleLayer: View {
                         Color.black.opacity(Layout.backgroundOpacity),
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                     )
+                    .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, bottomPadding)
             }
         }

@@ -13,6 +13,7 @@ struct MineView: View {
     let onOpenRoute: (MineOverlayRoute) -> Void
     @State private var loginSheet: LoginSheet?
     @State private var isSearching = false
+    @State private var containerWidth: CGFloat = 0
     @StateObject private var titleState = FeedChromeTitleState()
     @State private var loadedMainAccountCredentialVersion: Int?
     @State private var loadedHistoryAccountCredentialVersion: Int?
@@ -36,26 +37,35 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .safeAreaPadding(.top, isRootTabContent && !isSearching ? 8 : 0)
-        // Keep the same breathing room below the field as the home toolbar.
-        .safeAreaInset(edge: .top, spacing: isSearching ? 18 : 0) {
-            if isSearching {
-                MineSearchField(
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
+            if width > 0 {
+                containerWidth = width
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 18) {
+            if isRootTabContent {
+                MineMorphTopBar(
+                    titleState: titleState,
+                    isSearching: $isSearching,
+                    containerWidth: containerWidth,
                     searchText: $searchText,
-                    isSearchFocused: isSearchFocused,
-                    onCancel: cancelSearch
+                    isSearchFocused: isSearchFocused
                 )
             }
         }
         .toolbar {
-            MineTopBar(
-                titleState: titleState,
-                showsTitle: isRootTabContent,
-                isSearching: isSearching,
-                onSearch: beginSearch
-            )
+            if !isRootTabContent {
+                MineTopBar(
+                    titleState: titleState,
+                    isRootTabContent: isRootTabContent,
+                    isSearching: $isSearching,
+                    containerWidth: containerWidth,
+                    searchText: $searchText,
+                    isSearchFocused: isSearchFocused
+                )
+            }
         }
-        .toolbarVisibility(isRootTabContent && isSearching ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {
@@ -74,18 +84,6 @@ struct MineView: View {
                 }
             }
         }
-    }
-
-    private func cancelSearch() {
-        isSearchFocused.wrappedValue = false
-        searchText = ""
-        titleState.reset()
-        withAnimation(.smooth(duration: 0.3)) { isSearching = false }
-    }
-
-    private func beginSearch() {
-        isSearchFocused.wrappedValue = true
-        withAnimation(.smooth(duration: 0.35)) { isSearching = true }
     }
 
     @ViewBuilder

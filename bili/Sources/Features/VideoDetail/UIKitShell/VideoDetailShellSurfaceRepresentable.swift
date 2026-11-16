@@ -59,6 +59,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         _ uiView: VideoDetailShellSurfaceHost,
         coordinator: Coordinator
     ) {
+        uiView.prepareForMiniPlayerExitIfDismantled()
         coordinator.dismantle()
         uiView.tearDown()
     }
