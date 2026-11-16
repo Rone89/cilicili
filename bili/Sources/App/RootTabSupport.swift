@@ -24,17 +24,19 @@ final class RootHomeViewModelHolder: ObservableObject {
 }
 
 extension View {
-    func videoDestinations() -> some View {
+    func videoDestinations(usesTransparentNavigationBar: Bool = false) -> some View {
         navigationDestination(for: VideoItem.self) { video in
             VideoDetailView(
                 seedVideo: video
             )
+            .environment(\.videoDetailUsesTransparentNavigationBar, usesTransparentNavigationBar)
         }
         .navigationDestination(for: VideoCommentRoute.self) { route in
             VideoDetailView(
                 seedVideo: route.video,
                 initialCommentAnchor: route.anchor
             )
+            .environment(\.videoDetailUsesTransparentNavigationBar, usesTransparentNavigationBar)
         }
         .navigationDestination(for: PgcSeasonRoute.self) { route in
             PgcSeasonPlaybackRouteView(route: route)
@@ -43,9 +45,10 @@ extension View {
         .navigationDestination(for: VideoOwner.self) { owner in
             UploaderView(owner: owner)
                 .navigationHistoryTitle(owner.name)
+                .toolbar(.visible, for: .navigationBar)
         }
         .navigationDestination(for: LiveRoom.self) { room in
-            LiveRoomDetailView(seedRoom: room)
+            LiveRoomDetailView(seedRoom: room, usesTransparentNavigationBar: usesTransparentNavigationBar)
                 .navigationHistoryTitle(room.title)
         }
     }

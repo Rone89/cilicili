@@ -1,13 +1,7 @@
 import Foundation
 
 enum VideoDetailPlaybackQualityMenuBuilder {
-    static func inlineQualityButtonTitle(
-        selectedPlayVariant: PlayVariant?,
-        isSwitchingPlayQuality: Bool
-    ) -> String {
-        if isSwitchingPlayQuality {
-            return "切换中"
-        }
+    static func inlineQualityButtonTitle(selectedPlayVariant: PlayVariant?) -> String {
         return selectedPlayVariant?.compactAccessoryTitle ?? "清晰度"
     }
 
@@ -29,21 +23,21 @@ enum VideoDetailPlaybackQualityMenuBuilder {
     ) -> [VideoDetailPlaybackQualityMenuItem] {
         compactQualityVariants(from: playVariants).map { variant in
             let systemImage: String
-            if isPending(variant, pendingPlayVariantID: pendingPlayVariantID, playVariants: playVariants) {
+            if !variant.isPlayable {
+                systemImage = "lock.fill"
+            } else if isPending(variant, pendingPlayVariantID: pendingPlayVariantID, playVariants: playVariants) {
                 systemImage = "arrow.triangle.2.circlepath"
             } else if selectedPlayVariant?.quality == variant.quality {
-                systemImage = "checkmark"
-            } else if variant.isAvailabilityPending {
-                systemImage = "arrow.down.circle"
+                systemImage = "largecircle.fill.circle"
             } else {
-                systemImage = variant.isPlayable ? "circle" : "lock.fill"
+                systemImage = "circle"
             }
             return VideoDetailPlaybackQualityMenuItem(
                 variant: variant,
                 title: variant.qualityMenuTitle,
                 subtitle: routeSubtitle(for: variant, selectedPlayVariant: selectedPlayVariant),
                 systemImage: systemImage,
-                isDisabled: !variant.isSelectableFromQualityMenu || isSwitchingPlayQuality
+                isDisabled: !variant.isPlayable || isSwitchingPlayQuality
             )
         }
     }

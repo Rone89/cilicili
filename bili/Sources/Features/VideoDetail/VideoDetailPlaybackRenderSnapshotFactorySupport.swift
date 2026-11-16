@@ -15,8 +15,7 @@ extension VideoDetailPlaybackRenderSnapshotFactory {
 
     var qualityInlineButtonTitle: String {
         VideoDetailPlaybackQualityMenuBuilder.inlineQualityButtonTitle(
-            selectedPlayVariant: selectedPlayVariant,
-            isSwitchingPlayQuality: viewModel.isSwitchingPlayQuality
+            selectedPlayVariant: selectedPlayVariant
         )
     }
 

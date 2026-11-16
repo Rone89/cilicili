@@ -26,7 +26,8 @@ extension VideoDetailViewModel {
         defer { store.setIsLoadingTracks(false) }
         do {
             let tracks = try await api.fetchVideoSubtitleTracks(aid: aid, cid: cid, bvid: bvid)
-            store.setTracks(tracks)
+            guard !Task.isCancelled, selectedCID == cid else { return }
+            store.setTracks(tracks, forCID: cid)
             subtitleLogger.info("tracks loaded: count=\(tracks.count) lans=\(tracks.map(\.lan), privacy: .public) isLoggedInGate=aiTracksNeedLogin")
             await applySubtitlePreference()
         } catch is CancellationError {
@@ -123,7 +124,7 @@ extension VideoDetailViewModel {
         store.setTracks([
             VideoSubtitleTrack(lan: "zh", lanDoc: "中文", isAI: false),
             VideoSubtitleTrack(lan: "ai-zh", lanDoc: "中文", isAI: true),
-        ])
+        ], forCID: selectedCID)
         store.storeCues(
             [
                 VideoSubtitleCue(from: 0, to: 300, content: "字幕夹具第一句"),

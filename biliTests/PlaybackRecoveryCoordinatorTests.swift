@@ -195,7 +195,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
 
 final class VideoDetailPlaybackQualityMenuBuilderTests: XCTestCase {
     @MainActor
-    func testQualityMenuAllowsAdvertisedQualityToLoadOnDemand() {
+    func testQualityMenuDisablesAdvertisedQualityWithoutPlayableVariant() {
         let onDemandVariant = PlayVariant(
             quality: 112,
             title: "1080P 高码率",
@@ -219,9 +219,39 @@ final class VideoDetailPlaybackQualityMenuBuilderTests: XCTestCase {
             isSwitchingPlayQuality: false
         ).first
 
-        XCTAssertEqual(item?.systemImage, "arrow.down.circle")
+        XCTAssertEqual(item?.systemImage, "lock.fill")
         XCTAssertEqual(item?.subtitle, "HEVC · DASH")
-        XCTAssertFalse(item?.isDisabled ?? true)
+        XCTAssertTrue(item?.isDisabled ?? false)
+    }
+
+    @MainActor
+    func testQualityMenuUsesLargeFilledCircleForSelectedAndCircleForUnselected() throws {
+        let selectedVariant = try dashVariant(
+            stream: stream(
+                id: 116,
+                codecs: "hev1.1.6.L150.90",
+                codecid: 12,
+                baseURL: "https://example.test/selected.m4s"
+            )
+        )
+        let unselectedVariant = try dashVariant(
+            stream: stream(
+                id: 64,
+                codecs: "avc1.640028",
+                codecid: 7,
+                baseURL: "https://example.test/unselected.m4s"
+            )
+        )
+
+        let items = VideoDetailPlaybackQualityMenuBuilder.makeQualityMenuItems(
+            playVariants: [selectedVariant, unselectedVariant],
+            selectedPlayVariant: selectedVariant,
+            pendingPlayVariantID: nil,
+            isSwitchingPlayQuality: false
+        )
+
+        XCTAssertEqual(items.first { $0.variant.quality == 116 }?.systemImage, "largecircle.fill.circle")
+        XCTAssertEqual(items.first { $0.variant.quality == 64 }?.systemImage, "circle")
     }
 
     @MainActor
@@ -251,7 +281,7 @@ final class VideoDetailPlaybackQualityMenuBuilderTests: XCTestCase {
             isSwitchingPlayQuality: false
         ).first
 
-        XCTAssertEqual(item?.systemImage, "checkmark")
+        XCTAssertEqual(item?.systemImage, "largecircle.fill.circle")
         XCTAssertEqual(item?.subtitle, "单流兜底")
     }
 
@@ -276,7 +306,7 @@ final class VideoDetailPlaybackQualityMenuBuilderTests: XCTestCase {
             isSwitchingPlayQuality: false
         ).first
 
-        XCTAssertEqual(item?.systemImage, "checkmark")
+        XCTAssertEqual(item?.systemImage, "largecircle.fill.circle")
         XCTAssertEqual(item?.subtitle, "H.264 兜底")
     }
 

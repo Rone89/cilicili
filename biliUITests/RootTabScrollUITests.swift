@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor
 final class RootTabScrollUITests: XCTestCase {
-    private let tabs = ["首页", "动态", "直播", "搜索", "我的"]
+    private let tabs = ["首页", "动态", "搜索", "我的"]
 
     func testSingleHomeHasNoTabBarAfterReturningFromMine() {
         let app = XCUIApplication()
@@ -11,16 +11,63 @@ final class RootTabScrollUITests: XCTestCase {
             "-cc.bili.home.avatarNavigationExperimentEnabled.v1", "YES"
         ]
         app.launch()
-        let more = app.buttons["更多页面"]
+        let more = app.buttons["home.feed.modeMenu"]
         XCTAssertTrue(more.waitForExistence(timeout: 15))
         XCTAssertEqual(app.tabBars.count, 0)
         more.tap()
         app.buttons["我的"].tap()
-        let back = app.navigationBars.buttons.firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 5))
-        back.tap()
+        let switcher = app.buttons["root.hiddenPageSwitcher"]
+        XCTAssertTrue(switcher.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["mine.search.button"].exists, app.debugDescription)
+        XCTAssertFalse(app.navigationBars.buttons["返回"].exists, app.debugDescription)
+        switcher.tap()
+        app.buttons["首页"].tap()
         XCTAssertTrue(more.waitForExistence(timeout: 5))
         XCTAssertEqual(app.tabBars.count, 0)
+    }
+
+    func testHomeProfileMenuOpensFromToolbar() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state", "--start-tab", "home",
+            "-cc.bili.display.visibleRootTabs.v1", "(home)",
+        ]
+        app.launch()
+        addTeardownBlock { app.terminate() }
+
+        let modeMenu = app.buttons["home.feed.modeMenu"]
+        let profile = app.buttons["home.account.avatar"]
+        XCTAssertTrue(modeMenu.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(profile.waitForExistence(timeout: 5), app.debugDescription)
+
+        let homeScreenshot = XCTAttachment(screenshot: app.screenshot())
+        homeScreenshot.name = "home-toolbar-capsule"
+        homeScreenshot.lifetime = .keepAlways
+        add(homeScreenshot)
+
+        profile.tap()
+        XCTAssertTrue(app.buttons["个人空间"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["消息"].exists, app.debugDescription)
+
+        let menuScreenshot = XCTAttachment(screenshot: app.screenshot())
+        menuScreenshot.name = "home-profile-menu"
+        menuScreenshot.lifetime = .keepAlways
+        add(menuScreenshot)
+    }
+
+    func testHomeModeMenuKeepsHiddenPageEntries() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-cc.bili.display.visibleRootTabs.v1", "(home)",
+            "-cc.bili.home.avatarNavigationExperimentEnabled.v1", "YES",
+        ]
+        app.launch()
+        addTeardownBlock { app.terminate() }
+
+        let modeMenu = app.buttons["home.feed.modeMenu"]
+        XCTAssertTrue(modeMenu.waitForExistence(timeout: 15), app.debugDescription)
+        modeMenu.tap()
+        XCTAssertTrue(app.buttons["我的"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     func testEnablingTabFromStandaloneHomePreservesSettingsScroll() {
@@ -30,7 +77,7 @@ final class RootTabScrollUITests: XCTestCase {
             "-cc.bili.home.avatarNavigationExperimentEnabled.v1", "YES"
         ]
         app.launch()
-        let more = app.buttons["更多页面"]
+        let more = app.buttons["home.feed.modeMenu"]
         XCTAssertTrue(more.waitForExistence(timeout: 15))
         more.tap()
         app.buttons["我的"].tap()
@@ -53,9 +100,29 @@ final class RootTabScrollUITests: XCTestCase {
         XCTAssertEqual(toggle.frame.minY, previousY, accuracy: 3)
         XCTAssertEqual(app.tabBars.count, 0)
         app.navigationBars.buttons.firstMatch.tap()
-        app.navigationBars.buttons.firstMatch.tap()
+        let switcher = app.buttons["root.hiddenPageSwitcher"]
+        XCTAssertTrue(switcher.waitForExistence(timeout: 5))
+        let homeTab = app.tabBars.buttons["首页"]
+        XCTAssertTrue(homeTab.waitForExistence(timeout: 5))
+        homeTab.tap()
         XCTAssertTrue(more.waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5))
+    }
+
+    func testHiddenMineSwitchKeepsVisibleTabsAndHomeButtonStillReturns() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-cc.bili.display.visibleRootTabs.v1", "(home,dynamic)"]
+        app.launch()
+        let menu = app.buttons["home.feed.modeMenu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 15))
+        menu.tap()
+        app.buttons["我的"].tap()
+
+        XCTAssertTrue(app.buttons["root.hiddenPageSwitcher"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["动态"].exists)
+        XCTAssertFalse(app.tabBars.buttons["我的"].exists)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(menu.waitForExistence(timeout: 5), app.debugDescription)
     }
 
     func testHomeTabReselectionRefreshesOnlyAtTop() {
@@ -63,7 +130,7 @@ final class RootTabScrollUITests: XCTestCase {
     }
 
     func testRootTabReselectionScrollsToTopWithoutRefresh() {
-        verifyReselection(arguments: [], selectedTabs: ["直播", "搜索", "我的"])
+        verifyReselection(arguments: [], selectedTabs: ["搜索", "我的"])
     }
 
     func testDynamicTabReselectionRefreshesOnlyAtTop() {
@@ -271,12 +338,6 @@ final class RootTabScrollUITests: XCTestCase {
             predicate: NSPredicate { _, _ in tabButton.isSelected }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed, app.debugDescription)
-        if tab == "直播" {
-            XCTAssertTrue(
-                app.staticTexts["直播内容 1"].waitForExistence(timeout: 20),
-                "Live fixture did not load after selecting its root tab.\n\(app.debugDescription)"
-            )
-        }
     }
 
     private func mainScroll(in app: XCUIApplication) -> XCUIElement {

@@ -46,6 +46,8 @@ final class VideoDetailViewModel: ObservableObject {
     }
     /// 字幕选轨弹窗由详情页最外层 SwiftUI sheet 宿主呈现（与评论弹窗同款路由）。
     @Published var isShowingSubtitleSelection = false
+    /// 竖屏快捷清晰度列表由详情页最外层 sheet 宿主呈现。
+    @Published var isShowingQualitySelection = false
     @Published var videoListenAudioVariants: [VideoListenAudioVariant] = []
     @Published var selectedVideoListenAudioPreferenceKey: String?
     var automaticVideoListenAudioVariantID: String?

@@ -6,6 +6,7 @@ struct SearchListView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
+    var titleState: FeedChromeTitleState? = nil
     @State private var scrollPosition = ScrollPosition()
     @State private var isPaginationVisible = false
     // Offset samples do not drive UI updates while the user scrolls.
@@ -50,6 +51,14 @@ struct SearchListView: View {
         } action: { _, offset in
             scrollOffsets.current = offset
         }
+        .onScrollGeometryChange(for: SearchTitleScrollSample.self) { geometry in
+            SearchTitleScrollSample(
+                sum: geometry.contentOffset.y + geometry.contentInsets.top,
+                insetsTop: geometry.contentInsets.top
+            )
+        } action: { _, sample in
+            titleState?.update(scrollSum: sample.sum, insetsTop: sample.insetsTop)
+        }
         .onDisappear { scrollOffsets.saved = scrollOffsets.current }
         .onAppear {
             if let saved = scrollOffsets.saved {
@@ -71,7 +80,7 @@ struct SearchListView: View {
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemGroupedBackground))
-        .nativeTopScrollEdgeEffect()
+        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
     }
 
     private func resetScrollPosition() {
@@ -423,14 +432,20 @@ private struct SearchScopeBar: View {
                     Button {
                         Task { await viewModel.selectScope(scope) }
                     } label: {
-                        Label(scope.title, systemImage: scope.systemImage)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 44)
-                            .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
-                            .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+                        HStack(spacing: 6) {
+                            Image(systemName: scope.systemImage)
+                            if selected {
+                                Text(scope.title)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, selected ? 16 : 0)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
+                        .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+                        .animation(.smooth(duration: 0.25), value: selected)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("搜索类型：\(scope.title)")
@@ -441,7 +456,12 @@ private struct SearchScopeBar: View {
             }
             .padding(.horizontal, 20)
         }
-        .padding(.vertical, 8)
-        .background(Color(.systemGroupedBackground))
+            .padding(.vertical, 8)
+            .background(Color(.systemGroupedBackground))
     }
+}
+
+private struct SearchTitleScrollSample: Equatable {
+    let sum: CGFloat
+    let insetsTop: CGFloat
 }

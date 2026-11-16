@@ -962,6 +962,391 @@
 - 更新概述按 v1.1.3 → v1.1.4 口径撰写：启动提速、#66 全屏漂移修复、弹幕同步层与显示问题修复、弹幕设置去底色与字重菜单化、横屏 100% 铺满、清晰度选项合并与长标题展开。附件为未签名 IPA，需自行签名安装。
 - 说明：本文件同时收录并行会话"与官方 B 站弹幕数量差异排查"记录（其内容自述为排查结论，非代码变更）。
 
+## 2026-11-14 首页顶栏 Ibili 式重构（标题上滑消失）/ 1.1.4 Build 173
+
+- 用户选定方案：首页顶栏按 Ibili 重构——左上「首页」大字标题，右上文字「推荐 / 热门」，隐藏标签菜单与头像置右；不再使用居中 `UISegmentedControl`。
+- 实现：新增 `HomeChromeTitleState`（44pt 淡出距离、24pt 上移、0.01 进度节流）；`RootTabView` 持有状态并注入首页环境；`HomeFeedScrollView` 用 `onScrollGeometryChange` 读取 `contentOffset.y + contentInsets.top` 更新；`HomeFeedNavigationChrome` 改为 `topBarLeading` 标题 + `topBarTrailing` 文本模式按钮 / 隐藏标签菜单 / 头像。标题进度 >0.9 时从工具栏与无障碍树移除，回顶或切换推荐/热门时 reset。
+- 有意行为变化：首页不再调用 `nativeTopScrollEdgeEffect` 的标题隐藏（改为 `hidesRootNavigationTitle: false`），上滑时推荐/热门、隐藏标签菜单和头像保留，只有标题上移淡出；旧版是整组 chrome 在 18pt 后一起淡出。该变化与 Ibili 的标题语义一致，待用户真机确认。
+- 验证：iPhone 18 Pro Max / iOS 27.0 模拟器，共享 Xcode-27 缓存。新增单测 `HomeChromeTitleStateTests` 3/3；首页相关单测 24/24；UI 用例 `testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1。截图附件 `home-title-rest` / `home-title-scrolled` 确认：静止时左上显示「首页」，上滑后标题消失、模式按钮与头像保留，下滚恢复。Debug build 成功。
+- 分支与 worktree：`feature/home-title-fade`（功能提交 `5a99b4c`），`/Users/rayc/Desktop/ccswift-title-fade`，基线 `d8d0e58`。**未合并本地 main、未推送 GitHub**；按用户要求待真机验收通过后再提交本地 main。
+- Release 1.1.4 (173) 出包，IPA SHA-256 `f186954560614774e8000e2bfb67459e8387a3136a3aaba082c2ccd130b18c7a`；18pm 证书重签安装 RCe2027，`devicectl` 确认 `cilicili 1.1.4 (173)` 并启动（bundle ID `app.bamboo2779.brussels691`）。
+- 待真机验收：①首页左上显示「首页」大字标题；②上滑标题上移淡出，推荐/热门、隐藏标签菜单、头像保持；③下滚或回顶标题恢复；④推荐/热门切换仍瞬时回顶；⑤头像、隐藏标签菜单、账户消息入口仍可用。
+
+## 2026-11-14 首页顶栏返回转场保护 / 1.1.4 Build 174
+
+- 用户反馈：从视频播放页返回时，首页顶栏在视频页未完全退出前就出现。
+- 对照：在基线 `d8d0e58`（main）用同一段返回探针抓帧，旧版顶栏（头像 / 居中分段 / 菜单）同样在视频页仍占约 80% 时停在顶部，确认**不是本次标题重构引入**；新版因滚动后仍保留推荐/热门与头像，观感更明显。
+- 修复：`HomeFeedNavigationChrome` 新增 `isDetailPresented`，详情页存在时首页 toolbar 透明度 0；返回后由 `.task(id:)` 等待 450ms（覆盖返回动画）再以 0.18s 淡入，避免顶栏提前盖在视频页上。
+- 验证：`HomeChromeTitleStateTests` 3/3；`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug/Release 编译通过。转场视觉效果待用户真机复看。
+- Release 1.1.4 (174) 出包，IPA SHA-256 `0c83bdd46815366a3ad65a1f65d307e253809e1998ac7bf008711e1f84603a2b`；18pm 证书重签成功。首次无线安装因设备掉线返回 CoreDeviceError 4016；设备恢复 `available (paired)` 后直接重试安装成功并启动，`devicectl` 确认 `cilicili 1.1.4 (174)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 首页顶栏移入页面内容（随页面转场滑动）/ 1.1.4 Build 175
+
+- 用户反馈 Build 174 的“隐藏+延时淡入”仍不自然：进入视频页顶栏突然消失、返回时从无到有突然出现。用户选定方案：顶栏跟随页面一起滑动。
+- 重构：删除 `HomeFeedNavigationChrome`（原生 toolbar + 转场隐藏逻辑），新增页面内 `HomeTopBar`（标题 / 推荐·热门 / 隐藏标签菜单 / 头像），由 `HomeView` 以 `safeAreaInset(edge: .top)` 挂载，背景 `.ultraThinMaterial` 延伸至状态栏。首页根视图隐藏系统导航栏（`RootTabView` 对 home 设 `.toolbarVisibility(.hidden)`），顶栏成为首页内容的一部分，push/pop 时随页面整体滑出/滑入，不再被导航 chrome 在转场中途单独恢复。
+- 标题淡出状态 `HomeChromeTitleState` 改由 `HomeView` 持有并经环境注入；`HomeFeedScrollView` 仍按滚动偏移更新。UP 空间目标页显式 `.toolbar(.visible)` 保留导航栏；视频/直播/番剧页各自管理导航栏可见性，不受影响。
+- 验证：返回探针抓帧确认顶栏只出现在首页被滑出的区域、随页面移动，不再压在视频页上（对比 Build 174/基线的整组顶栏悬停）。`HomeChromeTitleStateTests` 3/3、`HomeFeedModeSwitchTests` 3/3、`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (175) 出包，IPA SHA-256 `1ff492483ca0a84057d80cd0d4b596a07f5206a2affe094ac49f1df2bf292045`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (175)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 首页顶栏顶部边缘改为渐变模糊 / 1.1.4 Build 176
+
+- 用户对比截图反馈：cilicili 顶栏底边是硬边，Ibili 是渐变模糊。
+- 修复：`HomeTopBar` 背景由整块 `.ultraThinMaterial` 改为 `HomeTopEdgeBackground`——材质层用自上而下 `LinearGradient` 遮罩（0→0.9→0.35→透明）化开，叠加一层深色 tint 渐变，高度 126pt（对齐 Ibili `FeedNavigationBackgroundOverlay` 的 expandedHeight+24），向上延伸至状态栏、向下融入 feed，消除硬边。
+- 验证：模拟器截图确认顶栏底边渐变过渡、无硬线；`testHomeTitleFadesOnScrollDownWhileModeButtonsStayVisible` 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (176) 出包，IPA SHA-256 `ad5e603e94036b55ca6210262524875f0f58a394c967380120a6a3987366ebe4`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (176)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 顶部边缘改用系统官方 .soft 效果 / 1.1.4 Build 177
+
+- 用户反馈：176 的渐变模糊是自写遮罩，要求改用官方 `.soft`  scroll edge 效果。
+- 重构：删除自写 `HomeTopEdgeBackground`，`HomeTopBar` 改为透明；`HomeView` 由 `safeAreaInset` 改为 `overlay(alignment: .top)`，让滚动视图顶到顶栏下方；`HomeFeedScrollView` 顶部 `contentMargins` 设为顶栏高度 44pt，使内容在顶栏下起始并由系统 `scrollEdgeEffectStyle(.soft, for: .top)`（经 `nativeTopScrollEdgeEffect`）渲染官方软边缘。顶栏仍属首页内容，转场随页面滑动不变。
+- 验证：模拟器静止/滚动截图确认顶部为系统软边缘模糊、无硬边无自写渐变；`HomeChromeTitleStateTests`/`HomeFeedModeSwitchTests`/`HomeFeedSnapshotStorageTests` 16/16、标题淡出 UI 用例 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (177) 出包，IPA SHA-256 `5c64d36e3b56bb129072eac83bdba0014fafb841b142e7e6186af96fd5bf2900`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (177)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 修复静止时顶栏按钮与封面重叠 / 1.1.4 Build 178
+
+- 用户反馈：177 未下滑时头像/通知按钮最下端已与下方封面重叠。
+- 根因：177 为让滚动视图顶到顶栏下改用 `overlay(alignment: .top)` + `contentMargins(.top, 44)`，顶栏与内容起始位置未对齐导致重叠。
+- 修复：`HomeView` 改回 `safeAreaInset(edge: .top)` 预留顶栏空间，`HomeFeedScrollView` 顶部 `contentMargins` 还原 0；顶栏保持透明，系统 `scrollEdgeEffectStyle(.soft)` 仍在滚动视图顶边渲染官方软边缘（safeAreaInset 区域内容可滚入其下）。
+- 验证：模拟器静止截图按钮与封面间距正常、无重叠；滚动截图官方软边缘正常；首页单测 16/16、标题淡出 UI 用例 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (178) 出包，IPA SHA-256 `3f214d776db48b35823a9eca6e6b1aad3317e70fbcbcd276b73a9b17d2179f5d`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (178)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 真机顶栏与封面间距不足 / 1.1.4 Build 179
+
+- 用户真机反馈 178 问题依旧。`devicectl device capture screenshot` 抓真机图：按钮底边几乎贴住首张封面（模拟器因首卡布局不同看着有缝，真机更紧）。
+- 修复：`HomeView` 顶栏 `safeAreaInset(edge: .top, spacing: 12)`，在顶栏与 feed 之间固定留 12pt 间距，保证各机型按钮不贴/压封面；透明顶栏 + 系统 `.soft` 与随页面滑动不变。
+- 验证：真机 `devicectl` 截图（`build/logs/device-179-home.png`）确认按钮底边与首张封面间距正常、无重叠；顶部为系统 `.soft` 软边缘。分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (179) 出包，IPA SHA-256 `b4f6317ac29a3e3b970963a73af3846506d6249f96e0517b6e1ee02c2a2ae216`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (179)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 修复连点刷新时首页标题闪烁 / 1.1.4 Build 180
+
+- 用户反馈：连点三下首页刷新推荐时标题文字闪烁。
+- 定位：探针逐帧抓到刷新中标题消失约 360ms 又恢复。根因是下拉刷新期间 refreshControl 撑起顶部 inset、内容在其下重载，`contentOffset.y + contentInsets.top` 瞬时变正，标题进度跳到隐藏阈值再回落（Ibili 用 `adjustedContentInset` 含刷新控件故稳定）。
+- 修复：`HomeChromeTitleState.update` 增加 `isRefreshing` 参数，刷新期间冻结进度为 0（标题保持可见）；`HomeFeedScrollView` 传入 `viewModel.isRefreshing || viewModel.isUserRefreshing`。
+- 验证：探针复测刷新全程 70 帧标题均可见、无闪烁；新增单测 `testRefreshFreezesTitleVisibleDespiteOffsetSpike`，`HomeChromeTitleStateTests`+`HomeFeedModeSwitchTests` 7/7、标题淡出 UI 用例 1/1；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (180) 出包，IPA SHA-256 `fcd9d44a31c6cd58d15cc836ebb08a2689eea25632fe99cb7572dc7a491d5be2`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (180)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-14 彻底修复刷新时标题上移半透明 / 1.1.4 Build 181
+
+- 用户反馈 180 依旧：刷新时标题上移并变半透明。
+- 真因（os_log 实测）：刷新时 `contentInsets.top` 从 118 跳到 178（刷新控件撑高），SwiftUI 不补偿 `contentOffset.y`，`sum` 瞬时 +60 被判成上滑；且下拉动画阶段 `isRefreshing/isUserRefreshing` 全为 false，180 的标志守卫根本没触发。
+- 修复：`HomeChromeTitleState.update(scrollSum:insetsTop:isRefreshing:)` 记录静止基线 inset，凡 inset 高于基线（刷新撑高）即冻结标题可见，待 inset 回落再恢复滚动淡出；不再依赖刷新标志。`HomeFeedScrollView` 同时上报 sum 与 insetsTop。
+- 验证：探针复测刷新全程 70 帧标题均完整可见、不上移不半透明；单测重写并新增 `testRefreshInsetInflationFreezesTitleVisible`/`testExplicitRefreshFlagAlsoFreezesTitle`，首页单测 18/18、标题淡出 UI 用例 1/1；调试日志与探针已清理；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (181) 出包，IPA SHA-256 `5df1d1a6c7638463824dbe99ec998eab0546ac50303f01eee2b7e8c5b1e6790f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (181)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 首页模式切换改液态玻璃菜单按钮 + 标题显示当前模式 / 1.1.4 Build 182
+
+- 用户需求：推荐/热门切换控件改为液态玻璃图标按钮（图标参考用户附图，列表样式），点击展开菜单选择推荐/热门、选中项后打钩；首页大标题改为显示当前「推荐/热门」。
+- 实现：`HomeTopBarModeButtons`（两个文字按钮）替换为 `HomeTopBarModeMenu`——`Menu` + 圆形 `glassEffect` 图标按钮（`list.bullet.rectangle`），菜单项 `HStack{ Text; Spacer; checkmark }` 使选中项尾部打钩；`HomeTopBarTitle` 改为接收 `viewModel.mode.title`，标题随当前模式显示「推荐/热门」，滚动淡出逻辑不变。隐藏标签菜单与头像保留。
+- 验证：UI 用例更名 `testHomeTitleFadesOnScrollDownWhileModeMenuStaysVisible` 并新增展开菜单断言（推荐/热门项存在），截图确认玻璃按钮、菜单尾部勾选、标题=当前模式；首页单测 18/18；Debug 编译通过。图标暂用 `list.bullet.rectangle`，如需与附图完全一致可再换 SF Symbol。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (182) 出包，IPA SHA-256 `b778a88f49db8709a116ca9901a76dbefb611f2f388a4db855a146c55108e27c`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (182)`；真机截图（`build/logs/device-182-home.png`）确认标题=当前模式、玻璃菜单按钮与间距正常。
+
+## 2026-11-15 模式菜单图标/勾选位置/宽度优化 / 1.1.4 Build 183
+
+- 用户三点要求：①图标用 `line.3.horizontal.decrease`；②选中钩放右侧；③菜单窄一点。
+- 实现：`HomeTopBarModeMenu` 由 SwiftUI `Menu` 改为 UIKit `UIButton + UIMenu`（`UIViewRepresentable`，外包圆形 `glassEffect`）。UIMenu `.singleSelection` + `UIAction.state=.on` 原生把勾选放在右侧、菜单宽度随内容收窄；图标改 `line.3.horizontal.decrease`。SwiftUI Menu 在不同 OS 会把钩挪左且菜单偏宽，故换原生。
+- 验证：模拟器菜单截图确认图标=三条递减横线、菜单窄、勾选在「推荐」右侧；UI 用例（菜单项改按标题查询）1/1、首页单测 18/18；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (183) 出包，IPA SHA-256 `de138b7d612287e2bd8a60f907043072e28eacd41c2232d7040591ae5897ec91`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (183)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 隐藏 tab 入口并入模式菜单 / 1.1.4 Build 184
+
+- 用户需求：底部 tab 有被隐藏时，把这些隐藏页面的入口并进推荐/热门同一个玻璃菜单，不再单独放网格按钮。
+- 实现：`HomeModeMenuButton` 的 UIMenu 在 `hiddenTabs` 非空时追加第二组（`.displayInline` 分隔）导航项（直播/我的/搜索等，带各自图标，点击 `onOpenRootPage`）；模式组保留 `.singleSelection` 右钩。顶栏移除独立 `HomeTopBarAccessory` 网格按钮，仅在无隐藏 tab 时保留通知铃铛。
+- 验证：模拟器以 `visibleRootTabs=[home,dynamic]` 配置抓菜单截图，确认「推荐✓/热门」+分隔线+「直播/我的/搜索」同菜单、网格按钮消失、底栏仅剩可见 tab；首页单测 18/18、菜单 UI 用例 1/1；探针已清理、模拟器默认配置已恢复；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (184) 出包，IPA SHA-256 `d337d8a0fa3c92da497468de1d2f7ec5ca1c7a1b84f3e47d323ed76447d4b04f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (184)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 动态页采用首页式顶栏（大标题 + 当前选项玻璃菜单按钮）/ 1.1.4 Build 185
+
+- 用户需求：动态页用和首页一样的大标题；顶部选项（全部/投稿/番剧/专栏/UP）改成一个液态玻璃按钮，按钮直接显示当前选项，点击展开切换菜单。
+- 实现：`HomeChromeTitleState` 泛化为 `FeedChromeTitleState`（环境键 `feedChromeTitleState`，首页同步改名）；新增 `DynamicTopBar`（大标题「动态」随滚动淡出 + 玻璃胶囊按钮显示当前 kind.title + chevron.down，`UIButton+UIMenu` 单选右钩列出可见 kinds）。`DynamicContentRoot` 以 `safeAreaInset` 挂顶栏、root 隐藏原生导航栏、移除旧 `DynamicFeedToolbarPicker` 分段控件；新增 `isRootTabContent` 环境标记区分 root/push（push 保留返回键）。`DynamicFeedScrollContent` 上报滚动偏移驱动标题淡出（含刷新 inset 冻结）。单选 kind 不显示选项按钮、保留原隐藏导航栏行为。
+- 验证：动态 tab UI 全套 6/6（含单选隐藏导航栏、push 二级返回键、设置排序）、`FeedChromeTitleStateTests` 5/5、首页模式菜单 UI 1/1、首页单测 8/8；模拟器截图确认动态标题「动态」+「全部 ⌄」玻璃按钮、菜单全部✓/投稿/番剧/专栏/UP；探针已清理；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (185) 出包，IPA SHA-256 `eac0ae2f305c757d9e2b49f3b88abf1e018b39cf3f26bce3f842532be7e4b19d`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (185)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 动态选项玻璃按钮宽度随文字自适应 / 1.1.4 Build 186
+
+- 用户需求：右上角选项按钮宽度按文字内容决定，不要撑宽。
+- 实现：`DynamicFeedKindMenuButton` 增加 `sizeThatFits`，用 `systemLayoutSizeFitting(compressed)` 返回文字+chevron+内边距的固有宽度（高度固定 44），玻璃胶囊随当前选项文字宽窄自适应。
+- 验证：模拟器截图确认「全部 ⌄」胶囊贴合内容；动态 tab UI 全套 6/6；探针已清理；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (186) 出包，IPA SHA-256 `77482d275d4b7f8c2c128978573e6176ecd1e01a391c72251ce2126e7f1766da`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (186)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 我的页采用首页式顶栏（大标题 + 圆形玻璃搜索按钮）/ 1.1.4 Build 187
+
+- 用户需求：我的页改成左上角标题、右上角液态玻璃圆形搜索按钮（带搜索图标）。
+- 实现：新增 `MineTopBar`（大标题「我的」随滚动淡出 + 圆形玻璃搜索按钮）；搜索按钮用 UIKit `UIButton`（`MineSearchGlassButton`，与首页模式按钮一致，无障碍标识可靠暴露），点击切换为内联玻璃搜索框（绑定原 `searchText`/`isSearchFocused`，过滤 `MineSearchResultsSection`）+「取消」恢复。`MineView` 以 `safeAreaInset` 挂顶栏、root 隐藏原生导航栏（`isRootTabContent`）、push 保留返回键；移除原 `navigationToolbarSearch`。`MineContentView` 增加可选 `titleState` 上报滚动偏移驱动标题淡出。
+- 验证：新增 fixture `mineTopBar` + `MineTopBarUITests` 2/2（标题/搜索按钮存在且 root 隐藏导航栏；点按钮展开搜索框、输入过滤、取消恢复）；`SearchScrollRetentionUITests` 我的页相关 2/2 不受影响（该 fixture 自带搜索框）；模拟器截图确认我的页标题+圆形玻璃搜索按钮；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (187) 出包，IPA SHA-256 `de9b414ed722d40ee4ad8e9251dd71d40a4a83ceeb8ed47d157fae36d77fdb90`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (187)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 我的页搜索按钮↔搜索框过渡动画 / 1.1.4 Build 188
+
+- 用户反馈：我的页点搜索按钮展开搜索框没有过渡动画。
+- 实现：`MineTopBar` 给 `isSearching` 切换加 `.animation(.smooth(duration: 0.3))`；搜索框以 `.scale(anchor: .trailing)+.opacity` 从按钮一侧缩放展开、标题淡出，取消时反向收回。
+- 验证：逐帧探针确认中间态搜索框从右侧缩放展开（非瞬切）；`MineTopBarUITests` 2/2；探针已清理；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (188) 出包，IPA SHA-256 `951374eb71f0787f1f0e3a8ff7c08614c6fbaa02917b3662f0fd052630656bee`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (188)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 搜索页采用首页式顶栏（大标题 + 玻璃搜索按钮 + 玻璃设置按钮）/ 1.1.4 Build 189
+
+- 用户需求：搜索页左上角标题，右上角搜索按钮和搜索设置按钮。
+- 实现：新增 `SearchTopBar`（大标题「搜索」随滚动淡出 + 圆形玻璃搜索按钮 + 圆形玻璃设置按钮）；搜索按钮点开内联玻璃搜索框（绑定原 `rootSearchQueryBinding`/`isRootSearchFocused`/`submitRootSearch`，带缩放展开动画），设置按钮复用 `SearchFilterToolbarMenu`（排序菜单）。`SearchView` 以 `safeAreaInset` 挂顶栏、root 隐藏原生导航栏、push 保留返回键；`SearchContentView` 的导航栏筛选菜单仅在非 root（push/fixture）显示避免重复；`SearchListView` 上报滚动偏移驱动标题淡出。
+- 验证：新增 fixture `searchTopBar` + `SearchTopBarUITests` 3/3（标题/搜索/设置按钮存在且 root 隐藏导航栏；搜索框展开输入取消恢复；设置按钮打开排序菜单）。`SearchScrollRetentionUITests` 13 个中 7 个通过、6 个失败——已在原始基线 `d8d0e58` 临时 worktree 复跑确认这 6 个**基线即失败**（搜索框键盘/取消交互的预先存在问题），非本次改动引入；本次无回归。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (189) 出包，IPA SHA-256 `3dfb0be2a1ae10cd88c416897e187a8a3168eac59da3ad4a5438eb26a04e09f9`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (189)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 搜索种类选择器未选中只显示图标 / 1.1.4 Build 190
+
+- 用户需求：搜索页种类选择器只有选中项显示文字，未选中只显示图标。
+- 实现：`SearchScopeBar` 按钮 label 由 `Label(图标+文字)` 改为 `HStack{ Image; if selected { Text } }`；选中横向内边距 16（图标+文字胶囊），未选中内边距 0、最小 44×44（纯图标圆形胶囊），切换加 `.smooth(0.25)` 动画。无障碍标签仍含种类名。
+- 验证：`testSearchScopeBarScrollsWithResultsAndSwitchesDirectly` 通过，截图确认选中「用户」=图标+文字实心胶囊、其余=纯图标圆形；Debug 编译通过。
+- 分支 `feature/home-title-fade`，**未合并本地 main、未推送 GitHub**；待用户真机验收。
+- Release 1.1.4 (190) 出包，IPA SHA-256 `8407d4cbcbf6afb16441038f8d6e8eb98f0aa7853496dde7a5e209ee07d4291f`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (190)`（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-15 首页头像消息菜单与搜索设置图标尺寸
+
+- 用户需求：移除首页独立通知按钮；点击头像展开菜单，选择个人空间或消息页；搜索页设置图标放大到与搜索图标一致。
+- 实现：移除首页铃铛按钮及其专用视图，头像无论底部 tab 配置如何都显示菜单，包含「个人空间」和「消息」两项；未读状态环保留在头像外侧。搜索排序菜单的 `slider.horizontal.3` 显式设为 15pt semibold，与搜索按钮 SF Symbol 配置一致。
+- 构建与安装：XcodeBuildMCP 使用共享 `Xcode-27` 缓存成功签名构建 Release，28 条编译警告、0 错误；应用版本 1.1.4 / Build 190，bundle ID `app.bamboo2779.brussels691`。18pm 授权证书和 profile 通过被 Git 忽略的 `Config/Signing.local.xcconfig` 仅应用于 bili target。原先全局传 profile 会导致 DanmakuKit 依赖构建失败，改为 target 级本地覆盖后成功。
+- 设备：已覆盖安装到连接的 RCe2027（iOS 27.3），并成功启动，PID 28841。未运行自动测试；首页菜单点击和搜索设置图标观感仍待设备目视验收。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`；未提交，源码改动在 `HomeTopBar.swift`、`SearchContentView.swift`，开发状态记录在本文；未合并本地 main、未推送 GitHub。
+
+## 2026-11-15 首页头像尺寸微调并重新安装
+
+- 用户要求：头像图像改为 38pt；有未读消息时的描边改为 3pt。
+- 实现：外层圆形容器保持 44pt，头像图像设为 38×38pt，未读 `strokeBorder` 线宽设为 3pt。
+- 构建与设备：共享 Xcode-27 缓存 Release 构建成功（28 条警告、0 错误）；覆盖安装到 RCe2027（iOS 27.3）并启动成功，PID 28914。版本仍为 1.1.4 / Build 190，未运行自动测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`；修改未提交，`Config/Signing.local.xcconfig` 是本机 Git 忽略的签名覆盖。
+
+## 2026-11-15 搜索顶栏图标放大预览
+
+- 用户要求：搜索页搜索图标再放大，并只提供效果图，不编译安装。
+- 实现：搜索与搜索页顶栏设置符号由 15pt 提至 20pt semibold，44pt 圆形按钮不变；非 root 搜索导航栏菜单继续用默认 15pt。
+- 效果预览：`build/previews/search-toolbar-icons.png`，为当前尺寸与 20pt 的静态对比示意图。
+- 验证：仅检查源码 diff 并渲染静态预览；按要求未构建或安装，也未运行测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`；修改未提交。
+
+## 2026-11-15 首页页面选择图标放大预览
+
+- 用户要求：首页页面选择图标调为 20pt，只看效果，不编译。
+- 实现：`HomeTopBarModeMenu` 的 `line.3.horizontal.decrease` SF Symbol 从 15pt 提至 20pt semibold；44pt 圆形玻璃按钮不变。
+- 效果预览：`build/previews/home-selector-icons.svg.png`，静态对比 15pt 与 20pt。
+- 验证：仅检查源码 diff 并渲染预览；按要求未编译、安装或运行测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`；修改未提交。
+
+## 2026-11-15 动态页筛选组件移入导航栏 toolbar
+
+- 用户同意将动态页右上筛选控件改为系统 toolbar，同时保留现有功能。
+- 实现：root 有多个可见筛选项时，导航栏显示原 32pt 滚动淡出标题（leading）和原 `UIButton` / `UIMenu` 单选筛选（trailing）；选项勾选、当前项标签、动态宽度、无障碍标识和筛选回调沿用。使用系统 toolbar 的玻璃外观，不再给该 toolbar item 叠加自定义玻璃层。
+- 单一筛选项的 root 继续隐藏导航栏并保留自定义标题；push 页面保留原页面标题栏和返回行为。root toolbar 模式保留 12pt 内容顶部间隔。
+- 验证：共享 Xcode-27 缓存的签名 Release 设备目标构建成功，28 条编译警告、0 错误；未运行 UI/单元测试，未安装到设备。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`；修改未提交。
+
+## 2026-11-15 直播页顶栏对齐首页布局
+
+- 用户同意直播页沿用首页的滚动大标题与玻璃刷新入口；现有双列房间卡片、下拉刷新、分页、空态和错误态保持原逻辑。
+- 实现：直播根页新增 32pt「直播」标题，按 44pt 滚动距离淡出；右侧 44pt 圆形玻璃刷新按钮在骨架屏和内容加载后都显示，加载时显示进度；补上根 tab 底部安全区留白。占位骨架与已加载列表均把滚动位置同步给标题状态。
+- 构建与设备：共享 `Xcode-27` 缓存下 iPhone 18 Pro Max / iOS 27.0 模拟器 Debug 构建成功；随后签名 Release 构建并覆盖安装到 RCe2027（iOS 27.3），应用启动成功，PID 29557。未运行自动测试。
+- 后续调整：用户要求去掉顶部「直播」标题，见下方最新记录。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`；修改未提交。
+
+## 2026-11-15 首页/搜索图标尺寸与直播页标题调整
+
+- 用户要求：首页页面切换图标改为 18pt，搜索页放大镜改为 18pt，移除直播页顶部「直播」标题。
+- 实现：首页 `line.3.horizontal.decrease` 图标设为 18pt semibold；搜索页放大镜设为 18pt，排序设置图标保留 20pt；直播页清除自定义标题与导航栏标题，保留右侧玻璃刷新按钮。
+- 构建与设备：共享 `Xcode-27` 缓存下签名 Release 构建成功，0 错误、改动文件无编译警告；覆盖安装并启动于 RCe2027（iOS 27.3），PID 29610，版本 1.1.4 / Build 190。未运行自动测试。
+- 待确认：图标视觉尺寸与直播页无标题布局待设备目视验收。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`；修改未提交。
+
+## 2026-11-15 修复动态页标题和筛选一起消失
+
+- 原因：标题和筛选迁入系统工具栏后，`RootTabView` 仍在外层强制隐藏动态页导航栏。独立动态页 fixture 不经过这层设置。
+- 修复：根 Tab 不再给动态页施加导航栏可见性，由 `DynamicContentRoot` 根据可见筛选数决定。多个筛选时显示系统工具栏，单一筛选时使用页面内标题。
+- 构建与设备：签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 29662）。动态页界面待真机目视确认，未运行自动测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 去掉动态页标题淡出后残留的玻璃底
+
+- 真机截图显示「动态」文字淡出后，左侧系统工具栏项的玻璃底仍可见。
+- 仅关闭左侧标题项的系统背景，右侧筛选继续使用系统工具栏外观。
+- 签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 29695）。滚动后的视觉效果待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 我的页搜索入口移入系统工具栏
+
+- 收起搜索时，「我的」标题与搜索按钮分别使用系统工具栏左侧和右侧位置。标题保留滚动淡出，左侧关闭系统玻璃底。根 Tab 将导航栏可见性交给 `MineView`。
+- 点击按钮展开现有内联搜索框并聚焦，取消后清空关键词并恢复工具栏。二级入口在搜索时保留系统返回入口。
+- 更新现有 Mine UI 用例以检查搜索按钮位于导航栏。签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 29749）。交互待真机目视确认，未运行自动测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页页面选择与头像移入系统工具栏
+
+- 首页右侧两个菜单改为独立系统工具栏项，以固定工具栏间隔分开。页面选择项内容尺寸为 60×44 pt，沿用 18 pt 图标、原模式菜单和隐藏页面入口。头像沿用 38 pt 图像、3 pt 未读描边和个人空间／消息菜单。
+- 左侧使用无玻璃背景的工具栏标题，继续随滚动淡出。首页内容加载后启用系统导航栏。
+- 签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 29899）。实际工具栏形状和菜单交互待真机确认，未运行自动测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页头像按钮恢复圆形
+
+- 头像仍位于系统工具栏，关闭该工具栏项的系统玻璃底，恢复直径 44 pt 的圆形玻璃底。头像图像为 38 pt，未读描边为 3 pt。
+- 签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 29918）。圆形外观待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 提高首页头像圆形玻璃底的对比度
+
+- 真机截图中头像外圈与白色导航区难以区分。将交互式圆形玻璃效果从 `Menu` 移到工具栏头像的 44 pt 外层容器，加入轻微色调和常态细边。头像仍为 38 pt，有未读时使用 3 pt 主题色描边。
+- 签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 29950）。浅色和深色下的外观待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 直播页使用首页式标题和系统刷新工具栏
+
+- 左侧复用首页的 32 pt 标题组件，随列表向上滚动淡出，关闭标题项的玻璃底。使用页面自定义的大标题作为唯一可见标题，从首页隐藏入口进入时走同一套工具栏。
+- 右侧将刷新放入系统工具栏，骨架屏期间可见，加载时显示进度。保留列表下拉刷新、分页和失败重试。
+- 签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 29988）。标题滚动效果和刷新交互待真机目视确认，未运行自动测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 视频返回首页时延后恢复工具栏
+
+- 截图显示视频详情仍在退场时，首页工具栏已叠到播放器上。首页现在要求导航路径为空且 UIKit 已回调首页 `viewDidAppear`，才提供工具栏项。首页离场时清除出现标记。
+- 签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 30082）。点击返回、侧滑完成和侧滑取消的实际动画待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页工具栏在视频退场后淡入
+
+- 首页导航路径为空且 UIKit 完成首页显示后，标题与原生工具栏背景一起用 0.22 秒淡入。首次显示和普通切换 Tab 沿用原时机，系统减少动态效果开启时跳过淡入。离开首页时移除尚在播放的淡入动画。
+- 签名 Release 构建成功（0 错误），已覆盖安装到 RCe2027 并启动（Build 190，PID 30155）。返回动画的观感待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 视频详情导航栏改由系统转场管理
+
+- 按用户要求删除首页工具栏的出现状态控制和自定义淡入。首页声明导航栏可见，视频详情在页面根视图声明 `.toolbarVisibility(.hidden, for: .navigationBar)`，由系统处理推入及返回。
+- 签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027。设备锁定，远程启动被拒绝。点击返回、侧滑完成和侧滑取消待真机确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页视频画面延伸到透明导航栏下方
+
+- 首页栈的普通视频和视频评论入口保留透明空导航栏。正式播放器的顶部安全区按窗口状态区换算，避免把空导航栏高度留成黑边。初始占位页同步调整顶部布局。
+- 视频页出现后临时关闭空导航栏的触摸命中，让画面接收唤醒控件的点按。视频离场或拆除时恢复导航栏原有交互，系统返回手势继续挂在导航控制器上。
+- 签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32018）。画面顶部、控件唤醒及全屏右滑返回待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 避免视频退场时重置首页工具栏外观
+
+- 视频页原先为状态栏对比度临时切换窗口深色外观。退场撤销该偏好会使共享导航栏重新解析系统样式，可能造成转场结束后的闪烁。
+- 首页视频使用透明导航栏时跳过窗口外观覆盖，并沿用播放器局部状态栏样式设置。保留系统转场和点按穿透。
+- 签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32081）。返回闪烁和浅色模式视频状态栏对比度待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 动态页沿用首页的视频返回处理
+
+- 动态根 Tab 有多个可见筛选项时，普通视频及视频评论入口复用首页的透明空导航栏、触摸穿透及窗口外观稳定逻辑。单一筛选项使用页面内标题，仍走原来的隐藏导航栏路径。
+- 签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32142）。从视频返回动态页时的顶部闪烁待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 我的页与搜索页统一系统工具栏与视频返回处理
+
+- 我的与搜索页使用首页的滚动淡出标题组件，标题项关闭玻璃背景。搜索页在收起输入框时使用原生工具栏显示放大镜和排序按钮，点搜索后仍展开原有内联输入框。
+- 两个 Tab 的普通视频及视频评论入口复用首页的透明空导航栏、触摸穿透和窗口外观稳定逻辑。保留系统转场和返回手势。
+- 更新现有搜索工具栏 UI 用例的查找范围，未执行自动测试。签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32198）。工具栏外观、搜索交互和视频返回动画待真机确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 直播页统一播放器返回时的工具栏处理
+
+- 直播页保留现有滚动大标题和原生刷新项。直播 Tab 或首页栈进入直播间时，播放器使用透明空导航栏，由系统处理返回时的工具栏项目切换。
+- 直播与视频复用播放器顶部安全区和空导航栏触摸穿透逻辑。直播间正常态保留状态区，在离场或拆除时恢复导航栏交互。
+- 签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32268）。点按、播放器顶部位置及从直播间侧滑返回时的外观待真机确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 直播播放页去掉顶部白色标题栏
+
+- 移除 58 pt 的独立顶部栏。正常播放画面从状态栏下方开始，状态栏区为黑色，状态文字使用浅色样式。加载占位页同步使用横向满宽画面。
+- 直播间标题移到画面下方，返回和更多操作移入底部操作区。普通视频与直播间在同一导航栈使用相同的透明工具栏策略及触摸穿透。
+- 更新现有播放器高度用例的预期，未运行自动测试。签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32321）。状态栏对比度、底部操作和返回转场待真机确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 参考 BiliSail 优化直播间竖屏布局
+
+- 参考 BiliSail 手机直播页的信息区和下划线标签栏。播放器下方使用紧凑的主播行，集中显示头像、昵称、在线信息和关注，直播标题放在下一行，房间号移入详情区。
+- 「聊天／直播间／设置」用下划线标签切换，聊天缩小行距和重复的底部留白。弹幕连接、重连和失败显示相应提示。底部保留返回、刷新、分享和更多操作。
+- 签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32484）。竖屏观感和直播聊天交互待真机确认，未运行自动测试。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 将直播移入首页页面切换菜单
+
+- 底部导航及其设置移除直播，读取旧设置时自动过滤直播项。首页菜单同组依次显示「推荐／热门／直播」，当前项显示勾选。选择直播直接在首页显示直播列表和刷新入口。
+- 保留直播列表刷新和分页。从直播链接或 `--start-live-room` 打开直播间后，返回首页的直播列表。同步调整既有 Tab 配置和菜单用例，未运行自动测试。
+- 签名 Release 构建成功（0 错误），Build 190 已覆盖安装到 RCe2027 并启动（PID 32655）。三项切换和链接返回待真机确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页菜单直接切换隐藏根页面
+
+- 隐藏的「动态／我的／搜索」从首页菜单直接激活各自的根导航栈，底栏按用户配置显示。隐藏页面的顶部切换菜单可返回首页；底栏可见时也可点首页。
+- iPhone 18 Pro Max（iOS 27.0）三个定向 UI 用例通过：仅首页时通过菜单来回切换、其他 Tab 可见时通过底栏返回、从隐藏的「我的」调整 Tab 设置时保留设置页位置。签名 Release 构建成功，Build 190 已覆盖安装到 RCe2027 并启动（PID 32845）。实际设备交互待目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页和搜索页右上角共用液态玻璃
+
+- 首页页面选择和头像、搜索页放大镜和排序分别使用系统工具栏分组，各自共用一个玻璃胶囊。头像保留圆形照片及未读描边。首页直播模式的刷新按钮独立成组。
+- iPhone 18 Pro Max（iOS 27.0）截图已确认两页的共享胶囊，首页菜单和搜索工具栏相关 UI 用例共 4 项通过。签名 Release 构建成功，Build 190 已覆盖安装到 RCe2027 并启动（PID 32903）。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页工具栏头像与未读标记
+
+- 圆形头像由 38 pt 缩至 32 pt，点击区域仍为 44×44 pt，与页面切换按钮共用系统玻璃胶囊。未读描边换成头像右上角的 8 pt 主题色圆点，保留个人空间和消息菜单及 VoiceOver 未读状态。
+- `git diff --check` 通过。签名 Release 构建成功，Build 190 已覆盖安装到 RCe2027 并启动（PID 32942）。未重跑 UI 测试，头像比例及有未读时的圆点外观待真机目视确认。
+- 分支 `feature/home-title-fade`，基线提交 `6c982ca`，修改未提交。
+
+## 2026-11-15 首页未读红点收进玻璃圆 + Build 191 装机
+
+- 用户反馈：有消息时首页头像红点超出液态玻璃容器。真机截图确认红点半边在玻璃圆外。
+- 修复：红点 `.padding(.trailing)` 由 `6 - avatarTrailingOffset`（=2）改为 8，使 8pt 圆点完全收进 44pt 玻璃圆内。
+- 验证：真机截图（`build/logs/device-191-home.png` + 放大裁剪 `avatar-crop.png`）确认红点已收进玻璃圆内。
+- 注意：本 worktree 另有并行会话未提交改动（RootTab 系列、底栏可见性、直播间等），与本分支顶栏改动共存于同一工作区。Release 191 的代码含双方改动。
+- Release 1.1.4 (191) 出包，IPA SHA-256 `f3b409404427eafaf68bfb00e1968b0eea52a13cb2476e7a17b4c11aa4d2bad5`；18pm 证书重签安装 RCe2027 成功并启动，`devicectl` 确认 `cilicili 1.1.4 (191)`（bundle ID `app.bamboo2779.brussels691`）。真机截图确认首页正常渲染。
+
+## 2026-11-15 红点叠在头像圆边上 + 搜索页按钮合并玻璃胶囊 + Build 192 装机
+
+- 用户反馈两点：1) 未读红点在头像旁边而不是叠在头像上；2) 搜索页搜索按钮和排序按钮应放进同一个液态玻璃容器。
+- 红点：Build 191 真机截图复核确认，红点贴在 44pt 方框右上角，而头像是圆形裁切，方框角落与圆形照片之间有空隙，红点悬在空隙里。改为红点中心落在照片圆右上 45° 边缘上（`.padding(.top, 6)` / `.padding(.trailing, 4)`），呈经典徽章叠压效果，同时仍收在玻璃胶囊内。
+- 搜索页：`SearchTopBarMorph` 在根 Tab 下把搜索按钮和排序菜单按钮合并进一个 `Capsule` 玻璃容器，中间 0.5pt 分隔线；点搜索仍形变为全宽搜索框。推入页面保持独立圆形搜索按钮不变。
+- 测试：`SearchTopBarUITests` 断言从 `navigationBars.buttons` 改为 `app.buttons` 适配新层级；搜索输入用例在 typeText 前补 `field.tap()` 消除键盘焦点竞态（前两轮不同断言行失败均为此抖动）。iPhone 18 Pro Max（iOS 27.0）3 项用例全部通过。
+- Release 1.1.4 (192) 出包，IPA SHA-256 `175bdb73fbb8d60b1d08c608fec31da78568e3819e09bd794b119ef62dd3935c`；18pm 证书重签安装 RCe2027 成功，`devicectl` 确认 `cilicili 1.1.4 (192)` 并启动。红点位置与合并胶囊外观待真机目视确认。
+- 分支 `feature/home-title-fade`，修改未提交。
+
+## 2026-11-15 红点移到头像左上 + 搜索态边距对称与 18pt 垂直间距 + Build 193 装机
+
+- 用户反馈三点：1) 未读红点改到头像左上方；2) 我的页唤醒搜索框后离下方内容太近，间距参考首页；3) 我的页/搜索页唤醒搜索框后左右边距不等。
+- 红点：红点中心镜像到圆形照片左上 45° 边缘（`.padding(.top, 6)` / `.padding(.leading, 8)`，ZStack 对齐改 `topLeading`），保持徽章叠压。
+- 左右边距：根因是顶栏 HStack 的 10pt 子视图间距——搜索态下布局为「零宽 Spacer + 全宽搜索框」，10pt 落在搜索框左侧，实测左 26pt / 右 16pt（与用户截图一致）。修复：搜索态移除 Spacer（Mine/Search 两个 TopBar 同改），输入框左缘左移 10pt，两页均为 16/16 对称。
+- 垂直间距：真机实测搜索态胶囊底→卡片顶 12pt；首页工具栏玻璃下方自带呼吸区视觉约 16-18pt。搜索态 safeAreaInset spacing 12→18（Mine/Search 同改），真机+模拟器实测卡片顶 118→124pt。
+- 诊断方法：临时 MarginDiagUITests 截取四态原生截图并输出元素坐标（已删除），自写 margin-measure.swift 扫描像素列（注意 PNG 上下翻转坑，已修）。
+- 测试：SearchTopBarUITests 3 项 + MineTopBarUITests 2 项 + FeedChromeTitleStateTests 全部通过；MineTopBarUITests 一处 `navigationBars.buttons` 旧断言同步改为 `app.buttons`。
+- Release 1.1.4 (193) 出包，IPA SHA-256 `db4739275f7a38aef866740a7b6132001fa0ff7c6cbaf2583610832f171f202f`；18pm 证书重签安装 RCe2027 成功，`devicectl` 确认 `cilicili 1.1.4 (193)` 并启动。红点位置、搜索态对称边距、18pt 间距待真机目视确认。
+- 分支 `feature/home-title-fade`，修改未提交。
+
+## 2026-11-15 红点紧贴头像左上 + Mine/Search 顶部间距统一 + Build 194
+
+- 用户反馈：Build 193 红点仍与头像分离；Mine/Search 顶栏到内容距离过近。
+- 红点修复：此前 badge 作为 ZStack sibling，Menu/toolbar 在设备上变换 label 内容后，徽标坐标相对照片漂移。改成直接 overlay 在 32pt 圆形头像视图上，offset (1,1)，将 8pt 圆点中心放到头像圆的左上 45° 边缘。相对头像自身定位，不依赖外层 toolbar/Menu 布局。
+- 间距修复：此前只在 isSearching 时 spacing=18，静止态仍为 0；用户反馈 toolbar 到首行内容过近正是静止态未改。Mine/Search 的 safeAreaInset spacing 现固定 18pt，涵盖静止与搜索状态。
+- 验证：SearchTopBarUITests、MineTopBarUITests、FeedChromeTitleStateTests 通过。Mine 中文输入用例补 field.tap() 后通过。标题淡出 UI 用例连续失败；在基线 b176145 worktree 也失败，失败表现是视觉标题已隐藏但 XCUI `staticTexts[home.feed.title]` 仍存在。本轮仅试验 modifier 顺序及 `.hidden` 均未解决，未纳入本次功能测试通过项；基线验证 worktree 位于 `/Users/rayc/Desktop/ccswift-baseline-check`。
+- Release 1.1.4 (194) IPA SHA-256 `f737b000771053edb9c2e7b47ce223c7785b5cc23db537ad8fa91cac958e0694`；重签并成功安装 RCe2027，`devicectl` 确认 `cilicili 1.1.4 (194)`。远程启动返回 `BSErrorCodeDescription = Locked`，设备锁定，未启动。
+- 本轮改动未提交，分支 `feature/home-title-fade`；待设备解锁后验收红点贴合和 Mine/Search 顶部间距，再按用户既定流程提交/合并。
+
+## 2026-11-15 顶栏 worktree 进度核对
+
+- 此工作树为 `feature/home-title-fade`，HEAD `2bdfc92`（Build 193），较此前记录的 `6c982ca` 多 4 个提交，本地 `main@d8d0e58` 是其祖先。Build 194 的版本号、红点贴合、Mine/Search 间距、Mine 输入 UI 用例及本文在 6 个未提交文件中。
+- 当前完成情况与上节一致。交付记录显示 Build 194 已安装，设备锁定时远程启动失败。优先在真机验收红点和两页的静止／搜索态间距，再回归各入口的播放返回动画。标题淡出 UI 断言在基线也失败，继续保留为待查。
+- 本轮只核对分支、工作区和已有记录，`git diff --check` 通过。未重跑测试、操作设备或修改应用代码。
+
 ## 2026-11-15 发布后进度核对
 
 - 发布：GitHub 正式版 [v1.1.4](https://github.com/Rone89/cilicili/releases/tag/v1.1.4) 为 Build 172，标签 `cbb16fd`。远端 `main` 与本地 `main` 同为 `d8d0e58`，相对发布标签只增加交接文档。核对时工作区干净，发布附件摘要与上一节一致。
@@ -969,3 +1354,82 @@
 - 发布后反馈：[Issue #70](https://github.com/Rone89/cilicili/issues/70) 报告 iPhone 17 上 1.1.4 全屏画面跑出屏幕，[Issue #66](https://github.com/Rone89/cilicili/issues/66#issuecomment-6895586718) 另有 iPhone 17／iOS 27.2 在 1.1.4 仍复现的反馈。Build 152 的布局修复已随版本发布，最新反馈的触发条件及根因待复现。参考 [PR #69](https://github.com/Rone89/cilicili/pull/69) 仍开放。
 - 云端回归：发布标签对应的 [CI 43582028769](https://github.com/Rone89/cilicili/actions/runs/43582028769) 已取消。应用源码相同的 `main@d8d0e58` 对应 [CI 43582207549](https://github.com/Rone89/cilicili/actions/runs/43582207549)，Xcode 26 未签名 Release 成功，单测失败，UI 矩阵被跳过。失败日志中有 7 个不同用例出现失败，5 个在对照的 11-09 和 11-13 两轮 CI 都曾失败。推荐并发请求合并和启动回退截止时间两项需独立复测确认。待以完整单测和 UI 回归补齐发布版验证。
 - 本轮复核 Git、GitHub 和现有测试记录，仅更新本文，未构建、重跑测试、装机或创建提交。待办优先复现全屏偏移并采集设备信息和操作路径，再补云端回归与弹幕真机对照。
+
+## 2026-11-15 首页工具栏头像同心方案核对
+
+- `feature/home-title-fade` / `2bdfc92`。当前头像与页面切换共用系统工具栏背景，头像单侧 padding 将中心右移 4 pt。Apple 的公开接口可以隐藏共享背景，玻璃效果可用 `glassEffect` 锚定到自有视图边界。
+- 若保留双按钮胶囊，可将两项放入同一个尾端 ToolbarItem，在项内画高 44 pt 的玻璃胶囊，并将 32 pt 头像居中放入紧贴胶囊尾端的 44×44 pt 区域。徽标继续随头像定位。方案待用户决定是否实施，本轮未改应用、构建或测试。
+
+## 2026-11-15 首页工具栏头像与玻璃胶囊同心 / Build 195
+
+- 在 `feature/home-title-fade`（HEAD `2bdfc92`）由主代理出方案和验收，GPT‑6 Luna（极高推理）实现。首页右侧用一个原生 `ToolbarItem` 承载页面切换及头像菜单，工具栏项隐藏系统共享背景，内部为 108×44 pt Liquid Glass 胶囊。保留两个独立菜单及约 20 pt 间距，取消头像单侧补偿。32 pt 头像居中放入末端 44×44 pt 区域，保留头像左上角红点的局部定位。
+- iPhone 18 Pro Max / iOS 27.0 截图原始分辨率 1320×2868，两圆心均为 (1193.5, 251.5) 像素。头像菜单定向 UI 1/1 通过，覆盖个人空间及消息项。初轮两个隐藏页用例均从首页切到「我的」，其后未找到 `root.hiddenPageSwitcher` 而失败，尚未判断是否为原有问题。中间一轮全新启动下页面切换菜单项未出现，未记为通过。相关证据位于 `build/logs/home-toolbar-capsule-20261115*.xcresult`。
+- 共享 Xcode-27 缓存本地签名 Release 构建通过，签名校验通过。直接覆盖安装签名 `.app` 至 RCe2027（iOS 27.3），设备核对为 1.1.4 (195)，启动成功（PID 37715）。真机已验证装机启动，待目视确认登录头像的同心外观、未读红点和播放器返回过渡。
+- 本轮源码、定向 UI 用例、构建号及交接记录未提交。原有 Build 194 的「我的」和搜索改动一并保留。
+
+## 2026-11-15 我的与搜索迁移原生工具栏 / Build 196
+
+- `feature/home-title-fade`，HEAD `2bdfc92`。主代理出方案及验收，GPT‑6 Luna（极高推理）实施。我的搜索放到原生尾端工具栏项。搜索与排序保留共享玻璃胶囊，并迁入同一个原生尾端工具栏项。两页根标题复用首页工具栏标题及滚动淡出；搜索展开时保留全宽字段、16 pt 对称边距及 18 pt 内容间距。
+- 根页静止态在系统工具栏自然间距基础上加 8 pt 安全区留白，截图核对我的首张卡片约 y124 pt，搜索热搜标题也有约 18–20 pt 间距。搜索按钮在视图模型加载前后使用同一视图结构，避免初始化时替换点击目标；排序菜单随模型就绪出现。
+- iPhone 18 Pro Max / iOS 27.0 上，基线两项工具栏归属断言按预期失败。最终 7/7 通过（我的 2、搜索 3、隐藏「我的」往返 2），覆盖三按钮属于导航栏、打字、取消、排序菜单及隐藏页面返回。初轮合并回归曾有一次不可点的搜索按钮，稳定按钮结构及等待可点后整组通过。证据为 `build/logs/mine-search-hidden-mine-final.xcresult`，两页静止态截图随结果归档。上轮独立首页菜单复跑亦为 2/2。
+- 应用和测试改动、Build 196 版本号及本记录尚未提交。真机交互和导航栏转场待目视验收。
+- 本地签名 Release 构建通过。XcodeBuildMCP 直接安装并启动签名 `.app`，设备列表核对 RCe2027（iOS 27.3）上的 cilicili 1.1.4 (196)，再次启动 PID 37995。
+
+## 2026-11-15 播放控件按可选字幕显示 CC
+
+- 在 `feature/home-title-fade`（HEAD `2bdfc92`）由主代理出方案并核对差异，GPT‑6 Luna（极高推理）修改。横竖屏共用的控制条只在当前分 P 有可选字幕轨时显示 CC；加载到非空轨后出现，切换分 P 时不沿用旧分 P 的按钮。字幕关闭但有可选轨时仍显示按钮。
+- 按非空轨的所属 CID 更新按钮可见性，不因字幕文字刷新重建控制条。已取消或 CID 已过期的字幕轨请求结果不提交。保留原字幕加载流程和已有选轨入口。
+- 仅做静态调用链复核和 `git diff --check`。按用户要求未构建、跑测试、安装或递增 Build 196，改动未提交。待后续验收有轨、无轨及切换分 P 的横竖屏表现。
+
+## 2026-11-15 未获取到的清晰度显示锁定
+
+- `feature/home-title-fade`，HEAD `2bdfc92`。主代理出方案和复核，GPT‑6 Luna（极高推理）修改。横竖屏视频清晰度菜单保留服务端列出的档位，按当前是否有可播放流决定可选性；未拿到流的档位显示锁并置灰，原先可点按后补取的占位档位也改为不可点。已有可播放档位保留选中和切换状态。
+- 更新现有菜单构建器用例，断言只列出元数据且没有可播放流的档位上锁并禁用。`git diff --check` 通过。未构建、运行测试、安装或递增 Build 196；改动未提交。待真机确认横竖屏锁标、置灰以及登录后重新获取到流时的可选状态。
+
+## 2026-11-16 播放控件清晰度快捷菜单
+
+- `feature/home-title-fade`，HEAD `2bdfc92`。主代理出方案并复核，GPT‑6 Luna（极高推理）修改。视频横竖屏的设置齿轮左侧新增胶囊按钮，显示实际当前清晰度。点按由 UIKit 原生菜单直接选档，复用现有清晰度状态和切换动作。没有清晰度列表时隐藏入口。
+- 已列出但没取得可播放流的档位显示灰色锁图标并禁用，当前档位显示勾选。菜单打开时暂停播放控件的自动隐藏，关闭后恢复计时。原设置中的清晰度入口保留。
+- 静态核对调用链和差异。未编译、跑测试、装机或递增 Build 196，改动未提交。待验收横竖屏窄布局、真实切档后标签刷新、锁定档位禁用及取消菜单后自动隐藏。
+
+## 2026-11-16 Build 197 真机安装
+
+- 用户授权构建并安装至 RCe2027。使用共享 Xcode-27 缓存、既有本机签名覆盖和 Release 配置构建 1.1.4 (197)。签名通过深度校验，直接安装签名 `.app`。
+- 设备列表确认 RCe2027（iOS 27.3）上的 cilicili 已为 Build 197，进程列表确认已运行（PID 38426）。本版包含有轨才显示字幕按钮、清晰度锁定和齿轮左侧的清晰度快捷菜单。未运行自动测试，播放控件行为待真机目视验收。
+- `feature/home-title-fade` / `2bdfc92`，Build 197 与前序改动均未提交；`git diff --check` 通过。
+
+## 2026-11-16 清晰度菜单左侧圆形选择图标 / Build 198
+
+- `feature/home-title-fade`，HEAD `2bdfc92`。主代理出方案及复核，GPT‑6 Luna（极高推理）实现。清晰度列表的可选未选档位为 `circle`，当前档位为 `largecircle.fill.circle`，不可用档位仍为灰色禁用的 `lock.fill`。快捷入口改用锚定在原按钮上的系统 popover，图标固定在标题左侧，关闭时延续控件自动隐藏。设置列表复用相同图标规则。
+- iPhone 18 Pro Max / iOS 27.0 上，菜单构建器 4/4 通过，快捷菜单 UI 1/1 通过，覆盖当前项选中、不可用项禁用及点击外部关闭。初轮选择值断言与固定夹具不符，按实际默认 q112 修正后复跑通过。结果为 XcodeBuildMCP 工作区日志中的 `test_sim_2026-11-15T16-33-13-094Z_pid42664_09f948a3.xcresult` 和 `test_sim_2026-11-15T16-31-31-619Z_pid42664_2fd87f00.xcresult`。
+- 当前改动未提交。整组回归和真机清晰度切换交互待后续验收。
+- 主代理接手完成签名 Release 构建及直接装机。XcodeBuildMCP 使用共享 Xcode-27 缓存构建成功，RCe2027（iOS 27.3）设备列表确认 cilicili 1.1.4 (198)，启动 PID 43628。签名深度校验通过。真机菜单观感待目视验收。
+
+## 2026-11-16 清晰度按钮展开形变 / Build 199
+
+- `feature/home-title-fade` / `2bdfc92`。GPT‑6 Luna（极高推理）实现，主代理设计及复核。清晰度按钮沿原位展开成同层玻璃菜单，选档或点播放器空白区域收回。保留左侧圆标、锁定禁用、关闭动画、减少动态效果和菜单打开期间暂停控件自动隐藏。
+- 签名 Release 使用 Xcode-27 共享缓存构建成功，修正初次构建发现的 CGFloat 类型推断后通过。已直接装至 RCe2027，设备版本 1.1.4 (199)，进程 PID 44346；签名校验通过。
+- 指定模拟器当时被另一项目占用，更新后的点按、收起回归未完成。横竖屏形变、点按和收起待真机确认。当前改动未提交。
+
+## 2026-11-16 清晰度菜单使用官方 Liquid Glass 形变 / Build 200
+
+- `feature/home-title-fade` / `2bdfc92`。GPT‑6 Luna（极高推理）实施，主代理出方案和复核。清晰度按钮的可见玻璃和展开面板共用播放器全尺寸浮层中的一个 `GlassEffectContainer` 和玻璃 ID，用官方 `.matchedGeometry` 替代手动插值。原 UIKit 命中区继续在控件行占位；保留选档、锁定、减少动态效果、关闭及自动隐藏状态。
+- 使用共享 Xcode-27 缓存完成签名 Release 构建，直接安装至 RCe2027（iOS 27.3），设备核对 1.1.4 (200)，确认已启动（PID 44622）。本轮未提交；真机动画观感待目视验收。
+- Build 200 定向 UI 覆盖菜单展开、选中、锁定禁用及点空白收起，末项「按钮恢复可点」断言失败。Build 201 改为收起动画开始时同步清空呈现状态，避免依赖动画完成回调恢复命中；保留玻璃过渡。
+- Build 201 共享缓存签名 Release 构建成功，签名校验通过，覆盖安装 RCe2027，设备确认 1.1.4 (201) 并运行（PID 44721）。指定模拟器在修复后再次被独立项目占用，未复跑修复后的 UI 用例。按钮恢复可点、连续开合及真机形变待验收。分支和提交同上，改动尚未提交。
+
+## 2026-11-16 清晰度入口对齐字幕弹窗和菜单 / Build 202
+
+- `feature/home-title-fade` / `2bdfc92`。GPT‑6 Luna（极高推理）实施，主代理出方案和复核。清晰度快捷按钮竖屏从详情页外层发起系统清晰度 sheet，横屏从按钮打开 UIKit 原生菜单，复用同一套清晰度状态和权限禁用规则。移除快捷入口形变及浮层锚点。当前清晰度文案、左侧圆标（竖屏）、灰锁、原设置项保留；横屏图标由系统菜单布置。
+- iPhone 18 Pro Max / iOS 27.0 两项定向 UI 最终 2/2 通过。覆盖竖屏展示、选中、禁用、完成关闭后重新打开，以及横屏打开原生菜单和禁用项。前一轮在返回和旋转后未唤起控件，补唤起步骤后复跑通过。证据 `test_sim_2026-11-16T07-02-05-281Z_pid42664_fb584f3c.log`。
+- 共享 Xcode-27 缓存签名 Release 构建及签名校验通过，直接安装 RCe2027（iOS 27.3），核对 1.1.4 (202)，启动 PID 45202。UI 通过后只加了避免初始状态重复赋值的守卫，未再跑 UI。真机观感待验收，未提交。
+
+## 2026-11-16 清晰度按钮字重与时长信息统一
+
+- `feature/home-title-fade` / HEAD `2bdfc92`。清晰度工具栏按钮文字改用系统默认 Regular 字重，保留原字号，与时长信息的系统默认字重一致。
+- 静态复核并检查空白格式通过。按用户要求未编译、运行测试、安装或递增 Build；本轮代码与此前改动均未提交。真机字重观感待后续验收。
+
+## 2026-11-16 横屏视频设置菜单左侧改为直角
+
+- `feature/home-title-fade` / HEAD `2bdfc92`。横屏更多播放设置面板的左上、左下圆角半径由 24 改为 0；其余外观和布局不变。
+- 复核局部差异与空白格式通过。未编译、运行测试、安装或递增 Build；代码未提交。横屏面板外观待设备目视验收。

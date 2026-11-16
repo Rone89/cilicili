@@ -855,6 +855,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     private let onDismissPlayerMoreControls: () -> Void
     private let onToggleDanmaku: () -> Void
     private let onNavigateBack: () -> Void
+    private let usesTransparentNavigationBar: Bool
     private let playbackDiagnostics = VideoDetailPlaybackDiagnostics()
     private var cancellables = Set<AnyCancellable>()
 
@@ -884,6 +885,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         onDismissPlayerMoreControls: @escaping () -> Void,
         onReply: @escaping (Comment) -> Void,
         onToggleDanmaku: @escaping () -> Void,
+        usesTransparentNavigationBar: Bool,
         onNavigateBack: @escaping () -> Void
     ) {
         self.viewModel = viewModel
@@ -902,6 +904,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         self.onReply = onReply
         self.onToggleDanmaku = onToggleDanmaku
         self.onNavigateBack = onNavigateBack
+        self.usesTransparentNavigationBar = usesTransparentNavigationBar
         self.rotationCoordinator = rotationCoordinator
         contentModel = VideoDetailSwiftUIContainerModel(
             viewModel: viewModel,
@@ -968,11 +971,11 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let insets = view.safeAreaInsets
+        let insets = playerSafeAreaInsets
         if contentModel.rootSafeAreaInsets != insets {
             DispatchQueue.main.async { [weak self] in
                 guard let self,
-                      self.view.safeAreaInsets == insets,
+                      self.playerSafeAreaInsets == insets,
                       self.contentModel.rootSafeAreaInsets != insets else { return }
                 self.contentModel.rootSafeAreaInsets = insets
                 if self.contentModel.contentState.bottomInset != insets.bottom {
@@ -980,6 +983,10 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
                 }
             }
         }
+    }
+
+    private var playerSafeAreaInsets: UIEdgeInsets {
+        view.playbackSafeAreaInsets(underTransparentNavigationBar: usesTransparentNavigationBar)
     }
 
     var activePlayerViewModel: PlayerStateViewModel? {

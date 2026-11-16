@@ -13,6 +13,8 @@ final class LiveRoomShellViewController: UIViewController {
     private let viewModel: LiveRoomViewModel
     private let dependencies: AppDependencies
     private let onNavigateBack: () -> Void
+    private let usesTransparentNavigationBar: Bool
+    private let navigationBarTouchPassthrough = PlaybackNavigationBarTouchPassthrough()
     private let playerContainer = UIView()
     private let contentState: LiveRoomShellContentView.State
     private let backdropHost: UIHostingController<LiveRoomVisualBackdrop>
@@ -70,6 +72,7 @@ final class LiveRoomShellViewController: UIViewController {
     init(
         viewModel: LiveRoomViewModel,
         dependencies: AppDependencies,
+        usesTransparentNavigationBar: Bool,
         onNavigateBack: @escaping () -> Void
     ) {
         let contentState = LiveRoomShellContentView.State(
@@ -79,6 +82,7 @@ final class LiveRoomShellViewController: UIViewController {
         self.viewModel = viewModel
         self.dependencies = dependencies
         self.onNavigateBack = onNavigateBack
+        self.usesTransparentNavigationBar = usesTransparentNavigationBar
         self.contentState = contentState
         self.backdropHost = UIHostingController(
             rootView: LiveRoomVisualBackdrop()
@@ -110,12 +114,7 @@ final class LiveRoomShellViewController: UIViewController {
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        guard !hidesSystemChrome,
-              traitCollection.userInterfaceStyle != .dark
-        else {
-            return .lightContent
-        }
-        return .darkContent
+        .lightContent
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool {
@@ -183,10 +182,14 @@ final class LiveRoomShellViewController: UIViewController {
         updateOrientationLock()
         restoreSystemBackGestures()
         restoreSystemBackGesturesSoon()
+        if usesTransparentNavigationBar {
+            navigationBarTouchPassthrough.begin(in: navigationController)
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        restoreNavigationBarInteraction()
         isViewActive = false
         cancelPendingRotationRecovery()
         cancelActiveRotationPresentationIfNeeded()
@@ -204,6 +207,10 @@ final class LiveRoomShellViewController: UIViewController {
         resumeDeferredLiveRenderUpdates()
         playerSurfaceController.cancelRotationChromePrewarm()
         AppOrientationLock.restorePortrait(in: view.window?.windowScene)
+    }
+
+    func restoreNavigationBarInteraction() {
+        navigationBarTouchPassthrough.end()
     }
 
     override func viewDidLayoutSubviews() {
@@ -395,8 +402,9 @@ final class LiveRoomShellViewController: UIViewController {
     ) {
         let bounds = CGRect(origin: .zero, size: size ?? view.bounds.size)
         let landscape = bounds.width > bounds.height
-        let safeAreaTop = min(max(view.safeAreaInsets.top, 0), bounds.height)
-        let safeAreaBottom = min(max(view.safeAreaInsets.bottom, 0), bounds.height)
+        let safeAreaInsets = view.playbackSafeAreaInsets(underTransparentNavigationBar: usesTransparentNavigationBar)
+        let safeAreaTop = min(max(safeAreaInsets.top, 0), bounds.height)
+        let safeAreaBottom = min(max(safeAreaInsets.bottom, 0), bounds.height)
         let usesFullscreenLayout = usesLandscapeLiveFullscreen(forLandscape: landscape)
             || isPortraitFullscreen
 
@@ -454,7 +462,7 @@ final class LiveRoomShellViewController: UIViewController {
         )
         return CGRect(
             x: bounds.minX,
-            y: bounds.minY + safeAreaTop + LiveRoomSimpleLiveLayoutPolicy.headerContentHeight,
+            y: bounds.minY + safeAreaTop,
             width: bounds.width,
             height: height
         )

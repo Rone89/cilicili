@@ -6,6 +6,7 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
     /// 字幕选轨弹窗用本地 @State 驱动：ViewModel 的 @Published 直接绑定
     /// 在每次 body 重建时都会生成新 Binding，sheet 不会呈现。
     @State private var isShowingSubtitleSelection = false
+    @State private var isShowingQualitySelection = false
     let sheetState: VideoDetailSheetState
     let sheetActions: VideoDetailSheetActions
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
@@ -103,6 +104,19 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                 )
                 // 与评论弹窗同款系统 sheet 外观（medium/large + 拖拽指示条）。
                 .commentSheetPresentation()
+            }
+            .onChange(of: viewModel.isShowingQualitySelection) { _, isShowing in
+                isShowingQualitySelection = isShowing
+            }
+            .sheet(
+                isPresented: $isShowingQualitySelection,
+                onDismiss: { viewModel.isShowingQualitySelection = false }
+            ) {
+                VideoDetailQuickQualitySelectionSheet(
+                    store: viewModel.playbackRenderStore.qualityControlStore,
+                    selectPlayVariant: { viewModel.selectPlayVariant($0) },
+                    close: { isShowingQualitySelection = false }
+                )
             }
     }
 

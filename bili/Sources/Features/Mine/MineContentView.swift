@@ -11,6 +11,7 @@ struct MineContentView: View {
     let onOpenRoute: (MineOverlayRoute) -> Void
     @Binding var searchText: String
     var isSearchFocused: FocusState<Bool>.Binding
+    var titleState: FeedChromeTitleState? = nil
 
     var body: some View {
         Form {
@@ -28,7 +29,15 @@ struct MineContentView: View {
         .contentMargins(.top, 0, for: .scrollContent)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .formScrollsToTopOnRootTabReselection()
-        .nativeTopScrollEdgeEffect()
+        .onScrollGeometryChange(for: MineTitleScrollSample.self) { geometry in
+            MineTitleScrollSample(
+                sum: geometry.contentOffset.y + geometry.contentInsets.top,
+                insetsTop: geometry.contentInsets.top
+            )
+        } action: { _, sample in
+            titleState?.update(scrollSum: sample.sum, insetsTop: sample.insetsTop)
+        }
+        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
         .scrollDismissesKeyboard(.interactively)
         .simultaneousGesture(TapGesture().onEnded {
             isSearchFocused.wrappedValue = false
@@ -136,4 +145,9 @@ struct MineKeyboardSearchAccessory: View {
             isFocused.wrappedValue = true
         }
     }
+}
+
+private struct MineTitleScrollSample: Equatable {
+    let sum: CGFloat
+    let insetsTop: CGFloat
 }

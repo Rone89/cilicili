@@ -2,8 +2,10 @@ import SwiftUI
 
 struct LiveFeedView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.feedChromeTitleState) private var titleState
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: LiveViewModel
+    var showsNativeRefreshButton = true
 
     var body: some View {
         let horizontalInset = libraryStore.standardPageHorizontalInset
@@ -15,14 +17,29 @@ struct LiveFeedView: View {
                     .padding(.bottom, 22)
             }
         }
+        .rootFloatingTabBarContentPadding()
         .contentMargins(.top, 0, for: .scrollContent)
+        .onScrollGeometryChange(for: LiveTitleScrollSample.self) { geometry in
+            LiveTitleScrollSample(
+                offset: geometry.contentOffset.y + geometry.contentInsets.top,
+                topInset: geometry.contentInsets.top
+            )
+        } action: { _, sample in
+            titleState?.update(scrollSum: sample.offset, insetsTop: sample.topInset, isRefreshing: viewModel.isRefreshing)
+        }
         .scrollsToTopOnRootTabReselection()
-        .nativeTopScrollEdgeEffect()
+        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: titleState == nil)
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                LiveFeedRefreshButton(viewModel: viewModel)
+            if showsNativeRefreshButton {
+                ToolbarItem(placement: .topBarTrailing) {
+                    LiveRefreshToolbarButton(
+                        isLoading: viewModel.isRefreshing || (viewModel.rooms.isEmpty && viewModel.state.isLoading)
+                    ) {
+                        Task { await viewModel.refresh() }
+                    }
+                }
             }
         }
         .task {
@@ -40,6 +57,11 @@ struct LiveFeedView: View {
         }
     }
 
+}
+
+private struct LiveTitleScrollSample: Equatable {
+    let offset: CGFloat
+    let topInset: CGFloat
 }
 
 private struct LiveFeedContent: View {
@@ -138,22 +160,24 @@ private struct LiveFeedRoomLink: View {
     }
 }
 
-private struct LiveFeedRefreshButton: View {
-    @ObservedObject var viewModel: LiveViewModel
+struct LiveRefreshToolbarButton: View {
+    let isLoading: Bool
+    let onRefresh: () -> Void
 
     var body: some View {
-        Button {
-            Task { await viewModel.refresh() }
-        } label: {
-            if viewModel.isRefreshing {
+        Button(action: onRefresh) {
+            if isLoading {
                 ProgressView()
                     .controlSize(.small)
             } else {
-                Image(systemName: "arrow.clockwise")
+                Label("刷新推荐直播间", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
             }
         }
-        .disabled(viewModel.isRefreshing || (viewModel.rooms.isEmpty && viewModel.state.isLoading))
+        .tint(.primary)
+        .disabled(isLoading)
         .accessibilityLabel("刷新推荐直播间")
+        .accessibilityIdentifier("live.feed.refresh")
     }
 }
 

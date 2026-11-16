@@ -17,15 +17,15 @@ struct DynamicView: View {
 }
 
 struct DynamicContentRoot: View {
-    @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isRootTabContent) private var isRootTabContent
+    @Environment(\.showsHiddenRootPageSwitcher) private var showsHiddenRootPageSwitcher
     let api: BiliAPIClient
     @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var sessionStore: SessionStore
     let pageWidth: CGFloat
     @StateObject private var holder: DynamicViewModelHolder
+    @StateObject private var titleState = FeedChromeTitleState()
     @State private var selectedFeed: DynamicFeedKind
-    @State private var hidesNavigationChrome = false
     @State private var selectedUP: VideoOwner?
     @State private var showsUPSelector = false
 
@@ -48,8 +48,8 @@ struct DynamicContentRoot: View {
         libraryStore.visibleDynamicFeedKinds
     }
 
-    private var showsFeedToolbar: Bool {
-        visibleFeedKinds.count > 1
+    private var usesRootNavigationToolbar: Bool {
+        isRootTabContent && (visibleFeedKinds.count > 1 || showsHiddenRootPageSwitcher)
     }
 
     var body: some View {
@@ -70,7 +70,7 @@ struct DynamicContentRoot: View {
                     }
                 }
                 .rootFloatingTabBarContentPadding()
-                .nativeTopScrollEdgeEffect()
+                .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
                 .task { holder.topUploaderStripViewModel?.loadTopUploaderStripIfNeeded() }
             } else if let viewModel = holder.viewModel {
                 DynamicFeedScreenContent(
@@ -79,31 +79,51 @@ struct DynamicContentRoot: View {
                     topUploaderStripViewModel: holder.topUploaderStripViewModel ?? viewModel,
                     isLoggedIn: sessionStore.isLoggedIn,
                     selectedUP: selectedFeed == .up ? selectedUP : nil,
-                    onChooseUP: { showsUPSelector = true }
+                    onChooseUP: { showsUPSelector = true },
+                    titleState: titleState
                 )
             } else {
                 DynamicInitialFeedContent(isLoggedIn: sessionStore.isLoggedIn)
             }
         }
-        .toolbar(showsFeedToolbar ? .visible : .hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: usesRootNavigationToolbar ? 0 : 12) {
+            if usesRootNavigationToolbar {
+                Color.clear
+                    .frame(height: 12)
+                    .accessibilityHidden(true)
+            } else {
+                DynamicTopBar(
+                    titleState: titleState,
+                    kinds: visibleFeedKinds,
+                    currentKind: selectedFeed,
+                    onSelect: { selectedFeed = $0 }
+                )
+            }
+        }
+        .toolbarVisibility(
+            usesRootNavigationToolbar ? .visible : (isRootTabContent ? .hidden : .visible),
+            for: .navigationBar
+        )
         .toolbarTitleDisplayMode(.inline)
-        .environment(\.rootNavigationTitleHidden, navigationChromeVisibility)
         .toolbar {
-            if showsFeedToolbar {
-                ToolbarItem(placement: .principal) {
-                    DynamicFeedToolbarPicker(kinds: visibleFeedKinds, selection: $selectedFeed)
-                        .frame(width: max(pageWidth - 40, 0))
-                        .accessibilityIdentifier("dynamic.feedPicker")
-                        .opacity(hidesNavigationChrome ? 0 : 1)
-                        .disabled(hidesNavigationChrome)
-                        .accessibilityHidden(hidesNavigationChrome)
-                        .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: hidesNavigationChrome)
+            if usesRootNavigationToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    DynamicTopBarTitle(state: titleState)
                 }
-                .sharedBackgroundVisibility(hidesNavigationChrome ? .hidden : .automatic)
+                .sharedBackgroundVisibility(.hidden)
+            }
+            if usesRootNavigationToolbar && visibleFeedKinds.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    DynamicFeedKindMenuButton(
+                        kinds: visibleFeedKinds,
+                        current: selectedFeed,
+                        onSelect: { selectedFeed = $0 }
+                    )
+                }
             }
         }
         .onChange(of: selectedFeed) { _, kind in
-            hidesNavigationChrome = false
+            titleState.reset()
             if kind == .up, selectedUP == nil {
                 if sessionStore.isLoggedIn { showsUPSelector = true }
             }
@@ -112,13 +132,12 @@ struct DynamicContentRoot: View {
             guard !kinds.contains(selectedFeed) else { return }
             showsUPSelector = false
             selectedUP = nil
-            hidesNavigationChrome = false
             selectedFeed = kinds.first ?? .all
         }
         .onAppear {
             // With a single configured kind there is no segment tap to enter the
             // UP selection, so offer the sheet once when the page appears.
-            guard !showsFeedToolbar, selectedFeed == .up, selectedUP == nil,
+            guard visibleFeedKinds.count <= 1, selectedFeed == .up, selectedUP == nil,
                   sessionStore.isLoggedIn else { return }
             showsUPSelector = true
         }
@@ -139,7 +158,6 @@ struct DynamicContentRoot: View {
         .sheet(isPresented: $showsUPSelector) {
             DynamicUPSelector(api: api, recentOwners: holder.topUploaderStripViewModel?.topUploaderStripItems.map(\.owner) ?? []) { owner in
                 selectedUP = owner
-                hidesNavigationChrome = false
             }
         }
     }
@@ -153,25 +171,7 @@ struct DynamicContentRoot: View {
         showsUPSelector = false
         selectedUP = nil
         selectedFeed = visibleFeedKinds.first ?? .all
-        hidesNavigationChrome = false
         holder.reconfigure(api: api, libraryStore: libraryStore, sessionStore: sessionStore)
-    }
-
-    private var navigationChromeVisibility: Binding<Bool> {
-        if !showsFeedToolbar {
-            // Single-kind pages use the native large-title collapse; the scroll
-            // edge effect must not blank the root title mid-collapse.
-            return .constant(false)
-        }
-        return Binding(
-            get: { hidesNavigationChrome },
-            set: { isHidden in
-                // Keep a local signal for dynamic pages pushed from Home, where
-                // the root title binding intentionally ignores destination scrolls.
-                hidesNavigationChrome = isHidden
-                rootNavigationTitleHidden.wrappedValue = isHidden
-            }
-        )
     }
 }
 

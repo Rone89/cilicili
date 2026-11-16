@@ -954,6 +954,80 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testVideoDetailQuickQualitySheetShowsSelectionAndLocksUnavailableChoice() {
+        let app = launchVideoDetail()
+        revealPlayerControls(in: app)
+
+        let quality = app.buttons["ui.player.quality.quick"]
+        XCTAssertTrue(quality.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(quality.value as? String, "1080P+")
+        tapPlayerControl(quality, in: app)
+
+        let sheetTitle = app.navigationBars["清晰度"]
+        XCTAssertTrue(sheetTitle.waitForExistence(timeout: 5), app.debugDescription)
+
+        let selectedChoice = app.buttons["ui.player.quality.quick.option.112"]
+        let unavailableChoice = app.buttons["ui.player.quality.quick.option.64"]
+        XCTAssertTrue(selectedChoice.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(selectedChoice.isSelected)
+        XCTAssertTrue(unavailableChoice.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(unavailableChoice.isEnabled)
+
+        let menuScreenshot = XCTAttachment(screenshot: app.screenshot())
+        menuScreenshot.name = "Portrait quick quality sheet"
+        menuScreenshot.lifetime = .keepAlways
+        add(menuScreenshot)
+
+        let done = app.buttons["完成"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), app.debugDescription)
+        done.tap()
+        let sheetDismissal = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: sheetTitle
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [sheetDismissal], timeout: 5), .completed)
+
+        revealPlayerControls(in: app)
+        XCTAssertTrue(waitForVisiblePlayerControl(in: app, { quality }, timeout: 5))
+        tapPlayerControl(quality, in: app)
+        XCTAssertTrue(sheetTitle.waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    @MainActor
+    func testVideoDetailQuickQualityLandscapeUsesNativeMenu() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
+
+        let fullscreen = fullscreenControl(in: app)
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+        tapPlayerControl(fullscreen, in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let landscapeWindow = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return frame.width > frame.height
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [landscapeWindow], timeout: 10), .completed)
+        revealPlayerControls(in: app)
+
+        let quality = app.buttons["ui.player.quality.quick"]
+        XCTAssertTrue(quality.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(quality.value as? String, "1080P+")
+        tapPlayerControl(quality, in: app)
+
+        let selectedChoice = app.buttons["1080P 高码率"]
+        let unavailableChoice = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "720P")
+        ).firstMatch
+        XCTAssertTrue(selectedChoice.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(unavailableChoice.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(unavailableChoice.isEnabled)
+    }
+
+    @MainActor
     func testVideoDetailMoreControlsToggleBackgroundPlayback() {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)

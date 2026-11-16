@@ -53,6 +53,16 @@ private struct PlaybackDetailSystemChrome: ViewModifier {
 }
 
 extension View {
+    @ViewBuilder
+    func playbackUnderTransparentNavigationBar(_ enabled: Bool) -> some View {
+        if enabled {
+            safeAreaPadding(.top, UIApplication.shared.playbackDetailForegroundKeyWindow?.safeAreaInsets.top ?? 0)
+                .ignoresSafeArea(.container, edges: .top)
+        } else {
+            self
+        }
+    }
+
     func playbackDetailViewChrome(
         navigationBarVisibility: Visibility? = nil,
         hidesBackButton: Bool = false
@@ -79,5 +89,34 @@ extension View {
                 statusBarStyle: statusBarStyle
             )
         )
+    }
+}
+
+extension UIView {
+    func playbackSafeAreaInsets(underTransparentNavigationBar enabled: Bool) -> UIEdgeInsets {
+        var insets = safeAreaInsets
+        if enabled, let window {
+            let windowSafeTop = convert(window.safeAreaLayoutGuide.layoutFrame, from: window).minY
+            insets.top = min(insets.top, max(0, windowSafeTop))
+        }
+        return insets
+    }
+}
+
+@MainActor
+final class PlaybackNavigationBarTouchPassthrough {
+    private weak var navigationBar: UINavigationBar?
+    private var previousInteraction = true
+
+    func begin(in navigationController: UINavigationController?) {
+        guard navigationBar == nil, let bar = navigationController?.navigationBar else { return }
+        previousInteraction = bar.isUserInteractionEnabled
+        navigationBar = bar
+        bar.isUserInteractionEnabled = false
+    }
+
+    func end() {
+        navigationBar?.isUserInteractionEnabled = previousInteraction
+        navigationBar = nil
     }
 }

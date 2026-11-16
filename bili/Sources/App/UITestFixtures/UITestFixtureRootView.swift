@@ -42,6 +42,10 @@ struct UITestFixtureRootView: View {
                 UITestHomeFeedbackFixtureView()
             case .videoOwnerMenu:
                 UITestVideoOwnerMenuFixtureView(libraryStore: dependencies.libraryStore)
+            case .mineTopBar:
+                UITestMineTopBarFixtureView(dependencies: dependencies)
+            case .searchTopBar:
+                UITestSearchTopBarFixtureView(dependencies: dependencies)
             #endif
             case .dynamicDetail:
                 UITestDynamicDetailFixtureView(
@@ -80,7 +84,8 @@ private struct UITestDynamicFeedTabsFixtureView: View {
                 sessionStore: dependencies.sessionStore,
                 pageWidth: 390
             )
-            .navigationTitle("动态")
+            .environment(\.isRootTabContent, true)
+            .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
             .overlay(alignment: .topTrailing) {
                 // Verifies that pushing from the single-kind page (navigation bar
@@ -136,6 +141,58 @@ private struct UITestDynamicFeedTabSettingsFixtureView: View {
             .frame(maxWidth: .infinity)
             .padding(.bottom, 6)
             .accessibilityIdentifier("fixture.dynamicTabs.config")
+    }
+}
+
+/// Hosts the production Mine page root and its search toolbar.
+private struct UITestMineTopBarFixtureView: View {
+    let dependencies: AppDependencies
+    @StateObject private var holder = MineViewModelHolder()
+    @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            MineView(
+                holder: holder,
+                searchText: $searchText,
+                isSearchFocused: $isSearchFocused,
+                hasBackButton: false,
+                onOpenRoute: { _ in }
+            )
+            .environment(\.isRootTabContent, true)
+            .navigationTitle("")
+            .toolbarTitleDisplayMode(.inline)
+        }
+        .environmentObject(dependencies)
+        .environmentObject(dependencies.sessionStore)
+        .environmentObject(dependencies.libraryStore)
+    }
+}
+
+/// Hosts the production Search page root and its native toolbar.
+private struct UITestSearchTopBarFixtureView: View {
+    let dependencies: AppDependencies
+    @StateObject private var holder = SearchViewModelHolder()
+    @StateObject private var accessoryStore = SearchBottomAccessoryStore()
+    @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            SearchView(
+                holder: holder,
+                accessoryStore: accessoryStore,
+                searchText: $searchText,
+                isSearchFocused: $isSearchFocused,
+                onSubmit: { isSearchFocused = false }
+            )
+            .environment(\.isRootTabContent, true)
+            .navigationTitle("")
+            .toolbarTitleDisplayMode(.inline)
+        }
+        .environmentObject(dependencies)
+        .environmentObject(dependencies.libraryStore)
     }
 }
 #endif

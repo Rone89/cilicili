@@ -160,12 +160,11 @@ final class LivePlaybackExperimentsTests: XCTestCase {
             safeAreaBottom: 34,
             videoAspectRatio: 9.0 / 16.0
         )
-        XCTAssertEqual(tallPlayerHeight, 475)
+        XCTAssertEqual(tallPlayerHeight, 533)
         XCTAssertLessThanOrEqual(
             tallPlayerHeight
                 + 59
                 + 34
-                + LiveRoomSimpleLiveLayoutPolicy.headerContentHeight
                 + LiveRoomSimpleLiveLayoutPolicy.minimumDetailHeight,
             912
         )
@@ -176,7 +175,7 @@ final class LivePlaybackExperimentsTests: XCTestCase {
             safeAreaBottom: 34,
             videoAspectRatio: 9.0 / 16.0
         )
-        XCTAssertEqual(compactPlayerHeight, 242)
+        XCTAssertEqual(compactPlayerHeight, 300)
     }
 
     func testRotationSurfaceStabilityPolicyHidesChatHostForTheWholeTransition() {

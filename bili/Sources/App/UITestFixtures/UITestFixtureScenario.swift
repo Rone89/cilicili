@@ -19,6 +19,8 @@ enum UITestFixtureScenario: String {
     case dynamicFeedTabSettings
     case homeFeedback
     case videoOwnerMenu
+    case mineTopBar
+    case searchTopBar
     #endif
     case dynamicDetail
     case fullscreen

@@ -1,18 +1,25 @@
 import SwiftUI
 
 struct SearchContentView: View {
+    @Environment(\.isRootTabContent) private var isRootTabContent
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
     @ObservedObject var accessoryStore: SearchBottomAccessoryStore
+    var titleState: FeedChromeTitleState? = nil
 
     var body: some View {
         SearchListView(
             viewModel: viewModel,
-            showsHotSearches: showsHotSearches
+            showsHotSearches: showsHotSearches,
+            titleState: titleState
         )
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                SearchFilterToolbarMenu(viewModel: viewModel)
+            // The root tab supplies the settings item from SearchView;
+            // pushed destinations and fixtures keep the native bar menu.
+            if !isRootTabContent {
+                ToolbarItem(placement: .topBarTrailing) {
+                    SearchFilterToolbarMenu(viewModel: viewModel)
+                }
             }
         }
         .overlay {
@@ -140,8 +147,9 @@ private struct SearchFilterCapsule: View {
     }
 }
 
-private struct SearchFilterToolbarMenu: View {
+struct SearchFilterToolbarMenu: View {
     @ObservedObject var viewModel: SearchViewModel
+    var iconPointSize: CGFloat = 15
 
     var body: some View {
         Menu {
@@ -149,7 +157,9 @@ private struct SearchFilterToolbarMenu: View {
                 orderOptions
             }
         } label: {
-            Image(systemName: "slider.horizontal.3").foregroundStyle(.primary)
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: iconPointSize, weight: .semibold))
+                .foregroundStyle(.primary)
         }
         .tint(.primary)
         .accessibilityLabel("排序方式")

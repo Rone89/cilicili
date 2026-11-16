@@ -60,7 +60,7 @@ final class DynamicFeedTabsUITests: XCTestCase {
         XCTAssertEqual(result, .completed, element.debugDescription)
     }
 
-    func testDefaultConfigurationShowsAllSegmentsInDefaultOrder() {
+    func testDefaultConfigurationShowsAllKindsInMenu() {
         // Seed explicitly: earlier settings tests persist their toggles in the
         // simulator container, and the launch-argument domain keeps this test
         // independent of that state.
@@ -68,22 +68,22 @@ final class DynamicFeedTabsUITests: XCTestCase {
             "dynamicFeedTabs",
             visibleTabs: ["all", "video", "pgc", "article", "up"]
         )
-        let pickerFound = app.segmentedControls["dynamic.feedPicker"].waitForExistence(timeout: 10)
-            || app.otherElements["dynamic.feedPicker"].waitForExistence(timeout: 2)
-        XCTAssertTrue(pickerFound, app.debugDescription)
+        let picker = app.buttons["dynamic.feedPicker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
+        picker.tap()
         for title in ["全部", "投稿", "番剧", "专栏", "UP"] {
-            XCTAssertTrue(app.buttons[title].exists, "缺少分段 \(title)：\(app.debugDescription)")
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3), "缺少选项 \(title)：\(app.debugDescription)")
         }
         XCTAssertEqual(probeText(app), "all,video,pgc,article,up")
     }
 
     func testCustomConfigurationHidesKindsAndFollowsStoredOrder() {
         let app = launchFixture("dynamicFeedTabs", visibleTabs: ["up", "article"])
-        let pickerFound = app.segmentedControls["dynamic.feedPicker"].waitForExistence(timeout: 10)
-            || app.otherElements["dynamic.feedPicker"].waitForExistence(timeout: 2)
-        XCTAssertTrue(pickerFound, app.debugDescription)
-        XCTAssertTrue(app.buttons["UP"].exists)
-        XCTAssertTrue(app.buttons["专栏"].exists)
+        let picker = app.buttons["dynamic.feedPicker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
+        picker.tap()
+        XCTAssertTrue(app.buttons["UP"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["专栏"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["全部"].exists)
         XCTAssertFalse(app.buttons["投稿"].exists)
         XCTAssertFalse(app.buttons["番剧"].exists)
@@ -94,8 +94,9 @@ final class DynamicFeedTabsUITests: XCTestCase {
         let app = launchFixture("dynamicFeedTabs", visibleTabs: ["video"])
         XCTAssertFalse(app.segmentedControls["dynamic.feedPicker"].exists)
         XCTAssertFalse(app.otherElements["dynamic.feedPicker"].exists)
+        XCTAssertFalse(app.buttons["dynamic.feedPicker"].exists)
         XCTAssertFalse(app.buttons["投稿"].exists)
-        // 单个选项时不显示顶部导航栏/大标题，内容上移。
+        // 单个选项时不显示顶部导航栏/选项按钮，内容上移。
         XCTAssertEqual(app.navigationBars.count, 0, app.debugDescription)
         XCTAssertEqual(probeText(app), "video")
     }

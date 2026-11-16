@@ -19,6 +19,8 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     private var didPrepareForDismantle = false
     private var didRegisterNavigationStopCompletion = false
     private var isImmersivePlayback = false
+    private let usesTransparentNavigationBar: Bool
+    private let navigationBarTouchPassthrough = PlaybackNavigationBarTouchPassthrough()
 
     init(
         initialVideo: VideoItem,
@@ -36,11 +38,13 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         onDismissPlayerMoreControls: @escaping () -> Void,
         onReply: @escaping (Comment) -> Void,
         onSystemChromeVisibilityChange: @escaping (Bool) -> Void,
+        usesTransparentNavigationBar: Bool = false,
         onNavigateBack: @escaping () -> Void
     ) {
         let rotationCoordinator = PlaybackRotationCoordinator()
         self.rotationCoordinator = rotationCoordinator
         self.onSystemChromeVisibilityChange = onSystemChromeVisibilityChange
+        self.usesTransparentNavigationBar = usesTransparentNavigationBar
         contentController = VideoDetailSwiftUIContainerViewController(
             initialVideo: initialVideo,
             viewModel: viewModel,
@@ -58,6 +62,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             onDismissPlayerMoreControls: onDismissPlayerMoreControls,
             onReply: onReply,
             onToggleDanmaku: viewModel.toggleDanmaku,
+            usesTransparentNavigationBar: usesTransparentNavigationBar,
             onNavigateBack: onNavigateBack
         )
         super.init(nibName: nil, bundle: nil)
@@ -147,11 +152,15 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         }
         updateOrientationLock()
         restoreSystemBackGestures()
+        if usesTransparentNavigationBar {
+            navigationBarTouchPassthrough.begin(in: navigationController)
+        }
         contentController.setBackgroundRenderFreezeActive(false)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        navigationBarTouchPassthrough.end()
         isViewActive = false
         finishPlaybackStopAfterNavigationTransition()
         contentController.dismissPlayerMoreControls()
@@ -206,6 +215,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     func prepareForDismantle() {
         guard !didPrepareForDismantle else { return }
         didPrepareForDismantle = true
+        navigationBarTouchPassthrough.end()
         setImmersivePlayback(false)
         recoverInterruptedRotationIfNeeded(reason: "dismantle")
         cancelRotationTasks()

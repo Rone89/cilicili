@@ -3,17 +3,16 @@ import SwiftUI
 struct LiveRoomDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
     let seedRoom: LiveRoom
+    var usesTransparentNavigationBar = false
     @StateObject private var holder = LiveRoomViewModelHolder()
 
     var body: some View {
         PlaybackDetailPageHost(
             hidesSystemChrome: .constant(false),
             background: VideoDetailTheme.background,
-            navigationBarVisibility: .hidden,
             hidesBackButton: true,
-            statusBarStyle: statusBarStyle,
+            statusBarStyle: .lightContent,
             performanceContext: .live(seedRoom),
             lifecycleActions: pageLifecycleActions
         ) {
@@ -23,14 +22,17 @@ struct LiveRoomDetailView: View {
             ) { viewModel in
                 LiveRoomShellRepresentable(
                     viewModel: viewModel,
+                    usesTransparentNavigationBar: usesTransparentNavigationBar,
                     onNavigateBack: { dismiss() }
                 )
                 .ignoresSafeArea()
             } initialContent: {
                 LiveRoomInitialPlaceholder(room: seedRoom)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .playbackUnderTransparentNavigationBar(usesTransparentNavigationBar)
             }
         }
+        .toolbarVisibility(usesTransparentNavigationBar ? .visible : .hidden, for: .navigationBar)
         .task(id: seedRoom.id) {
             configureAndStartPlaybackIfNeeded()
         }
@@ -56,13 +58,6 @@ struct LiveRoomDetailView: View {
                 holder.viewModel?.stopPlaybackForNavigation()
             }
         )
-    }
-
-    private var statusBarStyle: UIStatusBarStyle {
-        guard colorScheme != .dark else {
-            return .lightContent
-        }
-        return .darkContent
     }
 
     private func configureAndStartPlaybackIfNeeded() {

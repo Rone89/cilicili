@@ -1,5 +1,19 @@
 import Foundation
 
+nonisolated enum HomePageSelection: Equatable {
+    case feed(HomeFeedMode)
+    case live
+
+    static var menuOrder: [Self] { HomeFeedMode.allCases.map(Self.feed) + [.live] }
+
+    var title: String {
+        switch self {
+        case .feed(let mode): mode.title
+        case .live: "直播"
+        }
+    }
+}
+
 nonisolated enum HomeFeedMode: String, CaseIterable, Hashable, Identifiable, Sendable {
     case recommend
     case popular

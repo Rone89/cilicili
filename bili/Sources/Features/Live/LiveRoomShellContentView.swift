@@ -226,7 +226,7 @@ struct LiveRoomShellContentView: View {
     }
 
     var body: some View {
-        LiveRoomSimpleLiveLayoutView(
+        LiveRoomPortraitLayoutView(
             viewModel: viewModel,
             state: state,
             onNavigateBack: onNavigateBack
@@ -288,16 +288,38 @@ private struct LiveRoomPlainDanmakuTimeline: View {
                 .padding(.bottom, bottomContentInset + LiveRoomChatLayoutMetrics.chatOverlaySpacing)
                 .accessibilityLabel("开启直播弹幕")
             } else {
-                timeline
+                VStack(alignment: .leading, spacing: 0) {
+                    if let connectionNotice {
+                        Text(connectionNotice)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14)
+                            .padding(.top, 8)
+                    }
+                    timeline
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var connectionNotice: String? {
+        switch renderState.snapshot.connectionPhase {
+        case .fetchingConfig, .connecting, .authenticating:
+            return "正在连接直播弹幕…"
+        case .reconnecting:
+            return "正在重新连接弹幕…"
+        case .failed:
+            return "直播弹幕连接失败"
+        default:
+            return nil
+        }
+    }
+
     private var timeline: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(visibleItems) { item in
                         LiveRoomPlainDanmakuRow(
                             item: item,
@@ -312,7 +334,7 @@ private struct LiveRoomPlainDanmakuTimeline: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 12)
+                .padding(.vertical, 8)
                 .padding(.bottom, bottomContentInset)
             }
             .scrollIndicators(.hidden)
@@ -437,7 +459,7 @@ private struct LiveRoomPlainDanmakuRow: View {
     }
 }
 
-private enum LiveRoomSimpleLiveTab: String, CaseIterable, Identifiable {
+private enum LiveRoomContentTab: String, CaseIterable, Identifiable {
     case chat
     case info
     case settings
@@ -456,48 +478,39 @@ private enum LiveRoomSimpleLiveTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// An iOS-native take on SimpleLive's portrait information architecture. The
-/// player surface itself stays outside this view so rotation and decoding are
-/// still owned by the existing UIKit coordinator.
-private struct LiveRoomSimpleLiveLayoutView: View {
+private struct LiveRoomPortraitLayoutView: View {
     @ObservedObject var viewModel: LiveRoomViewModel
     @ObservedObject var state: LiveRoomShellContentView.State
+    @Environment(\.appThemeTintColor) private var themeTintColor
     let onNavigateBack: () -> Void
 
-    @State private var selectedTab: LiveRoomSimpleLiveTab = .chat
+    @State private var selectedTab: LiveRoomContentTab = .chat
 
     private let bottomActionBarHeight: CGFloat = 40
 
-    private var bottomContentReservation: CGFloat {
-        bottomActionBarHeight + 16
+    private var bottomActionBarInset: CGFloat {
+        max(state.bottomSafeAreaInset, 10)
     }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
-                header
-                    .frame(
-                        height: state.topSafeAreaInset
-                            + LiveRoomSimpleLiveLayoutPolicy.headerContentHeight,
-                        alignment: .bottom
-                    )
+                Color.black
+                    .frame(height: state.topSafeAreaInset)
+                    .accessibilityHidden(true)
 
                 // The UIKit surface covers this placeholder. It makes the
                 // SwiftUI detail content follow the true player bottom edge.
                 Color.clear
                     .frame(height: state.playerHeight)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    anchorSummary
+                VStack(alignment: .leading, spacing: 0) {
+                    roomSummary
+                    Divider()
                     sectionPicker
                     selectedContent
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(
-                    .bottom,
-                    bottomContentReservation + max(state.bottomSafeAreaInset, 0)
-                )
+                .padding(.bottom, bottomActionBarHeight + bottomActionBarInset + 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .frame(
@@ -508,68 +521,21 @@ private struct LiveRoomSimpleLiveLayoutView: View {
 
             bottomActionBar
                 .padding(.horizontal, 12)
-                .padding(.bottom, max(state.bottomSafeAreaInset, 10))
+                .padding(.bottom, bottomActionBarInset)
         }
         .background(LiveRoomTheme.background)
         .ignoresSafeArea()
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            Button(action: onNavigateBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 38, height: 38)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.primary)
-            .biliRegularGlassEffect(interactive: true, in: Circle())
-            .accessibilityLabel("返回")
-
-            Text(viewModel.title)
-                .appTypography(.liveRoomTitle, fallback: .system(size: 16, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("直播间：\(viewModel.title)")
-
-            Menu {
-                Button {
-                    viewModel.showLiveDanmakuSettings()
-                } label: {
-                    Label("弹幕设置", systemImage: "text.bubble")
-                }
-
-                Button {
-                    viewModel.showLivePlaybackDiagnostics()
-                } label: {
-                    Label("播放诊断", systemImage: "waveform.path.ecg.rectangle")
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 38, height: 38)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.primary)
-            .biliRegularGlassEffect(interactive: true, in: Circle())
-            .accessibilityLabel("直播间更多操作")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-    }
-
-    private var anchorSummary: some View {
-        HStack(spacing: 10) {
-            PlaybackDetailOwnerAvatar(
-                owner: viewModel.anchorOwner,
-                fallbackURLString: viewModel.anchorFace,
-                side: 46,
-                pixelSize: 128
-            )
-
-            VStack(alignment: .leading, spacing: 3) {
+    private var roomSummary: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                PlaybackDetailOwnerAvatar(
+                    owner: viewModel.anchorOwner,
+                    fallbackURLString: viewModel.anchorFace,
+                    side: 36,
+                    pixelSize: 96
+                )
                 Text(viewModel.anchorName)
                     .appTypography(
                         .commentAuthor,
@@ -577,23 +543,27 @@ private struct LiveRoomSimpleLiveLayoutView: View {
                     )
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(liveStatusText)
                     .appTypography(.metadata, fallback: .caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                followButton
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            followButton
+            Text(viewModel.title)
+                .appTypography(.liveRoomTitle, fallback: .system(size: 16, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .accessibilityAddTraits(.isHeader)
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("主播 \(viewModel.anchorName)，\(liveStatusText)")
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 
     private var liveStatusText: String {
-        viewModel.isLive ? "\(viewModel.onlineText)  正在直播" : viewModel.onlineText
+        viewModel.isLive ? viewModel.onlineText : "未开播"
     }
 
     private var followButton: some View {
@@ -609,13 +579,32 @@ private struct LiveRoomSimpleLiveLayoutView: View {
     }
 
     private var sectionPicker: some View {
-        Picker("直播内容", selection: $selectedTab) {
-            ForEach(LiveRoomSimpleLiveTab.allCases) { tab in
-                Text(tab.title).tag(tab)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                ForEach(LiveRoomContentTab.allCases) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        Text(tab.title)
+                            .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
+                            .foregroundStyle(selectedTab == tab ? Color.primary : Color.secondary)
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 44)
+                            .overlay(alignment: .bottom) {
+                                if selectedTab == tab {
+                                    Capsule().fill(themeTintColor).frame(height: 2)
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+                }
             }
+            .padding(.horizontal, 6)
+            Divider()
         }
-        .pickerStyle(.segmented)
-        .accessibilityLabel("直播间内容")
     }
 
     @ViewBuilder
@@ -626,16 +615,17 @@ private struct LiveRoomSimpleLiveLayoutView: View {
                 renderState: state.chatTimelineState,
                 isDanmakuEnabled: viewModel.isDanmakuEnabled,
                 bottomSafeAreaInset: 0,
-                additionalBottomInset: bottomContentReservation,
                 usesDarkForeground: false,
                 onEnableDanmaku: viewModel.toggleDanmaku
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         case .info:
             LiveRoomSimpleLiveInfoPane(viewModel: viewModel)
+                .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         case .settings:
             LiveRoomSimpleLiveSettingsPane(viewModel: viewModel)
+                .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
@@ -643,24 +633,47 @@ private struct LiveRoomSimpleLiveLayoutView: View {
     private var bottomActionBar: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
-                liveActionButton(
-                    title: viewModel.isFollowingAnchor ? "已关注" : "关注",
-                    systemImage: viewModel.isFollowingAnchor ? "checkmark" : "plus"
-                ) {
-                    Task {
-                        await viewModel.toggleFollowAnchor()
-                    }
+                Button(action: onNavigateBack) {
+                    bottomActionIcon("chevron.backward")
                 }
-                .disabled(viewModel.anchorUIDForFollow == nil || viewModel.isMutatingAnchorFollow)
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .biliRegularGlassEffect(interactive: true, in: Circle())
+                .accessibilityLabel("返回")
 
                 liveActionButton(title: "刷新", systemImage: "arrow.clockwise") {
                     viewModel.refreshLiveToLatest()
                 }
 
                 liveShareAction
+                roomActions
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var roomActions: some View {
+        Menu {
+            Button("弹幕设置", systemImage: "text.bubble") {
+                viewModel.showLiveDanmakuSettings()
+            }
+            Button("播放诊断", systemImage: "waveform.path.ecg.rectangle") {
+                viewModel.showLivePlaybackDiagnostics()
+            }
+        } label: {
+            bottomActionIcon("ellipsis")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .biliRegularGlassEffect(interactive: true, in: Circle())
+        .accessibilityLabel("直播间更多操作")
+    }
+
+    private func bottomActionIcon(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 17, weight: .semibold))
+            .frame(width: bottomActionBarHeight, height: bottomActionBarHeight)
+            .contentShape(Circle())
     }
 
     private func liveActionButton(
@@ -710,6 +723,7 @@ private struct LiveRoomSimpleLiveInfoPane: View {
                     .font(.headline)
 
                 detailRow("主播", value: viewModel.anchorName)
+                detailRow("房间号", value: String(viewModel.roomID))
                 detailRow("热度", value: viewModel.onlineText)
 
                 if let areaText = viewModel.areaText {

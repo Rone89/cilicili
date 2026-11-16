@@ -153,12 +153,19 @@ struct VideoDetailViewContentResolver: View {
 
 struct VideoDetailInitialContentResolver: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @Environment(\.videoDetailUsesTransparentNavigationBar) private var usesTransparentNavigationBar
     let seedVideo: VideoItem
     @Binding var selectedContentTab: VideoDetailContentTab
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
     let lifecycleActions: VideoDetailViewContentLifecycleActions
 
     var body: some View {
+        initialContent
+            .playbackUnderTransparentNavigationBar(usesTransparentNavigationBar)
+            .task { lifecycleActions.configureInitialViewModelIfNeeded() }
+    }
+
+    private var initialContent: some View {
         VideoDetailInitialContent(
             seedVideo: seedVideo,
             selectedContentTab: $selectedContentTab,
@@ -172,8 +179,5 @@ struct VideoDetailInitialContentResolver: View {
             \.videoDetailActionButtonStyle,
             dependencies.libraryStore.videoDetailActionButtonStyle
         )
-        .task {
-            lifecycleActions.configureInitialViewModelIfNeeded()
-        }
     }
 }

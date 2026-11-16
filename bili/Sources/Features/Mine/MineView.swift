@@ -5,12 +5,15 @@ struct MineView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.isRootTabContent) private var isRootTabContent
     @ObservedObject var holder: MineViewModelHolder
     @Binding var searchText: String
     var isSearchFocused: FocusState<Bool>.Binding
     let hasBackButton: Bool
     let onOpenRoute: (MineOverlayRoute) -> Void
     @State private var loginSheet: LoginSheet?
+    @State private var isSearching = false
+    @StateObject private var titleState = FeedChromeTitleState()
     @State private var loadedMainAccountCredentialVersion: Int?
     @State private var loadedHistoryAccountCredentialVersion: Int?
     @State private var loadedInteractionAccountCredentialVersion: Int?
@@ -33,13 +36,27 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .navigationToolbarSearch(
-            text: $searchText,
-            isFocused: isSearchFocused,
-            prompt: "搜索我的页功能",
-            hasBackButton: hasBackButton,
-            onSubmit: { isSearchFocused.wrappedValue = false }
-        )
+        .safeAreaPadding(.top, isRootTabContent && !isSearching ? 8 : 0)
+        // Keep the same breathing room below the field as the home toolbar.
+        .safeAreaInset(edge: .top, spacing: isSearching ? 18 : 0) {
+            if isSearching {
+                MineSearchField(
+                    searchText: $searchText,
+                    isSearchFocused: isSearchFocused,
+                    onCancel: cancelSearch
+                )
+            }
+        }
+        .toolbar {
+            MineTopBar(
+                titleState: titleState,
+                showsTitle: isRootTabContent,
+                isSearching: isSearching,
+                onSearch: beginSearch
+            )
+        }
+        .toolbarVisibility(isRootTabContent && isSearching ? .hidden : .visible, for: .navigationBar)
+        .toolbarTitleDisplayMode(.inline)
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {
                 switch sheet {
@@ -59,6 +76,18 @@ struct MineView: View {
         }
     }
 
+    private func cancelSearch() {
+        isSearchFocused.wrappedValue = false
+        searchText = ""
+        titleState.reset()
+        withAnimation(.smooth(duration: 0.3)) { isSearching = false }
+    }
+
+    private func beginSearch() {
+        isSearchFocused.wrappedValue = true
+        withAnimation(.smooth(duration: 0.35)) { isSearching = true }
+    }
+
     @ViewBuilder
     private func content(
         _ viewModel: MineViewModel,
@@ -74,7 +103,8 @@ struct MineView: View {
             onWebLogin: { loginSheet = .web },
             onOpenRoute: onOpenRoute,
             searchText: $searchText,
-            isSearchFocused: isSearchFocused
+            isSearchFocused: isSearchFocused,
+            titleState: titleState
         )
         .task(id: MineAccountRefreshTaskID(
             mainCredentialVersion: sessionStore.playbackCredentialVersion,

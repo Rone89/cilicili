@@ -119,7 +119,7 @@ struct UITestRootTabScrollFixtureView: View {
         }
         .coordinatesRootTabBarTransitions(isDetailPresented: !(paths[tab]?.isEmpty ?? true),
             onRootTabTap: selectedTab == tab ? { selection.wrappedValue = tab } : nil,
-            capturesSearchReselection: tab == .search)
+            capturesSelectedTabTap: tab == .search)
         .navigationHistoryStack(path: path(for: tab), rootTitle: tab.title)
     }
 
