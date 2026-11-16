@@ -1439,3 +1439,160 @@
 - 用户要求提交到本地 `main`。保留并提交了 main 原有的发布后进度记录（`d21d946`），随后将 `feature/home-title-fade` 的 41 个既有提交及本轮工作树改动提交为 `3a32de0`，合并提交为 `99d7116`。仅本地操作，未推送或创建 PR。
 - 合并包含首页、动态、我的、搜索工具栏改动，以及播放器字幕可见性、清晰度锁定与横竖屏菜单、按钮字重和横屏设置面板圆角调整。冲突仅涉及进度文档，已保留两边记录。
 - 合并差异空白检查通过。本轮未编译、运行测试或安装；Build 202 的两项清晰度定向 UI 测试此前通过，但新字重和圆角改动尚未编译及真机目视验收。当前 `main` 已合入，尚未推送至 `origin/main`；功能 worktree 和分支保留且干净。
+
+## 2026-11-16 本地 main（Build 202）重编与真机安装
+
+- 分支与源码基线：`main` / `3dae352`（仅本地记录未提交 `docs/DEVELOPMENT_STATUS.md`，未改应用源码、工程配置或提交推送）。
+- 构建与签名：通过 `python3 Scripts/build-cache.py run -- xcodebuild` 复用共享 `build/DerivedData/Xcode-27` 缓存完成 Release（`iphoneos`）构建（`** BUILD SUCCEEDED **`）。使用临时 scratch xcconfig 覆盖目标级签名（`app.bamboo2779.brussels691` / 团队 `G933USCY46` / 描述文件 `882865dd-38a8-4ea7-80c7-e1f3072e784b`），未修改仓库内 `Config/Signing.local.xcconfig` 或 `bili.xcodeproj/project.pbxproj`。
+- 已验证：
+  - `codesign --verify --deep --strict --verbose=2` 通过，可执行文件 `bili` SHA-256 `33ac56846cb537f1ddff07e0983d66ec41759614baf0d2fda2b3db8f580a0c11`，`Info.plist` 核对 `1.1.4 (202)`。
+  - 已原位安装至 `RCe2027`（UDID `00008160-001C311028434036`，iPhone 18 Pro Max），`devicectl device info apps` 核对为 `cilicili 1.1.4 (202)`（`app.bamboo2779.brussels691`），成功启动并核对运行进程 PID `46197`。
+  - 本轮未重新运行单元测试或 UI 测试（Build 202 此前通过的 2 项清晰度定向 UI 早于字重与圆角微调及防重赋值守卫）。
+- 待办与真机待验收：
+  - 真机目视与交互验收：`main@3dae352` 新增编入的清晰度按钮 Regular 字重与横屏更多设置面板左侧直角（圆角 0），以及 Build 202 清晰度竖屏 sheet / 横屏原生菜单切档与锁定态、字幕 CC 按轨显隐、各 Feed 页顶栏及返回转场。
+  - 待后续安排：模拟器全量单测与 UI 回归（含首页标题淡出无障碍树残留待查）、iPhone 17 全屏偏移反馈（Issue #70 / #66）复现，以及将本地 `main`（领先 `origin/main` 45 个提交）推送远端。
+
+## 2026-11-16 搜索页官方 Liquid Glass 形变展开/收起动画与真机安装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（未递增 Build，本地复用 1.1.4 / Build 202 覆盖安装，未推送远端；改动文件：`RootTabSelectionActions.swift`、`RootTabView.swift`、`SearchContentView.swift`、`SearchTopBar.swift`、`SearchView.swift`、`SearchTopBarUITests.swift`、`DEVELOPMENT_STATUS.md`）。
+- 已实现方案：
+  - **排查结论**：曾验证 `.searchable(placement: .toolbar)` + `DefaultToolbarItem(kind: .search)` + `.searchToolbarBehavior(.minimize)` 与非最小化工具栏路径——前者在 iOS 27.0 iPhone 上将激活态搜索框落在键盘上方（`y=551`），后者在初始加载（含 `RootTabView` 已有 `.search` Tab 时）无法稳定显示顶栏搜索按钮；将 `GlassEffectContainer` 放入 `.toolbar(placement: .topBarTrailing)` 时，UIKit `_UIBarButtonItemView` 会越界或跳变宽度。因此最终采用页内 `.safeAreaInset(edge: .top)` 承载官方 SwiftUI Liquid Glass 容器。
+  - **双形状液态玻璃分裂/融合形变与右上排序切换（`SearchView` + `SearchMorphTopBar` + `SearchFilterToolbarMenu`）**：根搜索页（`isRootTabContent == true`）隐藏 `.navigationBar`，在 `.safeAreaInset(edge: .top, spacing: 18)` 中由 `GlassEffectContainer(spacing: 10)` 托管两个关联 `glassEffectID` 视图：主搜索胶囊（`searchControl`）与右侧 `44×44` 圆形排序切换按钮（`SearchFilterToolbarMenu`，`slider.horizontal.3`，`search.filters.menu`，支持传入 `controlSize` 撑满整圆热区；仅 `viewModel == nil` 时回退关闭钮）。点按搜索（或点热搜词自动填入非空关键词）时，`[🔍 | 🎛]` 通过 `.smooth(duration: 0.4)` 向左伸展并保留 `56pt` 尾距，同时从胶囊右侧经过 ≤`10pt` Liquid Glass 液态桥接分裂出独立 `( 🎛 )`（最终间距 `12pt`）。框内 `⊗`（`search.top.clear`）在有字时点击仅清空关键词回热搜并保持/重获输入焦点；当输入框曾获焦点且当前为空、收起键盘或空提交失焦时，自动通过 `collapseEmptySearch()` 顺滑融合回 `[🔍 | 🎛]` 与 `"搜索"` 静息态。非根页推入态（`!isRootTabContent`）保留 `.toolbar` 内的独立 `pushedMorphControl`。
+  - **隐藏根页切换入口兼容（`RootTabSelectionActions` + `RootTabView` + `SearchHiddenPageSwitcherButton`）**：当搜索页从底部 Tab 栏隐藏并通过首页更多菜单进入时，经环境 `\.rootHiddenPageSwitcher` 传入 `RootHiddenPageSwitcher`；静息态在搜索胶囊右侧同处 `GlassEffectContainer` 内以 `44×44` 圆形 `UIButton`（`showsMenuAsPrimaryAction = true` + `UIAction`）展示 `root.hiddenPageSwitcher`，搜索展开时速隐、被 `( 🎛 )` 接管尾位，收起时 `( 🎛 )` 并回胶囊并重新显示切换按钮。
+  - **UI 测试对齐**：`SearchTopBarUITests` 的 `testSearchButtonSplitsSortMenuClearKeepsFieldAndEmptyBlurCollapses` 验证展开后右上角为 `search.filters.menu`（位于输入框右侧且无 `search.top.cancel`）、展开态打开排序菜单切档后不误收起、`search.top.clear` 清空后保持展开，以及空输入失焦提交后恢复静息态；`testHiddenSearchPageKeepsSwitcherAndMorphsSearchBar` 同步覆盖隐藏入口下排序分裂与空白收起还原。
+- 已验证：
+  - **模拟器截图与交互验证（`search-sort-out`，`iPhone 18 Pro Max` / iOS `27.0` 模拟器 `Debug`）**：确认 `[🔍 | 🎛]` 分裂为 `[ 🔍 搜索视频 ]  ( 🎛 )` 后图标居中、间距协调，隐藏页切换入搜索展开后由 `( 🎛 )` 独立占尾位并隐藏切换菜单。
+  - **最终代码定稿后定向单测 + UI 回归通过（`26` 项单测 + `8` 项 UI 测试全部通过，0 失败）**：`FeedChromeTitleStateTests`（5/5）、`HomeFeedModeSwitchTests`（3/3）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）；`SearchTopBarUITests`（4/4：`testTitleAndGlassButtonsPresent`、`testSearchButtonSplitsSortMenuClearKeepsFieldAndEmptyBlurCollapses`、`testSettingsButtonOpensSortMenu`、`testHiddenSearchPageKeepsSwitcherAndMorphsSearchBar`）；`RootTabScrollUITests` 抽样 3 项隐藏页回归（3/3）；`SearchScrollRetentionUITests/testSearchFiltersMenuShowsOnlySortOrders`（1/1）。
+  - 注：更早前全量 `biliTests` 运行曾出现 4 个与本轮改动无关的评论/gRPC 测试受沙盒代理 `127.0.0.1:7897` 影响失败（本次未重复全量跑离线 gRPC 用例）。
+  - **真机编译签名与覆盖安装（2026-11-16 19:26）**：通过 `python3 Scripts/build-cache.py run -- xcodebuild` 使用共享 `build/DerivedData/Xcode-27` 缓存及本地 scratch `device-signing.xcconfig` 编出最新 Release（`iphoneos`）包；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `7fa4123190d59ee600639a0e1161f72f03b5c9c3bb5e384b66cd8682edb3e1ab`。已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`，`iPhone 18 Pro Max`），`devicectl device info apps` 核对为 `cilicili 1.1.4 (202)`，并启动确认运行进程 PID `47391`。
+- 待办与真机待验收：
+  - 真机视觉与触感验收：在 `RCe2027` 上目视确认 `[🔍 | 🎛]` 分裂为 `[ 🔍 输入框 ]  ( 🎛 )` 的液态桥接观感、结果页直接点 `( 🎛 )` 切换排序、点 `⊗` 清空回热搜以及收起键盘后自动缩回静息态的流畅度。
+  - 后续安排：由用户决定是否将本轮搜索顶栏与 `RootTabView` 改动提交至本地 `main`、是否对「我的」页右上搜索评估同款形变，以及将本地 `main` 推送远端。
+
+## 2026-11-16 修复手动点按全屏时视频画面左下漂移（Issue #66 / #70）与真机安装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（含前序搜索顶栏改动及本轮全屏漂移修复，均未提交或推送；沿用 1.1.4 / Build 202 覆盖安装）。本轮改动文件：`AppOrientationLock.swift`、`PlaybackRotationCoordinator.swift`、`VideoDetailRotationBridgeViewController.swift`、`VideoDetailSwiftUIContainer.swift`、`VideoDetailShellSurfaceHost.swift`、`VideoSurfaceView.swift`，新增测试于 `PlaybackDetailSharedLayoutTests.swift`、`VideoDetailSurfaceHostTests.swift`。
+- 已实现方案：
+  - **延后横屏系统铬隐藏并与方向转场对齐（`VideoDetailRotationBridgeViewController` + `AppOrientationLock` + `PlaybackRotationCoordinator`）**：针对横屏视频手动点按全屏，不再在 `requestGeometryUpdate` 之前同步触发 `setImmersivePlayback(true)`，改为在 `viewWillTransition` 中统一切换（竖屏伪全屏保持立即进入沉浸态），避免竖屏状态下提前隐藏 `.bottomBar` 与状态栏引发异步 `safeAreaInsets`/SwiftUI 布局和动画与 UIKit 旋转转场并发冲突；补充 `effectiveGeometry.interfaceOrientation` 已目标态时的同步兜底，并通过新增可选 `onError` 回调在 `requestGeometryUpdate` 被系统拒绝时调用 `reconcileOrientationStateAfterRejectedRequest()` 恢复状态。
+  - **禁用全屏/转场期 SwiftUI 播放器隐式动画并节流安全区同步（`VideoDetailSwiftUIContainer`）**：在 `VideoDetailInteractivePlayerLayer` 为播放器层和加载占位配置 `.transaction` 禁用 `rotationCoordinator.isTransitioning || layout.usesFullscreenLayout` 期间的隐式动画；在 `viewDidLayoutSubviews()` 中于转场期跳过即时更新，改由 `scheduleRootSafeAreaInsetsSyncIfNeeded()` 及 `finishSystemRotation()` / `recoverStableLayout()` 统一对齐。
+  - **全屏托管层布局前主动剥离残余动画与纠正残留尺寸（`VideoDetailShellSurfaceHost` + `VideoSurfaceView`）**：以 `reconcileFullscreenBoundsIfNeeded()` 替代原仅检查对调窗口尺寸的 `reconcileSwappedFullscreenBounds()`，在 `super.layoutSubviews()` 之前覆盖对调尺寸、`isPortraitFullscreen` 以及 `isLandscape && windowSize.width > windowSize.height` 场景，检查 ±0.5pt `frame` 偏差与层动画键，递归清理 CoreAnimation 动画并无动画重置 `frame` 后触发 `surfaceHostView.refreshLayoutImmediately()`，同时在 `$isSystemRotationTransitioning` 结束回调追加 `await Task.yield()` 二次校准；`VideoSurfaceContainerView.synchronizePlayerLayerFrames()` 同步对 `drawableView.layer` 与 `AVPlayerLayer` 清理残留层动画（`removeAllAnimations()`）、校准 `frame`/`position` 并调用 `playerLayer.layoutIfNeeded()`。
+- 已验证（实现与模拟器验证，区别于真机待验收）：
+  - **回归用例新增与空白检查**：`PlaybackDetailSharedLayoutTests` 新增 `testManualFullscreenDefersSystemChromeHidingUntilSystemTransitionBegins`；`VideoDetailSurfaceHostTests` 新增 `testShellHostReconcilesShiftedAndInlineResidueBoundsInLandscapeFullscreen`、`testSurfaceContainerStripsLayerAnimationsWhenResyncingPlayerLayerFrame`。`git diff --check` 退出码 `0`。
+  - **指定模拟器验证（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`）**：
+    - `PlaybackDetailSharedLayoutTests`（46/46）与 `VideoDetailSurfaceHostTests`（10/10），合计 `56/56` 通过、0 失败（`task-949`）。
+    - `LivePlaybackExperimentsTests`（17/17）、`VideoDetailInteractionReliabilityTests`（5/5）、`VideoDetailPlaybackDiagnosticsTests`（6/6），合计 `28` 项单测通过、0 失败（注：`VideoDetailTransitionStabilityExperimentTests` 因类名与文件名不一致在该筛选下执行 `0` 项，不计入通过）；`LiveFullscreenFlowUITests`（3/3）与 `VideoDetailFlowUITests`（5/5，包含 `testVideoDetailPlayerFullscreenRoundTripKeepsDetailShellMounted`、`testVideoDetailRapidRotationPublishesStableIdentityDiagnostics`、`testVideoDetailRotationDuringInitialBufferingRecoversPlaybackSurface`、`testVideoDetailExitDuringRotationReturnsToHomeWithoutRebuildingPlayer`、`testCommentsUIKitListStableAfterFullscreenRoundTrip`），合计 `8` 项 UI 测试通过、0 失败（`task-960`）。
+  - **本地 Release 编译、签名与真机安装（`task-965`）**：通过 `python3 Scripts/build-cache.py run -- xcodebuild` 复用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 完成 Release（`iphoneos`）构建（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `6566ad6e6d433bb01b3528dda9402a2e2ce069bd6ada7caa934a232112ae0f33`；已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）并启动 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）上实测竖屏播放页手动点击全屏、连续进出全屏、起播缓冲中点全屏及与重力自动横屏对比，确认画面左下偏移/移出屏幕问题是否消除。
+  - **后续安排**：当前修复改动与前序搜索顶栏改动均暂留工作区未提交；是否整理提交至本地 `main`、回复或处理 GitHub Issue #66 / #70，待用户真机确认后决定。
+
+## 2026-11-16 修复横屏退竖屏完成后首帧画面偏上问题与真机重装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（在前序手动全屏漂移修复基础上继续调整 `VideoDetailSwiftUIContainer.swift`、`VideoDetailRotationBridgeViewController.swift`、`VideoDetailShellSurfaceHost.swift`，新增单测/UI 断言于 `PlaybackDetailSharedLayoutTests.swift`、`VideoDetailFlowUITests.swift`，仍沿用 1.1.4 / Build 202 本地覆盖安装，未提交或推送）。
+- 根因与已实现方案：
+  - **真机复现原因**：前序在 `VideoDetailSwiftUIContainerViewController.viewDidLayoutSubviews()` 加入 `guard !rotationCoordinator.isTransitioning` 后，横屏期间已把 `rootSafeAreaInsets.top` 覆写为横屏的 `0`；退回竖屏时，在系统转场动画期间以及完成回调的 `recoverySettleDelay (0.10s) + 34ms + DispatchQueue.main.async` 期间 `rootSafeAreaInsets.top` 仍滞留为 `0`，导致转场刚完成时竖屏视频与简介区同步顶到状态栏与灵动岛下方（`y = 0`），随后才异步回落。
+  - **保留嵌入态安全区并在退回竖屏首帧同步生效（`VideoDetailSwiftUIContainer`）**：在 `VideoDetailSwiftUIContainerModel` 记录 `lastEmbeddedSafeAreaInsets`，仅在非全屏竖屏容器（`!layoutLandscape && !isPortraitFullscreen && isPortraitContainer`）写入 `rootSafeAreaInsets` 与 `contentState.bottomInset`（并用 `withTransaction` 禁用 `@Published` 更新隐式动画），横屏及竖屏伪全屏不再覆写顶部安全区；转场回竖屏 `beginSystemRotation(toLandscape: false)` 首帧即复用保留的嵌入安全区，过渡期内若状态栏尚未就绪产生瞬时 `top <= 0` 不予覆盖，且保留冷启动横屏直退竖屏时立即接收 `top > 0` 安全区；在 `finishSystemRotation()` / `recoverStableLayout()` 通过 `syncRootSafeAreaInsetsImmediatelyIfNeeded()` 当场完成布局与安全区对齐，同时通过共享 `disablingRotationTransaction(_:)` 修饰符一并覆盖黑色背景层、`VideoDetailShellCollapsedBar` 与 `VideoDetailShellContentView`。
+  - **状态栏先于布局更新与全屏尺寸校准收窄（`VideoDetailRotationBridgeViewController` + `VideoDetailShellSurfaceHost`）**：`viewWillTransition` 的 `alongsideTransition` 中先触发 `setNeedsStatusBarAppearanceUpdate()` 等系统栏刷新再执行 `contentController.view.layoutIfNeeded()`；`reconcileFullscreenBoundsIfNeeded()` 新增 `guard rotationCoordinator.isLandscape || rotationCoordinator.isPortraitFullscreen`，防止嵌入竖屏态被误触全屏拉伸逻辑。
+- 已验证（实现与模拟器验证，区别于真机待验收）：
+  - **回归用例新增**：`PlaybackDetailSharedLayoutTests` 新增 `testLandscapeFullscreenPreservesPortraitSafeAreaInsetsAcrossRotationExit`（覆盖横屏期间保留竖屏顶栏安全区、`.preparingPortrait` 首帧 `minY == 62`、转场瞬时 `top = 0` 免疫及冷启动横屏退竖屏场景）；`VideoDetailFlowUITests/testVideoDetailPlayerFullscreenRoundTripKeepsDetailShellMounted` 新增退回竖屏瞬时检查 `ui.videoDetail.playerFrame` 的 `minY` 与退场前一致（±2pt）。
+  - **指定模拟器验证（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`）**：
+    - 最终代码定稿后单元测试（`task-1079`）：`PlaybackDetailSharedLayoutTests`（47/47）、`VideoDetailSurfaceHostTests`（10/10）、`VideoDetailInteractionReliabilityTests`（5/5）、`VideoDetailPlaybackDiagnosticsTests`（6/6），合计 **`68/68`** 通过、0 失败（`** TEST SUCCEEDED **`）。
+    - UI 回归（`task-1095` + `task-1105`）：`VideoDetailFlowUITests` 定向 5 项全部通过（含 `testVideoDetailPlayerFullscreenRoundTripKeepsDetailShellMounted`、`testVideoDetailRapidRotationPublishesStableIdentityDiagnostics`、`testVideoDetailRotationDuringInitialBufferingRecoversPlaybackSurface`、`testVideoDetailExitDuringRotationReturnsToHomeWithoutRebuildingPlayer`、`testCommentsUIKitListStableAfterFullscreenRoundTrip`）；`LiveFullscreenFlowUITests` 初轮 `testPlaybackFailureRetriesSuccessfully` 因模拟器键盘遮挡命中点 `{-1, -1}` 失败 1 次后，独立复跑（`task-1105`）**3/3** 全部通过（`** TEST SUCCEEDED **`）。
+  - **本地 Release 编译、签名与真机安装（`task-1110`）**：通过 `python3 Scripts/build-cache.py run -- xcodebuild` 复用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建成功；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `50f88ff30de6b2b474531369c276ae72d16ceebd1e1b5058453cd60295ecd267`；已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）并启动 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在刚重装的 `RCe2027`（1.1.4 / Build 202）上反复实测竖屏与横屏之间相互切换（手动点击全屏及重力自动旋转），确认退出全屏回到竖屏瞬间画面不再顶到状态栏后才下移，且进全屏也不出现左下漂移。
+  - **后续安排**：待用户真机确认横竖屏体验均稳定后，由用户决定是否提交至本地 `main` 或跟进 GitHub Issue #66 / #70。
+
+## 2026-11-16 竖屏视频全屏控件与弹幕收敛至居中 9:16 区域及真机安装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（沿用 1.1.4 / Build 202 本地覆盖安装，未提交或推送；本轮新增修改：`MetalDanmakuStageTransition.swift`、`DanmakuRendererHostView.swift`、`DanmakuKitOverlayView.swift`、`DanmakuSynchronizedLayerView.swift`、`VideoDetailDanmakuOverlay.swift`、`VideoDetailPlayerSurfaceDanmakuLayer.swift`、`VideoDetailPlayerSurfaceSubtitleLayer.swift`、`BiliPlayerSurfaceOverlayLayer.swift`、`VideoDetailShellSurfaceHost.swift`，新增测试于 `MetalDanmakuStageTransitionTests.swift`、`VideoDetailSurfaceHostTests.swift`）。
+- 根因与已实现方案：
+  - **真机截图问题**：此前 `VideoDetailShellSurfaceHost.fullscreenMode` 在竖屏全屏（`isPortraitFullscreen == true`）时仍返回 `nil`（使 `configuration.isFullscreenActive == false`），导致 `visibleVideoInsets(in:)` 直接返回全 0，底部控制条和上下渐变遮罩、字幕均落入上下黑边；同时 `DanmakuKitOverlayView` 与 `DanmakuSynchronizedLayerView` 未使用 `DanmakuVideoViewport.scrollingCanvas` 裁剪纵向区域，致使默认开启的 `AVSynchronizedLayer` 等弹幕飞入顶部时间/灵动岛黑边。
+  - **竖屏全屏可视区统一（`DanmakuVideoViewport` + `VideoDetailShellSurfaceHost` + 控件/字幕/提示层）**：`fullscreenMode` 在竖屏全屏返回 `.portrait`；提取共享 `DanmakuVideoViewport.fullscreenContentInsets(in:videoAspectRatio:isPortraitFullscreen:)`，在竖屏全屏对 9:16、3:4 等视频按视频渲染区缩进，对更细长的竖屏比例也保证上下至少收拢到居中 9:16 舒适区；控件浮层、`PlayerControlEdgeScrimLayer`、CC 字幕层（`VideoDetailPlayerSurfaceSubtitleLayer`）以及缓冲/倍速提示（`BiliPlayerSurfaceOverlayLayer`）统一叠加该边距；横屏自定义时钟/电量与控制栏字号规则保持不变。
+  - **三大弹幕引擎画布一致性（`DanmakuKit` + `AVSynchronizedLayer` + `Metal`）**：提取共享 `DanmakuVideoViewport.insetContentFrame(in:aspectRatio:topInset:bottomInset:settings:)`，让 `DanmakuKitOverlayView`（经 `DanmakuRendererHostView` 传入 `videoAspectRatio`）与 `DanmakuSynchronizedLayerView` 同步遵循 `scrollingCanvas` 纵向视频边界（与 `MetalDanmakuView` 一致），并在竖屏全屏为 `VideoDetailDanmakuOverlay` 叠加 8pt 顶边留白及超细长竖屏的居中 9:16 兜底余量，避免弹幕进入上下黑边或压住底部控件。
+- 已验证（实现与模拟器验证，区别于真机待验收）：
+  - **指定模拟器测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`task-1276`）**：`DanmakuKitUpdateCostTests`（2/2）、`DanmakuRendererDiagnosticsTests`（9/9）、`DanmakuSynchronizedLayerTests`（17/17）、`MetalDanmakuIntegrationTests`（16/16）、`MetalDanmakuStageTransitionTests`（9/9，含居中 9:16 边距与三引擎画布用例）、`PlaybackDetailSharedLayoutTests`（47/47）、`VideoDetailSurfaceHostTests`（11/11，含 `testPortraitFullscreenConstrainsControlsAndDanmakuToCenteredNineSixteenArea`），共计 **`111/111`** 项单元测试全部通过、0 失败。
+  - **本地 Release 编译、签名与真机安装（`task-1256`）**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `92cd66187337df73fab37ef819bfd4670efe6e689a6e01a27ec514d6e375637e`；已覆盖安装并启动至 `RCe2027`（UDID `00008160-001C311028434036`）上的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）上对 9:16 等竖屏视频点击全屏，确认底部进度条与控制按钮、弹幕、字幕以及缓冲/长按倍速提示均落入屏幕居中的 9:16 画面区域内，不溢出到上下纯黑边或顶部状态栏；同时继续确认前序横屏手动全屏及横屏退竖屏过渡顺滑稳定。
+  - **后续安排**：全部工作区改动均留在本地 `main`（`3dae352`）未提交/未推送，待用户真机确认后决定何时整理提交。
+
+## 2026-11-16 我的页搜索按钮对齐官方液态玻璃变形动画及真机安装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（沿用 1.1.4 / Build 202 本地覆盖安装，未提交或推送；本轮新增 `RootMorphSearchTopBar.swift`，修改 `SearchTopBar.swift`、`MineTopBar.swift`、`MineView.swift`、`RootTabView.swift` 与 `MineTopBarUITests.swift`）。
+- 已实现方案：
+  - **抽取共享变形顶栏（`RootMorphSearchTopBar`）**：从搜索页提炼公共组件 `RootMorphSearchTopBar` / `RootMorphSearchTopBarConfiguration` / `RootMorphSearchQueryField` / `RootHiddenPageSwitcherButton`，统一封装 `.safeAreaInset`、`GlassEffectContainer(spacing: 10)`、`.glassEffect(.regular.interactive(), in: Capsule())`、`.glassEffectID`、`.smooth(duration: 0.4)` 与非对称转场、非根页面导航栏回退（`pushedMorphControl`）及空提交/空失焦自动收起；`SearchTopBar`（`SearchMorphTopBar`）精简为仅传入排序菜单或关闭按钮的轻量封装。
+  - **迁移我的页（`MineTopBar` + `MineView` + `RootTabView`）**：我的页改用同一套官方液态玻璃变形顶栏；未搜索态显示 `[ 搜索 ]` 玻璃圆钮，点击后平滑变形展开搜索输入框，右侧配套独立圆形取消按钮；`RootTabView` 为 `.mine` 同步注入 `rootHiddenPageSwitcher` 并在推入子页面时自动收起我的页搜索焦点。
+- 已验证（实现与模拟器验证，区别于真机待验收）：
+  - **指定模拟器测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`）**：
+    - 单元测试 **`25/25`** 全部通过：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+    - UI 测试：`MineTopBarUITests`（4/4）与 `SearchTopBarUITests`（4/4）全部通过；`RootTabScrollUITests` 2/3 通过（我的页隐藏入口切换与返回用例均通过，`testRootTabReselectionScrollsToTopWithoutRefresh` 在 `RootTabScrollUITests.swift:286` 因 `rootTabScroll` 夹具仍断言搜索页旧底部 `排序方式` 按钮而失败，属既有遗留）。
+    - 已对模拟器 `mineTopBar` 夹具首帧渲染截图目检，确认“我的”标题、右上角搜索圆钮与首张卡片间距自然对齐。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `7caa31d917c9da83968f02e9568315cccaa992351c1b75d528647fc8c3512923`；已覆盖安装并启动至 `RCe2027`（UDID `00008160-001C311028434036`）上的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）打开“我的”页面，点击右上角搜索按钮检查液态玻璃展开与关闭/清空收起动画是否与搜索页一致顺滑；若隐藏“我的”底栏入口，一并确认顶栏页面切换按钮布局与动画协调。
+  - **后续安排**：全部工作区改动均留在本地 `main`（`3dae352`）未提交/未推送，待用户真机确认后决定何时整理提交。
+
+## 2026-11-16 修复下滑隐藏标题后开关搜索框再次显现问题及真机安装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（沿用 1.1.4 / Build 202 本地覆盖安装，未提交或推送；本轮修改：`RootMorphSearchTopBar.swift`、`MineTopBarUITests.swift`）。
+- 根因与已实现方案：
+  - **问题根因**：`RootMorphSearchTopBar.collapseEmptySearch()` 在取消或清空失焦收起搜索框时强行调用了 `titleState.reset()`，导致即使下方页面仍停留在下滑后的位置，标题滚动进度也被清零重新滑回显示；此外外层 `HStack` 上的 `.accessibilityHidden(isSearching)` 会在非搜索态覆盖子视图的无障碍隐藏状态。
+  - **已实现修复**：移除 `collapseEmptySearch()` 中的 `titleState.reset()`，使标题显隐严格保持由 `onScrollGeometryChange` 驱动（若收起后列表确实回到顶部再自然恢复显示）；并在 `titleState.progress > 0.9` 时对齐 `DynamicTopBar` 条件移除已完全透明的 `FeedToolbarTitle`（`Mine` 与 `Search` 共用此修复）。在 `MineTopBarUITests.testScrolledTitleStaysHiddenAfterSearchCancel` 新增下滑隐藏标题 → 点击搜索并点取消 / 点击内容区失焦收起 → 确认标题维持隐藏 → 滑回顶部恢复显示的回归测试。
+- 已验证（实现与模拟器验证，区别于真机待验收）：
+  - **指定模拟器测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`-parallel-testing-enabled NO`）**：
+    - 单元测试 **`25/25`** 全部通过：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+    - UI 测试 **`9/9`** 全部通过：`MineTopBarUITests`（5/5，含新增 `testScrolledTitleStaysHiddenAfterSearchCancel`）与 `SearchTopBarUITests`（4/4）。
+    - 已导出并目检 `mine-scrolled-after-cancel` 截图，确认在“日常体验 / 关于”等下滑位置关闭搜索后左上角“我的”标题保持隐藏。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `c3775dc0f71f3231919d4f19b971359c85ef6f3575ceba0de7569f77fefec2d9`；已覆盖安装并启动至 `RCe2027`（UDID `00008160-001C311028434036`）上的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）打开“我的”页面先向下滑动隐藏“我的”标题，再点右上角搜索按钮并点击取消或点空白处收起，确认标题保持隐藏、滑回顶部后正常恢复出现（搜索页发现页下滑后同样适用）。
+  - **后续安排**：全部工作区改动均留在本地 `main`（`3dae352`）未提交/未推送，待用户真机确认后决定何时整理提交。
+
+## 2026-11-16 视频页退出自动开启系统画中画小窗（应用内/跨应用）及真机安装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（沿用 1.1.4 / Build 202 本地覆盖安装，未提交或推送；本轮新增 `SystemMiniPlayerCoordinator.swift` 与 `SystemMiniPlayerCoordinatorTests.swift`，修改 `LibraryStore.swift`、`LibrarySettingsSnapshots.swift`、`PlayerStateViewModel.swift`、`DirectUIKitPlayerSurfaceHostView.swift`、`VideoDetailShellSurfaceHost.swift`、`VideoDetailPlaybackNavigationState.swift`、`VideoDetailPlaybackNavigationStopActions.swift`、`VideoDetailPlayerStartupInstallActions.swift`、`VideoDetailViewModelHolder.swift`、`VideoDetailViewModelLoadResumeActions.swift`、`VideoDetailViewCloseActions.swift`、`VideoDetailRotationBridgeViewController.swift`、`RootTabViewActions.swift`、`LiveRoomViewModelHolder.swift` 与 `VideoDetailFlowUITests.swift`）。
+- 已实现方案：
+  - **播放器内设置开关（默认关闭）**：在 `LibraryStore`（`cc.bili.playback.autoPictureInPictureOnExitEnabled.v1`）与 `VideoDetailRuntimeSettingsStore` 新增 `autoPictureInPictureOnExitEnabled` 与 `allowsPictureInPictureController`，仅接入播放器竖屏“更多”菜单与横屏设置面板（紧邻现有“画中画播放”，命名为“退出时小窗播放”，标识 `ui.player.autoPictureInPictureOnExit`，未加入“我的 → 播放偏好”）。同时将底层 `AVPictureInPictureController` 配置启用与“切出 App 自动内联画中画（`pictureInPictureEnabled`）”解耦，使“退出时小窗播放”可独立生效。
+  - **退出时系统画中画托管（`SystemMiniPlayerCoordinator`）**：支持视频与番剧 `VideoDetailView`（不含直播间与“听视频”纯音频模式）。当开关开启且视频正在播放时，点击返回或完成左缘右滑返回退出详情页时，`VideoDetailRotationBridgeViewController`（校验祖先导航控制器链以区分真正的退栈与顶部覆盖压栈）与 `VideoDetailViewCloseActions` 触发 `handoffToSystemMiniPlayerIfEligible()`：保留原 `PlayerStateViewModel` 并在详情页滑出帧冻结尾帧防黑屏，同时将 `AVPlayerLayer` 无断流挂载至主窗口底层的 `SystemMiniPlayerStagingView` 并拉起 iOS 系统画中画（`startPictureInPictureForMiniPlayer()`）；暂停状态退出或向详情页顶部压入相关视频/UP主页面则不触发小窗，保持原暂停/释放行为。
+  - **还原详情页与停播清理**：点系统画中画还原按钮（经 `PictureInPictureRestoreCoordinator`）或从站内再次点进同一视频时，`VideoDetailViewModelHolder` 同步接管运行中的 `PlayerStateViewModel` 并恢复评论、弹幕、推荐及元信息加载；点系统画中画关闭按钮或启动失败、打开不同视频或进入直播间时，自动上报观看进度并停止释放小窗播放器，避免后台偷跑音频。
+- 已验证（实现与模拟器验证，区别于真机待验收）：
+  - **指定模拟器测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`-parallel-testing-enabled NO`）**：
+    - 单元测试 **`85/85`** 全部通过：`SystemMiniPlayerCoordinatorTests`（9/9，含开关默认关闭/独立启用、播放中退出托管、暂停退出不触发、关联视频压栈不触发、听视频不触发、同视频接管还原、不同视频停旧小窗、用户关闭及启动失败清理）、`PlayerFormalPlaybackConfigurationTests`（65/65）、`VideoDetailSurfaceHostTests`（11/11）。
+    - UI 测试 **`2/2`** 全部通过：`VideoDetailFlowUITests/testVideoDetailMoreControlsToggleAutoPictureInPictureOnExit` 与 `testVideoDetailMoreControlsToggleBackgroundPlayback`。
+    - 说明：iOS 实际系统画中画弹窗渲染、角标缩放与右滑松手衔接手感仍以真机验证为准（`SystemMiniPlayerCoordinatorTests` 通过注入桩覆盖了状态机与协调器路径）。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `14fa732a4233d39ba6465bbb6bf1f049df5ee5f76e79096625d88d3a2f2be267`；已覆盖安装并启动至 `RCe2027`（UDID `00008160-001C311028434036`）上的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）打开任意视频或番剧，在播放器“更多 / 设置”打开 **“退出时小窗播放”**：
+    1. 播放中点击左上角返回或右滑返回，确认自动弹出系统画中画小窗且画面音频连续不断流、详情页滑出无黑闪；
+    2. 暂停后再退出，确认直接关闭不弹小窗；点击相关视频或 UP 主头像，确认不误弹小窗；
+    3. 点小窗展开按钮（`⤢`）确认秒回详情页无缝续播；点 `✕` 关闭小窗或打开新视频/直播间，确认旧小窗干净停播无残留声音。
+  - **后续安排**：全部工作区改动均留在本地 `main`（`3dae352`）未提交/未推送，待用户真机确认后决定何时整理提交。
+
+## 2026-11-17 修复右滑返回未触发应用内画中画 & 收拢播放设置二级菜单并真机安装
+
+- 分支与源码基线：`main` / `3dae352` + 工作区未提交改动（沿用 1.1.4 / Build 202 本地覆盖安装，未提交或推送；本轮修改 `PlayerStateViewModel.swift`、`VideoDetailViewModel.swift`、`VideoDetailPlaybackNavigationStopActions.swift`、`VideoDetailRotationBridgeViewController.swift`、`VideoDetailShellSurfaceRepresentable.swift`、`VideoDetailShellSurfaceHost.swift`、`SystemMiniPlayerCoordinatorTests.swift` 与 `VideoDetailFlowUITests.swift`）。
+- 已实现方案：
+  - **修复右滑返回未触发应用内画中画（交互退栈与拆解竞争）**：
+    - 在 `VideoDetailViewModel` 新增 `isRouteRemovedFromNavigationStack`，由 `VideoDetailRotationBridgeViewController` 沿导航栈祖先链校验页面是否正被推出（`isRemovedOrLeavingNavigationHierarchy`）；即使跳过返回按钮（直接左缘或详情页内右滑），`handoffToSystemMiniPlayerIfEligible()` 在 `stopPlaybackForNavigation()` 中也会识别为真实退栈退出并触发小窗接管，而压入关联视频或 UP 主主页等顶部覆盖场景保持返回 `false`、不误触发小窗。
+    - `VideoDetailRotationBridgeViewController` 在 `viewWillDisappear` 预先捕获 `preferredWindow` 与播放器在窗口坐标系的几何位置，并在 `transitionCoordinator` 完成回调及 `VideoDetailShellSurfaceRepresentable.dismantleUIView`（经 `prepareForMiniPlayerExitIfDismantled()`）均安全执行交接，消除交互转场结束前后 `Task.yield()` 导致的窗口置空与播放器提前拆解；若用户中途松手取消右滑，回调会自动清除退出标记。
+    - `PlayerStateViewModel.startPictureInPictureForMiniPlayer()` 在 `pictureInPictureMiniPlayerStartTimeoutTask` 内增加 90ms / 180ms 延迟补拉，确保转场收尾后 `AVPictureInPictureController` 可稳定进入系统画中画。
+  - **重组播放器“画中画&后台播放”二级设置页与文案更名**：
+    - 在竖屏播放器“更多”面板与横屏设置面板一级页中，将原有三项独立开关收敛为统一二级入口 **“画中画&后台播放”**（`ui.player.pipAndBackgroundMenu`）。
+    - 二级页（`SurfaceOnlyPictureInPictureAndBackgroundPage`）按顺序收纳三项开关：**“应用外画中画播放”**（原“画中画播放”，`ui.player.pictureInPicture`）、**“应用内画中画播放”**（原“退出时小窗播放”，`ui.player.autoPictureInPictureOnExit`）与 **“后台播放”**（`ui.player.backgroundPlayback`）。
+- 已验证（实现与模拟器验证，区别于真机待验收）：
+  - **指定模拟器测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`-parallel-testing-enabled NO`）**：
+    - 单元测试 **`87/87`** 全部通过（在全部 `bili/` 与 `biliTests/` 改动完成后运行）：`SystemMiniPlayerCoordinatorTests`（11/11，新增右滑退栈直接触发小窗 `testSwipeBackRouteRemovalWithoutExplicitMarkTriggersMiniPlayer` 与覆盖压栈不触发 `testCoveredRoutePushWithRouteStillInNavigationStackDoesNotTriggerMiniPlayer`）、`PlayerFormalPlaybackConfigurationTests`（65/65）、`VideoDetailSurfaceHostTests`（11/11）。
+    - UI 测试 **`3/3`** 全部通过（在全部改动完成后运行）：`VideoDetailFlowUITests/testPortraitMoreControlsOpensDanmakuSettings`、`testVideoDetailMoreControlsToggleBackgroundPlayback`（验证一级菜单无散落开关，二级页存在三项更名开关并成功切换“后台播放”）与 `testVideoDetailMoreControlsToggleAutoPictureInPictureOnExit`（验证开关切换“应用内画中画播放”后收起面板并右滑退回首页不卡死）。
+    - 说明：iOS 真机交互手势结束时机与系统画中画窗口弹出仍需真机实测验收。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `93cfde373943de240cfe8d12cd047d6b29da30594c5d9ec742048945ee87e01e`；已覆盖安装并启动至 `RCe2027`（UDID `00008160-001C311028434036`）上的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）实测：
+    1. 打开视频详情页的播放器“更多”或横屏设置，确认一级列表展示 **“画中画&后台播放”**，点入二级页后三项依次为 **“应用外画中画播放”**、**“应用内画中画播放”**、**“后台播放”**；
+    2. 打开 **“应用内画中画播放”**，视频正常播放时分别测试 **左下角返回键**、**屏幕左边缘右滑返回** 与 **详情内容区右滑返回**，确认均会弹出系统小窗继续播放，且中途右滑到一半松手取消时不误弹小窗；
+    3. 点击相关推荐或 UP 主头像进入下级页面，确认不误弹小窗。
+  - **本地提交与 Xcode 26 CI 同步检查**：
+    - 已将全部代码与测试改动提交至本地 `main`：`d2a4d58`（`feat(player,search,mine): add in-app PiP mini player, morph search top bar and playback/rotation fixes`，44 files changed）。
+    - 提交前在 `iPhone 18 Pro Max`（`iOS 27.0`）汇总复测全改动模块单元测试 **`168/168`** 通过（`FeedChromeTitleStateTests` 5/5、`MetalDanmakuStageTransitionTests` 9/9、`MineSearchCatalogTests` 2/2、`NavigationHistoryTests` 11/11、`PlaybackDetailSharedLayoutTests` 47/47、`PlayerFormalPlaybackConfigurationTests` 65/65、`SearchFeatureTests` 3/3、`SearchViewModelProgressiveLoadingTests` 4/4、`SystemMiniPlayerCoordinatorTests` 11/11、`VideoDetailSurfaceHostTests` 11/11）；`Scripts/tests` CI 脚本自检 `19/19` 通过。
+    - 确认 `.github/workflows/ci.yml`、`xcode-test-suite.yml` 与 `unsigned-ipa.yml` 均配置为 `runs-on: macos-26` 并通过 `Scripts/ci-environment.py select-xcode` 选择 Xcode 26.5+（`XCODE_VERSION_MAJOR=26`）编译；核对 Xcode SDK 接口及 `bili.xcodeproj/project.pbxproj`，确认未引入 iOS 27 专属 API（液态玻璃等接口均为 `@available(iOS 26.0, *)`）。
+    - 随本状态记录提交一并推送 `main` 至远端 `origin/main` 触发 GitHub Actions Xcode 26 云端构建与回归。
