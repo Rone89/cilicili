@@ -24,7 +24,10 @@ final class RootHomeViewModelHolder: ObservableObject {
 }
 
 extension View {
-    func videoDestinations(usesTransparentNavigationBar: Bool = false) -> some View {
+    func videoDestinations(
+        usesTransparentNavigationBar: Bool = false,
+        navigationBarColorScheme: ColorScheme? = nil
+    ) -> some View {
         navigationDestination(for: VideoItem.self) { video in
             VideoDetailView(
                 seedVideo: video
@@ -46,6 +49,7 @@ extension View {
             UploaderView(owner: owner)
                 .navigationHistoryTitle(owner.name)
                 .toolbar(.visible, for: .navigationBar)
+                .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
         }
         .navigationDestination(for: LiveRoom.self) { room in
             LiveRoomDetailView(seedRoom: room, usesTransparentNavigationBar: usesTransparentNavigationBar)

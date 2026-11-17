@@ -209,6 +209,8 @@ struct RootTabView: View {
     ) -> some View {
         let usesTransparentPlaybackNavigationBar = [.home, .mine, .search, .live].contains(tab)
             || (tab == .dynamic && (libraryStore.visibleDynamicFeedKinds.count > 1 || showsPageSwitcher))
+        let navigationBarColorScheme = runtimeSettings.appearanceMode.preferredColorScheme
+            ?? videoContentColorScheme ?? systemColorScheme
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
                 .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
@@ -224,6 +226,7 @@ struct RootTabView: View {
                         : nil
                 )
                 .toolbarBackground(.automatic, for: .navigationBar)
+                .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
                 .navigationTitle("")
                 .navigationHistoryTitle(tab.title)
                 .toolbarTitleDisplayMode(.inline)
@@ -254,9 +257,13 @@ struct RootTabView: View {
                         sessionStore: dependencies.sessionStore,
                         api: dependencies.api
                     )
+                    .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
                     .navigationHistoryTitle(route.navigationDisplayTitle)
                 }
-                .videoDestinations(usesTransparentNavigationBar: usesTransparentPlaybackNavigationBar)
+                .videoDestinations(
+                    usesTransparentNavigationBar: usesTransparentPlaybackNavigationBar,
+                    navigationBarColorScheme: navigationBarColorScheme
+                )
                 .dynamicDetailDestinations(
                     path: detailPath,
                     api: dependencies.api
@@ -266,7 +273,8 @@ struct RootTabView: View {
             isDetailPresented: !detailPath.wrappedValue.isEmpty,
             hidesRootTabBar: visibleRootTabs.count == 1,
             onRootTabTap: selectedTab == tab ? { tabSelection.wrappedValue = showsPageSwitcher ? .home : tab } : nil,
-            capturesSelectedTabTap: tab == .search || showsPageSwitcher
+            capturesSelectedTabTap: tab == .search || showsPageSwitcher,
+            isSearchTab: tab == .search
         )
         .navigationHistoryStack(path: detailPath, rootTitle: tab.title)
         // Configure the native scrolling boundary without adding an overlay or changing safe areas.

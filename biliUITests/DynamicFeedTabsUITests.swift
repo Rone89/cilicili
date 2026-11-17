@@ -70,6 +70,10 @@ final class DynamicFeedTabsUITests: XCTestCase {
         )
         let picker = app.buttons["dynamic.feedPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
+        let topBarShot = XCTAttachment(screenshot: app.screenshot())
+        topBarShot.name = "dynamic-feed-tabs-topbar"
+        topBarShot.lifetime = .keepAlways
+        add(topBarShot)
         picker.tap()
         for title in ["全部", "投稿", "番剧", "专栏", "UP"] {
             XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3), "缺少选项 \(title)：\(app.debugDescription)")

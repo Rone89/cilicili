@@ -17,6 +17,7 @@ struct RootMineNavigationDestination: View {
             }
         }
         .toolbarVisibility(route == .accountMessages ? .automatic : .hidden, for: .tabBar)
+        .toolbarVisibility(.visible, for: .navigationBar)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .nativeBottomScrollEdgeBlurVisibility(isHidden: true)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())

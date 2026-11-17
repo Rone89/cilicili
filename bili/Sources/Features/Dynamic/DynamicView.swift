@@ -86,12 +86,9 @@ struct DynamicContentRoot: View {
                 DynamicInitialFeedContent(isLoggedIn: sessionStore.isLoggedIn)
             }
         }
+        .contentMargins(.top, usesRootNavigationToolbar ? 12 : 0, for: .scrollContent)
         .safeAreaInset(edge: .top, spacing: usesRootNavigationToolbar ? 0 : 12) {
-            if usesRootNavigationToolbar {
-                Color.clear
-                    .frame(height: 12)
-                    .accessibilityHidden(true)
-            } else {
+            if !usesRootNavigationToolbar {
                 DynamicTopBar(
                     titleState: titleState,
                     kinds: visibleFeedKinds,

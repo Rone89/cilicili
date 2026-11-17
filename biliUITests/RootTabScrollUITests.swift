@@ -18,7 +18,12 @@ final class RootTabScrollUITests: XCTestCase {
         app.buttons["我的"].tap()
         let switcher = app.buttons["root.hiddenPageSwitcher"]
         XCTAssertTrue(switcher.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.buttons["mine.search.button"].exists, app.debugDescription)
+        let mineSearchButton = app.navigationBars.buttons.matching(
+            NSPredicate(format: "label IN %@ OR identifier == %@", ["Search", "搜索", "搜索我的页功能"], "mine.search.button")
+        ).firstMatch
+        XCTAssertTrue(mineSearchButton.exists, app.debugDescription)
+        XCTAssertGreaterThan(switcher.frame.minX, mineSearchButton.frame.maxX)
+        XCTAssertLessThan(switcher.frame.width, 80)
         XCTAssertFalse(app.navigationBars.buttons["返回"].exists, app.debugDescription)
         switcher.tap()
         app.buttons["首页"].tap()
@@ -261,7 +266,13 @@ final class RootTabScrollUITests: XCTestCase {
             scroll.swipeUp()
             XCTAssertGreaterThan(offset(app), top + 50, tab)
             let requests = app.staticTexts["fixture.root.requests"].label
-            app.tabBars.buttons[tab].tap()
+            let tabButton = app.tabBars.buttons[tab]
+            if arguments.contains("--test-minimize"), tab != "搜索", tabButton.value != nil {
+                tabButton.tap()
+                XCTAssertGreaterThan(offset(app), top + 50, "First tap on minimized \(tab) should only expand the tab bar")
+                XCTAssertEqual(app.staticTexts["fixture.root.requests"].label, requests, "Expanding minimized \(tab) must not refresh")
+            }
+            tabButton.tap()
             assertOffset(top, in: app, message: tab)
             XCTAssertFalse(app.keyboards.firstMatch.exists)
             XCTAssertEqual(app.staticTexts["fixture.root.requests"].label, requests, "Reselection must not refresh \(tab)")

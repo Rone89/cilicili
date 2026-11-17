@@ -16,6 +16,10 @@ struct StatusBarStyleBridge: UIViewControllerRepresentable {
     final class Controller: UIViewController {
         private(set) var style: UIStatusBarStyle
         private(set) var isHidden: Bool
+        private var isChromeActive = false
+        private weak var styledNavigationBar: UINavigationBar?
+        private var savedBarStyle: UIBarStyle?
+        private var savedBarInterfaceStyle: UIUserInterfaceStyle?
 
         init(style: UIStatusBarStyle, isHidden: Bool) {
             self.style = style
@@ -45,16 +49,93 @@ struct StatusBarStyleBridge: UIViewControllerRepresentable {
             isHidden ? .all : []
         }
 
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            isChromeActive = true
+            applyNavigationBarStyleIfNeeded()
             requestChromeUpdate()
         }
 
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            isChromeActive = true
+            applyNavigationBarStyleIfNeeded()
+            requestChromeUpdate()
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            isChromeActive = false
+            restoreNavigationBarStyle()
+            requestChromeUpdate()
+            transitionCoordinator?.notifyWhenInteractionChanges { [weak self] context in
+                guard let self, context.isCancelled else { return }
+                self.isChromeActive = true
+                self.applyNavigationBarStyleIfNeeded()
+                self.requestChromeUpdate()
+            }
+        }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            if parent == nil {
+                isChromeActive = false
+                restoreNavigationBarStyle()
+                requestChromeUpdate()
+            } else if isChromeActive {
+                applyNavigationBarStyleIfNeeded()
+                requestChromeUpdate()
+            }
+        }
+
         func update(style: UIStatusBarStyle, isHidden: Bool) {
-            guard self.style != style || self.isHidden != isHidden else { return }
+            let changed = self.style != style || self.isHidden != isHidden
             self.style = style
             self.isHidden = isHidden
-            requestChromeUpdate()
+            if isChromeActive && style == .lightContent && !isHidden {
+                applyNavigationBarStyleIfNeeded()
+            } else {
+                restoreNavigationBarStyle()
+            }
+            if changed {
+                requestChromeUpdate()
+            }
+        }
+
+        private func applyNavigationBarStyleIfNeeded() {
+            guard isChromeActive,
+                  style == .lightContent,
+                  !isHidden,
+                  let bar = navigationController?.navigationBar,
+                  !bar.isHidden
+            else {
+                return
+            }
+            if styledNavigationBar !== bar {
+                restoreNavigationBarStyle()
+                styledNavigationBar = bar
+                savedBarStyle = bar.barStyle
+                savedBarInterfaceStyle = bar.overrideUserInterfaceStyle
+            }
+            if bar.barStyle != .black {
+                bar.barStyle = .black
+            }
+            if bar.overrideUserInterfaceStyle != .dark {
+                bar.overrideUserInterfaceStyle = .dark
+            }
+        }
+
+        private func restoreNavigationBarStyle() {
+            guard let bar = styledNavigationBar else { return }
+            if let savedBarStyle {
+                bar.barStyle = savedBarStyle
+            }
+            if let savedBarInterfaceStyle {
+                bar.overrideUserInterfaceStyle = savedBarInterfaceStyle
+            }
+            styledNavigationBar = nil
+            savedBarStyle = nil
+            savedBarInterfaceStyle = nil
         }
 
         private func requestChromeUpdate() {

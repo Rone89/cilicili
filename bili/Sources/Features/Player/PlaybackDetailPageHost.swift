@@ -39,6 +39,7 @@ struct PlaybackDetailPageHost<Content: View>: View {
     let performanceContext: PlaybackDetailPerformanceContext?
     let lifecycleActions: PlaybackDetailPageLifecycleActions
     let content: () -> Content
+    @State private var isStatusBarContrastActive = false
 
     init(
         hidesSystemChrome: Binding<Bool>,
@@ -74,7 +75,12 @@ struct PlaybackDetailPageHost<Content: View>: View {
                 isHidden: hidesSystemChrome,
                 statusBarStyle: statusBarStyle
             )
+            .preference(
+                key: VideoDetailStatusBarContrastPreferenceKey.self,
+                value: statusBarStyle == .lightContent && isStatusBarContrastActive
+            )
             .onAppear {
+                isStatusBarContrastActive = true
                 if let performanceContext {
                     PlaybackDetailPerformanceMonitor.shared.begin(performanceContext)
                     PlaybackDetailPerformanceMonitor.shared.mark(.pageAppeared, context: performanceContext)
@@ -85,6 +91,7 @@ struct PlaybackDetailPageHost<Content: View>: View {
                 lifecycleActions.handleScenePhaseChanged(phase)
             }
             .onDisappear {
+                isStatusBarContrastActive = false
                 lifecycleActions.handleDisappear()
                 if let performanceContext {
                     PlaybackDetailPerformanceMonitor.shared.end(performanceContext)

@@ -39,9 +39,7 @@ struct HomeView: View {
             }
         }
         .environment(\.feedChromeTitleState, titleState)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: 12).accessibilityHidden(true)
-        }
+        .contentMargins(.top, 12, for: .scrollContent)
         .toolbar {
             HomeTopBar(
                 selection: showsLiveFeed ? .live : .feed(viewModel.mode),

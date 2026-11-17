@@ -10,7 +10,6 @@ struct SearchView: View {
     var isSearchFocused: FocusState<Bool>.Binding
     let onSubmit: () -> Void
     @State private var isSearching = false
-    @State private var containerWidth: CGFloat = 0
     @StateObject private var titleState = FeedChromeTitleState()
 
     init(
@@ -43,39 +42,22 @@ struct SearchView: View {
                 }
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
-            if width > 0 {
-                containerWidth = width
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 18) {
-            if isRootTabContent {
-                SearchMorphTopBar(
-                    titleState: titleState,
-                    isSearching: $isSearching,
-                    containerWidth: containerWidth,
-                    viewModel: holder.viewModel,
-                    searchText: $searchText,
-                    isSearchFocused: isSearchFocused,
-                    onSubmit: onSubmit
-                )
-            }
-        }
+        .minimizedToolbarSearch(
+            text: $searchText,
+            isSearching: $isSearching,
+            isFocused: isSearchFocused,
+            prompt: holder.viewModel?.searchPrompt ?? "搜索",
+            expandsOnExternalText: true,
+            onSubmit: onSubmit
+        )
         .toolbar {
-            if !isRootTabContent {
-                SearchTopBar(
-                    titleState: titleState,
-                    isRootTabContent: isRootTabContent,
-                    isSearching: $isSearching,
-                    containerWidth: containerWidth,
-                    viewModel: holder.viewModel,
-                    searchText: $searchText,
-                    isSearchFocused: isSearchFocused,
-                    onSubmit: onSubmit
-                )
-            }
+            SearchTopBar(
+                titleState: titleState,
+                isRootTabContent: isRootTabContent,
+                viewModel: holder.viewModel
+            )
         }
-        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(.visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
     }
 }

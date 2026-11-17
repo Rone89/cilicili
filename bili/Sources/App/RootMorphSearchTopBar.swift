@@ -54,125 +54,16 @@ struct RootMorphSearchTopBar<CompactAccessory: View, ExpandedAccessory: View>: V
     }
 
     var body: some View {
-        if isRootTabContent {
-            rootMorphBar
-        } else {
-            pushedMorphControl
-        }
-    }
-
-    private var rootMorphBar: some View {
-        let searchBarWidth: CGFloat? = isSearching
-            ? expandedSearchFieldWidth
-            : (compactWidth > 0 ? compactWidth : nil)
-        let trailingReserve: CGFloat = isSearching
-            ? (controlHeight + closeButtonSpacing)
-            : (rootHiddenPageSwitcher != nil ? (controlHeight + closeButtonSpacing) : 0)
-
-        return ZStack(alignment: .trailing) {
-            HStack {
-                if titleState.progress <= 0.9 {
-                    FeedToolbarTitle(
-                        title: configuration.title,
-                        state: titleState,
-                        accessibilityID: configuration.titleAccessibilityID
-                    )
-                }
-                Spacer(minLength: 0)
-            }
-            .opacity(isSearching ? 0 : 1)
-            .scaleEffect(isSearching ? 0.92 : 1, anchor: .leading)
-            .accessibilityHidden(isSearching)
-            .allowsHitTesting(false)
-            .animation(
-                isSearching ? .easeOut(duration: 0.05) : .easeIn(duration: 0.2).delay(0.14),
-                value: isSearching
-            )
-
-            GlassEffectContainer(spacing: 10) {
-                ZStack(alignment: .trailing) {
-                    ZStack(alignment: .trailing) {
-                        if isSearching {
-                            Color.clear
-                                .frame(height: controlHeight)
-                                .overlay(alignment: .trailing) {
-                                    RootMorphSearchQueryField(
-                                        searchText: $searchText,
-                                        isSearchFocused: isSearchFocused,
-                                        prompt: configuration.searchPrompt,
-                                        fieldAccessibilityID: configuration.fieldAccessibilityID,
-                                        clearAccessibilityID: configuration.clearAccessibilityID,
-                                        dismissesFocusOnNonEmptySubmit: configuration.dismissesFocusOnNonEmptySubmit,
-                                        onSubmit: onSubmit
-                                    )
-                                    .frame(width: expandedSearchFieldWidth, height: controlHeight)
-                                }
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.06)),
-                                        removal: .opacity.animation(.easeOut(duration: 0.04))
-                                    )
-                                )
-                        } else {
-                            compactControlsCapsule
-                                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
-                                    if width > 0 {
-                                        compactWidth = width
-                                    }
-                                }
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .opacity.animation(.easeIn(duration: 0.15).delay(0.10)),
-                                        removal: .opacity.animation(.easeOut(duration: 0.05))
-                                    )
-                                )
-                        }
-                    }
-                    .frame(width: searchBarWidth, height: controlHeight, alignment: .trailing)
-                    .clipShape(Capsule())
-                    .contentShape(Capsule())
-                    .glassEffect(.regular.interactive(), in: Capsule())
-                    .glassEffectID("searchControl", in: morphNamespace)
-                    .padding(.trailing, trailingReserve)
-
-                    if isSearching {
-                        expandedTrailingAccessory(AnyView(closeSearchButton))
-                            .frame(width: controlHeight, height: controlHeight)
-                            .glassEffect(.regular.interactive(), in: Circle())
-                            .glassEffectID(configuration.trailingExpandedGlassID, in: morphNamespace)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.05))
-                                        .combined(with: .scale(scale: 0.70)),
-                                    removal: .opacity.animation(.easeOut(duration: 0.08))
-                                        .combined(with: .scale(scale: 0.60))
-                                )
-                            )
-                    } else if let rootHiddenPageSwitcher {
-                        RootHiddenPageSwitcherButton(switcher: rootHiddenPageSwitcher)
-                            .frame(width: controlHeight, height: controlHeight)
-                            .glassEffect(.regular.interactive(), in: Circle())
-                            .glassEffectID("hiddenPageSwitcher", in: morphNamespace)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .opacity.animation(.easeIn(duration: 0.15).delay(0.14))
-                                        .combined(with: .scale(scale: 0.72)),
-                                    removal: .opacity.animation(.easeOut(duration: 0.08))
-                                        .combined(with: .scale(scale: 0.60))
-                                )
-                            )
-                    }
-                }
+        Group {
+            if isRootTabContent {
+                rootMorphBar
+            } else {
+                morphControlsGroup(
+                    expandedFieldWidth: pushedExpandedWidth,
+                    showsHiddenPageSwitcher: false
+                )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .frame(height: controlHeight)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
-            if width > 0 {
-                measuredRowWidth = width
-            }
-        }
-        .padding(.horizontal, 16)
         .animation(.smooth(duration: 0.4), value: isSearching)
         .onAppear {
             if hasNonEmptySearchText, !isSearching {
@@ -200,6 +91,131 @@ struct RootMorphSearchTopBar<CompactAccessory: View, ExpandedAccessory: View>: V
         }
     }
 
+    private var rootMorphBar: some View {
+        ZStack(alignment: .trailing) {
+            HStack {
+                if titleState.progress <= 0.9 {
+                    FeedToolbarTitle(
+                        title: configuration.title,
+                        state: titleState,
+                        accessibilityID: configuration.titleAccessibilityID
+                    )
+                }
+                Spacer(minLength: 0)
+            }
+            .opacity(isSearching ? 0 : 1)
+            .scaleEffect(isSearching ? 0.92 : 1, anchor: .leading)
+            .accessibilityHidden(isSearching)
+            .allowsHitTesting(false)
+            .animation(
+                isSearching ? .easeOut(duration: 0.05) : .easeIn(duration: 0.2).delay(0.14),
+                value: isSearching
+            )
+
+            morphControlsGroup(
+                expandedFieldWidth: expandedSearchFieldWidth,
+                showsHiddenPageSwitcher: true
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(height: controlHeight)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
+            if width > 0 {
+                measuredRowWidth = width
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private func morphControlsGroup(
+        expandedFieldWidth: CGFloat,
+        showsHiddenPageSwitcher: Bool
+    ) -> some View {
+        let searchBarWidth: CGFloat? = isSearching
+            ? expandedFieldWidth
+            : (compactWidth > 0 ? compactWidth : nil)
+        let trailingReserve: CGFloat = isSearching
+            ? (controlHeight + closeButtonSpacing)
+            : (showsHiddenPageSwitcher && rootHiddenPageSwitcher != nil ? (controlHeight + closeButtonSpacing) : 0)
+
+        GlassEffectContainer(spacing: 10) {
+            ZStack(alignment: .trailing) {
+                ZStack(alignment: .trailing) {
+                    if isSearching {
+                        Color.clear
+                            .frame(height: controlHeight)
+                            .overlay(alignment: .trailing) {
+                                RootMorphSearchQueryField(
+                                    searchText: $searchText,
+                                    isSearchFocused: isSearchFocused,
+                                    prompt: configuration.searchPrompt,
+                                    fieldAccessibilityID: configuration.fieldAccessibilityID,
+                                    clearAccessibilityID: configuration.clearAccessibilityID,
+                                    dismissesFocusOnNonEmptySubmit: configuration.dismissesFocusOnNonEmptySubmit,
+                                    onSubmit: onSubmit
+                                )
+                                .frame(width: expandedFieldWidth, height: controlHeight)
+                            }
+                            .transition(
+                                .asymmetric(
+                                    insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.06)),
+                                    removal: .opacity.animation(.easeOut(duration: 0.04))
+                                )
+                            )
+                    } else {
+                        compactControlsCapsule
+                            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
+                                if width > 0 {
+                                    compactWidth = width
+                                }
+                            }
+                            .transition(
+                                .asymmetric(
+                                    insertion: .opacity.animation(.easeIn(duration: 0.15).delay(0.10)),
+                                    removal: .opacity.animation(.easeOut(duration: 0.05))
+                                )
+                            )
+                    }
+                }
+                .frame(width: searchBarWidth, height: controlHeight, alignment: .trailing)
+                .clipShape(Capsule())
+                .contentShape(Capsule())
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .glassEffectID("searchControl", in: morphNamespace)
+                .padding(.trailing, trailingReserve)
+
+                if isSearching {
+                    expandedTrailingAccessory(AnyView(closeSearchButton))
+                        .frame(width: controlHeight, height: controlHeight)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffectID(configuration.trailingExpandedGlassID, in: morphNamespace)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.05))
+                                    .combined(with: .scale(scale: 0.70)),
+                                removal: .opacity.animation(.easeOut(duration: 0.08))
+                                    .combined(with: .scale(scale: 0.60))
+                            )
+                        )
+                } else if showsHiddenPageSwitcher, let rootHiddenPageSwitcher {
+                    RootHiddenPageSwitcherButton(switcher: rootHiddenPageSwitcher)
+                        .frame(width: controlHeight, height: controlHeight)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffectID("hiddenPageSwitcher", in: morphNamespace)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity.animation(.easeIn(duration: 0.15).delay(0.14))
+                                    .combined(with: .scale(scale: 0.72)),
+                                removal: .opacity.animation(.easeOut(duration: 0.08))
+                                    .combined(with: .scale(scale: 0.60))
+                            )
+                        )
+                }
+            }
+        }
+    }
+
     private var hasNonEmptySearchText: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -210,39 +226,6 @@ struct RootMorphSearchTopBar<CompactAccessory: View, ExpandedAccessory: View>: V
             compactAccessory()
         }
         .frame(height: controlHeight)
-    }
-
-    private var pushedMorphControl: some View {
-        GlassEffectContainer(spacing: 10) {
-            if isSearching {
-                HStack(spacing: 8) {
-                    RootMorphSearchQueryField(
-                        searchText: $searchText,
-                        isSearchFocused: isSearchFocused,
-                        prompt: configuration.searchPrompt,
-                        fieldAccessibilityID: configuration.fieldAccessibilityID,
-                        clearAccessibilityID: configuration.clearAccessibilityID,
-                        dismissesFocusOnNonEmptySubmit: configuration.dismissesFocusOnNonEmptySubmit,
-                        onSubmit: onSubmit
-                    )
-                    .frame(width: pushedExpandedWidth, height: controlHeight)
-                    .glassEffect(.regular.interactive(), in: Capsule())
-                    .glassEffectID("searchControl", in: morphNamespace)
-                    .glassEffectTransition(.matchedGeometry)
-
-                    closeSearchButton
-                        .frame(width: controlHeight, height: controlHeight)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                }
-            } else {
-                searchButton
-                    .frame(width: controlHeight, height: controlHeight)
-                    .glassEffect(.regular.interactive(), in: Capsule())
-                    .glassEffectID("searchControl", in: morphNamespace)
-                    .glassEffectTransition(.matchedGeometry)
-            }
-        }
-        .animation(.smooth(duration: 0.4), value: isSearching)
     }
 
     private var searchButton: some View {
@@ -347,7 +330,7 @@ struct RootMorphSearchQueryField: View {
     }
 }
 
-private struct RootHiddenPageSwitcherButton: UIViewRepresentable {
+struct RootHiddenPageSwitcherButton: UIViewRepresentable {
     let switcher: RootHiddenPageSwitcher
 
     func makeUIView(context: Context) -> UIButton {
@@ -369,6 +352,11 @@ private struct RootHiddenPageSwitcherButton: UIViewRepresentable {
         button.menu = makeMenu()
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        let size = uiView.intrinsicContentSize
+        return CGSize(width: max(36, size.width), height: max(36, size.height))
+    }
+
     private func makeMenu() -> UIMenu {
         let actions = switcher.pages.map { page in
             UIAction(
@@ -380,5 +368,85 @@ private struct RootHiddenPageSwitcherButton: UIViewRepresentable {
             }
         }
         return UIMenu(title: "", options: .singleSelection, children: actions)
+    }
+}
+
+extension View {
+    func minimizedToolbarSearch(
+        text: Binding<String>,
+        isSearching: Binding<Bool>,
+        isFocused: FocusState<Bool>.Binding,
+        prompt: String,
+        expandsOnExternalText: Bool = false,
+        onSubmit: @escaping () -> Void = {}
+    ) -> some View {
+        modifier(
+            MinimizedToolbarSearchModifier(
+                searchText: text,
+                isSearching: isSearching,
+                isSearchFocused: isFocused,
+                prompt: prompt,
+                expandsOnExternalText: expandsOnExternalText,
+                onSubmit: onSubmit
+            )
+        )
+    }
+}
+
+private struct MinimizedToolbarSearchModifier: ViewModifier {
+    @Binding var searchText: String
+    @Binding var isSearching: Bool
+    var isSearchFocused: FocusState<Bool>.Binding
+    let prompt: String
+    let expandsOnExternalText: Bool
+    let onSubmit: () -> Void
+    @State private var hasAcquiredSearchFocus = false
+
+    private var hasNonEmptySearchText: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .searchable(
+                text: $searchText,
+                isPresented: $isSearching,
+                placement: .toolbar,
+                prompt: prompt
+            )
+            .searchToolbarBehavior(.minimize)
+            .searchPresentationToolbarBehavior(.automatic)
+            .searchFocused(isSearchFocused)
+            .onAppear {
+                if expandsOnExternalText, hasNonEmptySearchText, !isSearching {
+                    isSearching = true
+                }
+            }
+            .onChange(of: searchText) { _, _ in
+                if expandsOnExternalText, hasNonEmptySearchText, !isSearching {
+                    isSearching = true
+                }
+            }
+            .onSubmit(of: .search) {
+                isSearchFocused.wrappedValue = false
+                if !hasNonEmptySearchText {
+                    isSearching = false
+                } else {
+                    onSubmit()
+                }
+            }
+            .onChange(of: isSearching) { _, searching in
+                if !searching {
+                    hasAcquiredSearchFocus = false
+                }
+            }
+            .onChange(of: isSearchFocused.wrappedValue) { wasFocused, isFocused in
+                if isFocused {
+                    hasAcquiredSearchFocus = true
+                } else if wasFocused, isSearching, hasAcquiredSearchFocus, !hasNonEmptySearchText {
+                    hasAcquiredSearchFocus = false
+                    isSearching = false
+                }
+            }
     }
 }

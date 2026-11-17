@@ -1596,3 +1596,189 @@
     - 提交前在 `iPhone 18 Pro Max`（`iOS 27.0`）汇总复测全改动模块单元测试 **`168/168`** 通过（`FeedChromeTitleStateTests` 5/5、`MetalDanmakuStageTransitionTests` 9/9、`MineSearchCatalogTests` 2/2、`NavigationHistoryTests` 11/11、`PlaybackDetailSharedLayoutTests` 47/47、`PlayerFormalPlaybackConfigurationTests` 65/65、`SearchFeatureTests` 3/3、`SearchViewModelProgressiveLoadingTests` 4/4、`SystemMiniPlayerCoordinatorTests` 11/11、`VideoDetailSurfaceHostTests` 11/11）；`Scripts/tests` CI 脚本自检 `19/19` 通过。
     - 确认 `.github/workflows/ci.yml`、`xcode-test-suite.yml` 与 `unsigned-ipa.yml` 均配置为 `runs-on: macos-26` 并通过 `Scripts/ci-environment.py select-xcode` 选择 Xcode 26.5+（`XCODE_VERSION_MAJOR=26`）编译；核对 Xcode SDK 接口及 `bili.xcodeproj/project.pbxproj`，确认未引入 iOS 27 专属 API（液态玻璃等接口均为 `@available(iOS 26.0, *)`）。
     - 随本状态记录提交一并推送 `main` 至远端 `origin/main` 触发 GitHub Actions Xcode 26 云端构建与回归。
+
+## 2026-11-17 撤回顶部栏本地实验改动，恢复工作区与真机至 GitHub `origin/main`（`6563a1f`）
+
+- 分支与源码基线：`main` / `6563a1f`（与远端 `origin/main` 完全对齐）。通过 `git restore .` 丢弃全部本地未提交的方案 A / 方案 B 顶部浮层与渐进模糊改动，所有应用与测试源码（`bili/`、`biliTests/`、`biliUITests/`）均与 GitHub `origin/main`（`6563a1f`）完全一致，仅本状态文件依 `AGENTS.md` 追加记录本轮工作结果。
+- 已验证（在恢复后的 `6563a1f` 代码上实测，严格区分通过项、失败项与真机待验收）：
+  - **指定模拟器单元测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`）**：5 组核心单元测试 **`25/25`** 全部通过（`** TEST SUCCEEDED **`）：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+  - **指定模拟器 UI 测试（同台模拟器，`iOS 27.0`，无其他测试占用时单独执行）**：5 组对应 UI 套件共 31 项用例 **`26/31 通过，5 项失败`**：
+    - 通过：`DynamicFeedTabsUITests`（6/6）、`MineTopBarUITests`（5/5）、`SearchTopBarUITests`（4/4）、`RootTabScrollUITests`（11/15）。
+    - 失败（基线代码在本地 `iOS 27.0` 模拟器上的实测失败项）：`DynamicDetailFlowUITests/testHomeTitleFadesOnScrollDownWhileModeMenuStaysVisible`（3 次上滑后 `home.feed.title` 仍存在）；`RootTabScrollUITests` 中 4 项（`testActiveSearchScrollRequestKeepsQueryKeyboardAndFilters` 未拉起软件键盘、`testRootTabReselectionScrollsToTopWithoutRefresh` 搜索页 `排序方式` 按钮 `isHittable` 为假、`testReselectionWithMinimizedTabBar` 搜索页重选滚动偏置仍为 `1300.0`、`testReselectionWithReduceMotion` 在 iOS 27 系统设置未找到 `辅助功能`/`Accessibility`）；另运行末段诊断收集报 600s 超时。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `47289d29f70b01f295fab1bff5994c0ba101013f42b1127925ba262d4152b5b1`；已覆盖安装并启动至 `RCe2027`（UDID `00008160-001C311028434036`）上的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）确认已回到 GitHub `main`（`6563a1f`）版本，其中「我的」页及各页顶栏均已恢复系统原生 `.toolbar` 与对应行为。
+  - **工作区说明**：除本文件 `docs/DEVELOPMENT_STATUS.md` 的本轮记录外，工作区其余文件与 `origin/main`（`6563a1f`）零差异。
+
+## 2026-11-17 方案一：将「我的」一级页顶栏迁入系统 `.toolbar`（修复进出二级页按钮乱飞）并真机安装
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（未提交、未推送；修改 [MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift)、[MineTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineTopBar.swift)、[RootMorphSearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMorphSearchTopBar.swift) 与 [RootMineNavigationHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMineNavigationHost.swift)）。
+- 已实现方案：
+  - **根导航栏全程 `.visible`，消除隐显切换导致的按钮乱飞**：移除 [MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift) 一级模式下的 `.safeAreaInset(edge: .top)` 与 `.toolbarVisibility(.hidden, for: .navigationBar)`，改为始终挂载 `MineTopBar` 并固定 `.toolbarVisibility(.visible, for: .navigationBar)`；同步在 [RootMineNavigationHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMineNavigationHost.swift) 的 `RootMineNavigationDestination` 显式声明 `.toolbarVisibility(.visible, for: .navigationBar)`，保证「我的」与所有二级设置/列表页处于同一原生导航栏转场轨道。
+  - **`.toolbar` 内的标题、切页键与液态玻璃搜索形变动画**：
+    - `MineTopBar` 在 `isRootTabContent && !isSearching` 时于 `.topBarLeading` 渲染独立的 `MineToolbarTitle`（`progress > 0.9` 时切换为 `1x1` 隐藏占位，避免 UIKit 导航栏无障碍节点残留且隔离每帧滚动重绘）；点击搜索后释放 leading 占位，由 `.topBarTrailing` 内的 `MineMorphTopBar` 展开。
+    - [RootMorphSearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMorphSearchTopBar.swift) 新增 `usesToolbarTrailingLayout` 与共用的 `morphControlsGroup(expandedFieldWidth:showsHiddenPageSwitcher:)`，合并原有 `pushedMorphControl` 重复分支并统一接入焦点失焦收起/输入联动修饰符；在 `.toolbar` 根页面模式下按 `containerWidth - 40` 展开（留出左右各 `20pt` 原生导航栏边距）并在展开时用取消 `X` 按钮替换隐藏底栏切页按钮，同时保持 `SearchView` 原有 `rootMorphBar` 行为不变。
+- 已验证（严格区分单测、部分 UI 验证、外部抢占与真机待验收）：
+  - **最终代码单元测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`）**：5 组核心单元测试 **`25/25`** 全部通过（`** TEST SUCCEEDED **`）：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+  - **UI 测试与视觉核对记录**：
+    - 修补 `MineToolbarTitle` 无障碍占位前的一版 `.toolbar` 代码中：`MineTopBarUITests/testTitleAndGlassSearchButtonPresent`、`testSearchButtonMorphsFieldFiltersClearAndCancelRestores`（视觉审阅截图 `mine-toolbar-expanded-search` 确认左右 `20pt` 边距对称、与下方分组卡片对齐且无裁切）、`testEmptySearchSubmitCollapsesField` 与 `RootTabScrollUITests/testSingleHomeHasNoTabBarAfterReturningFromMine` 均通过；`testScrolledTitleStaysHiddenAfterSearchCancel` 暴露 UIKit `.topBarLeading` 静态文本无障碍残留问题后已在 `MineTopBar.swift` 修复；`testHiddenMinePageKeepsSwitcherAndMorphsSearchBar` 与 `SearchTopBarUITests` 因共享模拟器当时被 `GlideKeyboardUITests-Runner`（PID `2706`/`3184`）抢占前台（`x = -464.0` / 窗口切换）中断。
+    - 加入 `MineToolbarTitle` 后的最终代码因共享模拟器仍持续被 `GlideKeyboardUITests-Runner` 占用，尚未在干净空闲模拟器重跑全套 `MineTopBarUITests` 与进出二级页交互。
+  - **本地 Release 编译、签名与真机安装**：最终代码使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `35582b80e1702592b88a3a9cbef1fb9e2fb16cf2a72ad413c125ee75f640370b`；已覆盖安装并启动至 `RCe2027`（UDID `00008160-001C311028434036`）上的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）打开「我的」页实测：
+    1. 点击「历史记录」「账号收藏」「稍后再看」及各项设置进入二级页，分别用左上角返回与右滑手势退出（包括右滑到一半松手取消），确认顶部导航栏按钮稳定切换、不再乱飞；
+    2. 测试点击右上角放大镜变形展开成搜索框与点击 `X` 收起的手感，以及滚动隐藏「我的」标题、隐藏底栏切换键等表现。
+  - **后续安排**：改动保留在本地 `main`（`6563a1f`）工作区未提交/未推送；待外部 `GlideKeyboard` 测试结束后可补跑 `MineTopBarUITests` 完整回归，待你真机确认满意后再决定是否提交推送 GitHub（Xcode 26 编译）。
+
+## 2026-11-17 方案 3：「我的」页改用苹果官方 `.searchable + .searchToolbarBehavior(.minimize)` 并真机安装
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（未提交、未推送；修改 [MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift)、[MineTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineTopBar.swift)、[RootMorphSearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMorphSearchTopBar.swift)、[RootMineNavigationHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMineNavigationHost.swift)、[MineTopBarUITests.swift](file:///Users/rayc/Desktop/ccswift/biliUITests/MineTopBarUITests.swift) 与 [RootTabScrollUITests.swift](file:///Users/rayc/Desktop/ccswift/biliUITests/RootTabScrollUITests.swift)）。
+- 已实现方案：
+  - **接入 iOS 26 官方缩略工具栏搜索（`MineView` + `MineTopBar`）**：
+    - 移除手写的 `MineMorphTopBar` 胶囊形变控件，改在 [MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift) 挂载官方 `.searchable(text: $searchText, isPresented: $isSearching, placement: .toolbar, prompt: "搜索我的页功能")`、`.searchToolbarBehavior(.minimize)` 与 `.searchFocused(isSearchFocused)`；并保留非空回车收起键盘、空搜索框点击页面空白区失焦收起等交互。
+    - [MineTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineTopBar.swift) 在 `.topBarTrailing` 使用 `DefaultToolbarItem(kind: .search, placement: .topBarTrailing)` 锚定系统放大镜按钮；左侧 `.topBarLeading` 保留独立订阅滚动状态的 `MineToolbarTitle`（上滑隐藏标题）；隐藏底栏时通过公开给内部模块使用的 `RootHiddenPageSwitcherButton`（补充 `sizeThatFits` 固定紧凑尺寸避免被 `UINavigationBar` 拉宽）挂在右侧切页。
+    - 保持 [MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift) 与 [RootMineNavigationHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMineNavigationHost.swift) 全程 `.toolbarVisibility(.visible, for: .navigationBar)`，「搜索」页（[SearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchTopBar.swift) + [RootMorphSearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMorphSearchTopBar.swift)）维持原有自定义连体胶囊分裂效果不变。
+- 已验证（全部在最终代码上执行，区别于真机待验收）：
+  - **指定模拟器验证（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，无外部抢占）**：
+    - 单元测试 **`25/25`** 全部通过：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+    - UI 测试 **`12/12`** 全部通过（`** TEST SUCCEEDED **`）：`MineTopBarUITests`（6/6：已适配查询系统 `'Search'` / `searchFields` / `'close'` 控件，其中因 `UISearchTextField` 原生启用空串禁用 Return 键 `enablesReturnKeyAutomatically`，原空串回车用例改为验证非空回车收起键盘+清空后点空白区收起，并新增 `testPushAndPopSecondaryPagePreservesMineTopBar` 验证从「我的」进入 `mine.settings.interface` 再返回顶栏坐标与标题稳定）、`SearchTopBarUITests`（4/4）、`RootTabScrollUITests/testSingleHomeHasNoTabBarAfterReturningFromMine` & `testHiddenMineSwitchKeepsVisibleTabsAndHomeButtonStillReturns`（2/2，适配查询原生 `'Search'` 按钮并校验 `switcher.frame.width < 80`）。
+    - 视觉截图审阅（`mine-toolbar-idle`、`mine-toolbar-expanded-search`、`mine-scrolled-after-cancel`、`mine-roottab-expanded-search`）：确认 iOS 26/27 官方 `.minimize` 在闲置时于右上角渲染 `36x36` 圆形玻璃放大镜按钮，点击后平滑转为键盘上方的底部玻璃搜索栏 + 右侧 `X` 按钮并自动隐藏顶部标题与切换钮，关闭后复原且滚动隐藏状态保持正确。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `8c0f698ba8e5ee5269dff22deaaf2ee9d72f491f9d12e6be4223c06b41faffad`；已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`，`databaseSequenceNumber: 5280`）；仅因设备锁屏，`devicectl process launch` 返回 `FBSOpenApplicationErrorDomain error 7 (Locked)` 未自动拉起前台，需解锁后手动点开验证。
+- 待办与真机待验收：
+  - **真机待验收**：请在解锁 `RCe2027` 后打开 `cilicili`（1.1.4 / Build 202）进入「我的」页实测：
+    1. 点击右上角系统放大镜按钮与关闭 `X` 按钮，体验苹果官方 `.minimize` 的展开/收起动画质感（注意在 iPhone 上激活后系统默认将输入条停靠在键盘上方底部栏）；
+    2. 进出「历史记录」「界面显示」等二级页并测试左滑返回及中途取消，确认顶部按钮全程稳定不乱飞；
+    3. 如同时测试隐藏「我的」底部标签，从首页菜单切入后确认右上角放大镜与切页按钮间距紧凑自然。
+  - **后续安排**：当前改动均保留在本地 `main`（`6563a1f`）工作区未提交/未推送，待真机体验确认是否保留该方案后再决定提交并推送 GitHub（Xcode 26 编译）。
+
+## 2026-11-17 搜索页方案 3、动态顶栏箭头优化与视频页浅色状态栏修复并真机安装
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（未提交、未推送；修改 [SearchView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchView.swift)、[SearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchTopBar.swift)、[RootMorphSearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMorphSearchTopBar.swift)、[HomeTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Home/HomeTopBar.swift)、[MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift)、[MineTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineTopBar.swift)、[RootMineNavigationHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootMineNavigationHost.swift)、[DynamicTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicTopBar.swift)、[PlaybackDetailChrome.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlaybackDetailChrome.swift)、[SearchTopBarUITests.swift](file:///Users/rayc/Desktop/ccswift/biliUITests/SearchTopBarUITests.swift)、[MineTopBarUITests.swift](file:///Users/rayc/Desktop/ccswift/biliUITests/MineTopBarUITests.swift)、[RootTabScrollUITests.swift](file:///Users/rayc/Desktop/ccswift/biliUITests/RootTabScrollUITests.swift) 与 [DynamicFeedTabsUITests.swift](file:///Users/rayc/Desktop/ccswift/biliUITests/DynamicFeedTabsUITests.swift)）。
+- 已实现方案：
+  - **搜索页搜索与搜索设置同步接入官方方案 3（[SearchView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchView.swift) + [SearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchTopBar.swift)）**：
+    - 移除原手写 `SearchMorphTopBar` 胶囊形变控件，复用抽离后的共享 `.minimizedToolbarSearch(...)`（`.searchable(..., placement: .toolbar)` + `.searchToolbarBehavior(.minimize)` + `.searchPresentationToolbarBehavior(.automatic)` + `.searchFocused(...)`，保留 `expandsOnExternalText: true` 以响应热搜/外部文本填入）。
+    - [SearchTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchTopBar.swift) 在 `.topBarLeading` 使用共享 `FeedScrolledToolbarTitle`（滚动隐藏大标题），在 `.topBarTrailing` 并排挂载 `DefaultToolbarItem(kind: .search, placement: .topBarTrailing)`、搜索设置按钮 `SearchFilterToolbarMenu`（`search.filters.menu`）以及隐藏页时的 `RootHiddenPageSwitcherButton`；激活搜索后由系统 `.automatic` 自动收起顶栏放大镜与设置按钮（避免激活态右上角残留重复图标，且结果列表内已有 `SearchScopeBar` 排序/范围切换），点击清除或关闭后完整复原。
+  - **优化动态页顶栏下拉箭头比例（[DynamicTopBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicTopBar.swift)）**：
+    - 在 `DynamicFeedKindMenuButton.applyConfiguration(to:)` 为 `chevron.down` 显式配置 `UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)` 并调整 `imagePadding = 5`，消除 iOS 26/27 `UINavigationBar` 默认 bar-button 放大尺寸导致 `全部 ⌄` 右侧箭头过大的问题。
+  - **修复浅色模式下视频播放页黑色顶区状态栏不可见（[PlaybackDetailChrome.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlaybackDetailChrome.swift)）**：
+    - 针对从首页等 `usesTransparentNavigationBar == true` 路径进入播放器、导航栏保持 `.visible` 导致浅色模式下状态栏呈现黑色图标的问题，在共用修饰符 `PlaybackDetailViewChrome` 添加 `.toolbarColorScheme(.dark, for: .navigationBar)`（同时覆盖 `VideoDetailView` 与 `LiveRoomDetailView`），使透明导航栏与系统状态栏固定为深色方案下的白色前景，且作用域仅限详情页本身，退出回首页自动恢复浅色黑字。
+- 已验证（全部在最终代码后重跑通过，区别于真机待验收）：
+  - **指定模拟器回归测试（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`-parallel-testing-enabled NO`）**：
+    - 单元测试 **`25/25`** 全部通过：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+    - UI 测试 **`21/21`** 全部通过（`** TEST SUCCEEDED **`）：`DynamicFeedTabsUITests`（6/6，含新增顶栏截图采样 `dynamic-feed-tabs-topbar`）、`MineTopBarUITests`（6/6）、`RootTabScrollUITests` 3 项相关用例（3/3：`testSingleHomeHasNoTabBarAfterReturningFromMine`、`testHiddenMineSwitchKeepsVisibleTabsAndHomeButtonStillReturns`、`testHomeModeMenuKeepsHiddenPageEntries`）、`SearchScrollRetentionUITests/testSearchFiltersMenuShowsOnlySortOrders`（1/1）、`SearchTopBarUITests`（4/4：已同步适配 `.automatic` 展开收起行为，验证闲置布局、点击搜索隐藏搜索/设置并支持清空、关闭复原、筛选排序菜单选“最多播放”以及隐藏搜索页切换器协同）、`VideoDetailFlowUITests/testVideoDetailUsesLayeredPagesAndToolbarPicker`（1/1）。
+    - 浅色模式视觉截图复核：审阅 `search-toolbar-idle`、`search-toolbar-expanded-sort`、`search-roottab-expanded-sort`、`dynamic-feed-tabs-topbar` 与首页路径直进视频详情 `fresh-videodetail-light.png`（确认浅色外观下 `全部 ⌄` 箭头紧凑协调、搜索展开态无多余放大镜残留、视频页顶部黑色区域内时间/信号/Wi‑Fi/电量图标均为清晰纯白）。说明：完整退回首页后的状态栏恢复未单独在真机前额外截静态图，但已确认 `.toolbarColorScheme(.dark, for: .navigationBar)` 仅挂载在 `PlaybackDetailViewChrome` 作用域内且 `testVideoDetailUsesLayeredPagesAndToolbarPicker` 右滑返回测试通过。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `177e2a83a31d714e6e922f04f0731bc7d3dc7a088eb7e78f7d6748508a4da6c0`；已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`，`databaseSequenceNumber: 5320`）并成功拉起前台（`Launched application with app.bamboo2779.brussels691 bundle identifier.`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202）实测以下三项：
+    1. 打开「搜索」页确认右上角放大镜与搜索设置按钮共享原生液态玻璃、点击放大镜与 `X` 的动画流畅度，并试从首页菜单进入隐藏「搜索」页确认切页键布局；
+    2. 打开「动态」页（浅色模式下尤为明显），确认右上角 `全部 ⌄` 下拉箭头大小及与文字间距协调自然；
+    3. 保持系统为浅色模式，从首页点开任意视频详情页及直播间，确认顶部黑色播放区域状态栏时间/信号/电量图标清晰呈白色，左右滑动退回首页后状态栏恢复黑色图标。
+  - **后续安排**：全部改动暂保留在本地 `main`（`6563a1f`）工作区未提交/未推送，待真机确认满意后再决定是否提交推送 GitHub（Xcode 26 编译）。
+
+## 2026-11-17 彻底修复应用内「浅色」外观下视频/直播页状态栏黑字不可见并重装真机
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（未提交、未推送；在上一条记录改动基础上新增/调整 [StatusBarStyleBridge.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/StatusBarStyleBridge.swift)、[PlaybackDetailPageHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlaybackDetailPageHost.swift)、[VideoDetailView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/VideoDetailView.swift)、[RootTabView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootTabView.swift) 与 [RootTabSupport.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootTabSupport.swift)）。
+- 根因定位与修复方案：
+  - **真机实测“3 依旧没有解决”根因**：当 App 内外观设为「浅色」（`AppAppearanceMode.light`，对应 `-cc.bili.appearance.mode.v1 light`）且从首页等 `usesTransparentNavigationBar == true` 入口打开播放器时，[RootTabView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootTabView.swift#L62) 在根视图施加 `.preferredColorScheme(.light)`（经模拟器调试日志复现确认，根 `UIHostingController` 被锁定为 `rootUI=1` / `preferredStatusBarStyle=3 (.darkContent)`），直接压制内层 `.toolbarColorScheme(.dark, for: .navigationBar)` 与 `StatusBarStyleBridge`，导致状态栏图标仍呈黑色（与顶部黑底融为一体）。
+  - **统一状态栏对比控制与导航栏双层兜底**：
+    - 将 `VideoDetailStatusBarContrastPreferenceKey` 对比态开关由 [VideoDetailView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/VideoDetailView.swift) 上移至共享宿主 [PlaybackDetailPageHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlaybackDetailPageHost.swift#L77-L92)，只要 `statusBarStyle == .lightContent`（同时覆盖 `VideoDetailView` 与 `LiveRoomDetailView`，不再因 `usesTransparentNavigationBar == true` 跳过），即触发 `RootTabView` 根部 `.preferredColorScheme(.dark)` 保障状态栏稳定为白字，同时内容区继续通过 `.environment(\.colorScheme, ...)` 与 `appContentColorScheme` 保持浅色页面外观。
+    - 在 [RootTabView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootTabView.swift#L228-L270) 与 [RootTabSupport.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootTabSupport.swift#L48-L50) 为根 Tab 栈、`RootMineNavigationDestination` 与 `UploaderView` 显式锁定 `.toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)`，防止视频页退出/侧滑返回期间浅色导航栏闪烁暗色。
+    - 增强 [StatusBarStyleBridge.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/StatusBarStyleBridge.swift#L55-L125)，在 `viewWillAppear` / `viewDidAppear` / `update` 时同步将可见 `UINavigationBar` 设为 `.black` + `.overrideUserInterfaceStyle = .dark`，并在 `viewWillDisappear` / `didMove(toParent:)` 恢复（含 `transitionCoordinator?.notifyWhenInteractionChanges` 对中途取消侧滑返回的重建）。
+- 已验证（全部在最终代码完成后重跑，区别于真机待验收）：
+  - **指定模拟器验证（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`-parallel-testing-enabled NO`）**：
+    - 单元测试 **`25/25`** 全部通过：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+    - UI 测试 **`21/21`** 全部通过（`** TEST SUCCEEDED **`）：`DynamicFeedTabsUITests`（6/6）、`MineTopBarUITests`（6/6）、`RootTabScrollUITests` 抽样 3 项（3/3）、`SearchScrollRetentionUITests/testSearchFiltersMenuShowsOnlySortOrders`（1/1）、`SearchTopBarUITests`（4/4）、`VideoDetailFlowUITests/testVideoDetailUsesLayeredPagesAndToolbarPicker`（1/1）。
+    - 浅色截图对照验证：
+      - 在修复后最终版构建下使用 `-cc.bili.appearance.mode.v1 light --start-detail` 实测真实视频加载截图 `round6-manual-light-final.png`，确认黑色播放器顶部状态栏（时间、信号、Wi‑Fi、电池）均为清晰纯白，正文与操作栏保持浅色；
+      - 通过「首页点击视频进入 -> 右滑返回首页」双模式测试（`system` 与 `light`）截图 `diag-system-push`、`diag-light-push`、`diag-system-pop`、`diag-light-pop`（该对照跑在将 preference 上移至 `PlaybackDetailPageHost` 重构前一版，且 `round6-manual-light-final.png` 已覆盖重构后构建），确认推入详情状态栏呈纯白，右滑退回首页后「推荐」顶栏保持浅色且状态栏恢复黑色。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `96dee8f9d376884ea1981c0eef4130b92ade5c08e547371d6ce1852484587999`；已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`，`databaseSequenceNumber: 5336`）并成功拉起前台（`Launched application with app.bamboo2779.brussels691 bundle identifier.`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202，iOS 27.3）分别测试 **App 外观「浅色」** 与 **「跟随系统」浅色**：
+    1. 从首页点开视频详情页及直播间，确认顶部黑色区域状态栏（时间/信号/Wi‑Fi/电量）全部清晰呈白色；
+    2. 左右滑返回首页（包括滑到一半松手取消）与「我的」/「UP 主主页」再进出视频，确认退出后状态栏恢复黑色、且返回页面导航栏不闪黑；
+    3. 同步确认搜索页方案 3 收放动画及动态页 `全部 ⌄` 箭头比例。
+  - **后续安排**：全部改动保留在本地 `main`（`6563a1f`）工作区未提交/未推送，待你真机确认后再决定提交并推送 GitHub。
+
+## 2026-11-17 恢复 `Ibili` 风格顶部导航栏滚动渐进模糊并重装真机
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（未提交、未推送；在上一条记录改动基础上新增/调整 [LiquidGlassTabBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/LiquidGlassTabBar.swift)、[HomeView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Home/HomeView.swift)、[DynamicView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicView.swift)、[MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift)、[SearchView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchView.swift) 与 [LiveView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Live/LiveView.swift)）。
+- 已实现方案：
+  - **共用顶部导航栏滚动渐进模糊修饰符（[LiquidGlassTabBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/LiquidGlassTabBar.swift#L88-L100) + [LiquidGlassTabBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/LiquidGlassTabBar.swift#L358-L413)）**：
+    - 参考 `/Users/rayc/Desktop/ibili-review/Ibili` 的 `FeedNavigationBackgroundOverlay`，新增 `FeedTopProgressiveBlurModifier` 与 `FeedTopProgressiveBlurOverlay`，对外暴露 `.feedTopProgressiveBlur(titleState:isEnabled:tintColor:)`。
+    - 隐去系统默认导航条背景（`.toolbarBackground(.hidden, for: .navigationBar)`），改为在顶部叠加不拦截点击（`.allowsHitTesting(false)`）且延伸至顶部的渐变模糊层（高度 `safeAreaInsets.top + 28pt`）：底层采用系统 `.ultraThinMaterial` 配合 `0.96 -> 0.62 -> 0.18 -> 0` 四段垂直渐变遮罩，上层叠加跟随各页背景色的极淡渐变底色（`0.18 + p*0.12 -> 0.08 + p*0.06 -> 0.02 -> 0`），整体不透明度随 `FeedChromeTitleState.progress` 从 `0.64` 平滑过渡到 `0.90`。
+  - **五大根标签页统一接入**：
+    - 在 [HomeView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Home/HomeView.swift#L58-L61)（配合 `homeFeedLayout.homeFeedBackground`）、[DynamicView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicView.swift#L107-L110)（仅 `usesRootNavigationToolbar` 开启时生效，单类型无顶栏模式保持净空）、[MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift#L53-L56)、[SearchView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchView.swift#L62-L65) 与 [LiveView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Live/LiveView.swift#L31) 统一挂载；未改动 `PlaybackDetailShell` / `VideoDetail` 内部评论滚动区，避免视频详情黑色播放区出现顶部泛白。
+- 已验证（严格区分通过项、外部抢占干扰与真机待验收）：
+  - **指定模拟器验证（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`-parallel-testing-enabled NO`）**：
+    - 单元测试 **`25/25`** 通过：`FeedChromeTitleStateTests`（5/5）、`MineSearchCatalogTests`（2/2）、`NavigationHistoryTests`（11/11）、`SearchFeatureTests`（3/3）、`SearchViewModelProgressiveLoadingTests`（4/4）。
+    - UI 测试部分：`DynamicFeedTabsUITests`（6/6）、`SearchTopBarUITests`（4/4）、`RootTabScrollUITests` 抽样 3 项（3/3）均通过；`DynamicDetailFlowUITests/testHomeTitleFadesOnScrollDownWhileModeMenuStaysVisible` 仍与基线 `6563a1f` 一致失败在 3 次上滑后标题断言；`MineTopBarUITests` 在 `round6` 与 `round7`（`round7` 2/6 通过：`testTitleAndGlassSearchButtonPresent` 与 `testSearchSubmitDismissesKeyboardAndOutsideTapCollapsesEmptyField`）期间均被同机运行的外部 `GlideKeyboardUITests-Runner`（PID `79683`）抢占前台窗口（窗口整体左偏 `x = -464.0`），待外部占用结束后可补跑干净回归。
+    - 视觉截图核对：审阅 `round6-shots` 中的 `8D793253-40AA-4459-ACD4-C3B82ECEB9A8.png`（「我的」页滚动后顶部状态栏与放大镜按钮下方可见平滑虚化至透明的 `144pt` 渐进模糊带，无生硬分割线）与 `E12F1854-D213-4139-8B7A-56EA88966E90.png` / `8AFDBF52-2FF7-4D3F-BA63-F419E2A2CDE7.png`（首页/搜索顶栏闲置清晰）。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `1c90943145b4116ccaaef8e2bb79f6b9934ece76dd9cd6e7ff317e9201de8917`；已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`，`databaseSequenceNumber: 5440`）并成功拉起前台（`Launched application with app.bamboo2779.brussels691 bundle identifier.`）。
+- 待办与真机待验收：
+  - **真机待验收**：请在 `RCe2027`（1.1.4 / Build 202，iOS 27.3）打开首页、动态、我的、搜索与直播五个页面，缓慢上下滑动观察顶栏与状态栏下方渐进模糊的过渡自然度，以及视频/直播详情页是否依然保持纯黑顶区与白字状态栏不受影响。
+  - **后续安排**：全部改动暂保留在本地 `main`（`6563a1f`）工作区未提交/未推送；若需补跑无干扰的 `MineTopBarUITests` 可待外部 `GlideKeyboardUITests-Runner` 结束后重跑。
+
+## 2026-11-17 顶栏渐进模糊清透度调优并重装真机
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（在上一条记录基础上微调 [LiquidGlassTabBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/LiquidGlassTabBar.swift#L358-L413)）。
+- 问题分析与优化调整：
+  - 对比 `Ibili` 的 `FeedNavigationBackgroundOverlay`（`expandedHeight + 24 = 126pt`，且 `Ibili` 全仓未使用系统 `.scrollEdgeEffect`），此前本工程偏白偏雾的原因有二：其一，列表内仍挂载 `.nativeTopScrollEdgeEffect(...)`（iOS 26/27 `.scrollEdgeEffectStyle(.soft, for: .top)`），在 `.ultraThinMaterial` 下方又叠加了一层系统柔雾白纱并配合 `0.18 + p * 0.12` 的背景纯色渐变；其二，渐变高度 `safeAreaInsets.top + 28`（`144pt`）较 `Ibili` 偏高。
+  - 在 `FeedTopProgressiveBlurModifier` 增加 `.scrollEdgeEffectHidden(true, for: .top)` 屏蔽系统顶边柔雾避免双重叠加，同时将遮罩高度收紧至 `safeAreaInsets.top + 14`（`~130pt`）、背景渐变降至 `0.08 + p * 0.08 -> 0.03 + p * 0.03 -> 0`，恢复单层 `.ultraThinMaterial` 的通透感。
+- 已验证（严格区分通过项、外部抢占与真机待验收）：
+  - **指定模拟器验证（`iPhone 18 Pro Max` `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C` / `iOS 27.0`，`-parallel-testing-enabled NO`）**：
+    - 单元测试 **`25/25`** 全部通过（`FeedChromeTitleStateTests` 5/5、`MineSearchCatalogTests` 2/2、`NavigationHistoryTests` 11/11、`SearchFeatureTests` 3/3、`SearchViewModelProgressiveLoadingTests` 4/4）。
+    - UI 测试（`round8`）：`MineTopBarUITests/testScrolledTitleStaysHiddenAfterSearchCancel` 通过；`SearchTopBarUITests` 2/4 通过、`DynamicFeedTabsUITests` 与 `RootTabScrollUITests` 部分用例期间仍受到同机外部 `GlideKeyboardUITests-Runner`（PID `79683`，占用 `47.2%` CPU）抢占前台窗口干扰失败。
+  - **本地 Release 编译、签名与真机安装**：使用共享 `build/DerivedData/Xcode-27` 与本地 scratch `device-signing.xcconfig` 构建通过（`** BUILD SUCCEEDED **`）；`codesign --verify --deep --strict --verbose=2` 通过，`bili` 可执行文件 SHA-256 `c022114e295bc8fc610ce809becdc322fe903b4beab4206b4cf061aae0318b43`；已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`，`databaseSequenceNumber: 5448`）并成功拉起前台（`Launched application with app.bamboo2779.brussels691 bundle identifier.`）。
+- 待办与真机待验收：请在 `RCe2027` 对比首页、动态、我的、搜索与直播五个页面滑动时的顶部渐进模糊清透度。
+
+## 2026-11-17 修正渐进模糊顶部偏移与分段渐隐位置并重装真机
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（调整 [LiquidGlassTabBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/LiquidGlassTabBar.swift#L372-L418)）。
+- 根因与修正：
+  - `FeedTopProgressiveBlurOverlay` 的 `GeometryReader` 位于非全屏 `.overlay(alignment: .top)` 内（自身原点 `y = safeAreaInsets.top`），此前仅对固定 `.frame(height:)` 子视图写 `.ignoresSafeArea(.container, edges: .top)` 无法将其上移到屏幕物理顶端 `y = 0`；同时均匀四段渐变在经过导航栏底缘时透明度已衰减至个位数，叠加关闭系统 `.scrollEdgeEffect` 后视觉上几乎看不出模糊。
+  - 改用 `.offset(y: -safeTop)` 从 `y = 0` 精确铺满至 `safeTop + 36pt`，并改用 `Gradient.Stop` 在状态栏与导航栏区保持 `.ultraThinMaterial`（`0.96 -> 0.82`），自导航栏底缘起向下 `36pt` 平滑渐隐至 `0`（`0.82 -> 0.42 -> 0.12 -> 0`），保留极淡底色（`0.08 + p * 0.08`）。
+- 已验证：
+  - 指定模拟器 `iPhone 18 Pro Max`（`iOS 27.0`）单元测试 **`25/25`** 通过（`FeedChromeTitleStateTests` 5/5、`MineSearchCatalogTests` 2/2、`NavigationHistoryTests` 11/11、`SearchFeatureTests` 3/3、`SearchViewModelProgressiveLoadingTests` 4/4）；本轮未重跑 UI 套件（共享模拟器仍存外部 `GlideKeyboardUITests-Runner`）。
+  - 真机签名 `Release` 构建通过（`codesign --verify --deep --strict --verbose=2` 有效，`bili` 可执行文件 SHA-256 `46961a57eeca91c28063ea0ce2700a91e78a79f3ee40cad66d3c69e50e4f275f`），已覆盖安装至 `RCe2027`（`app.bamboo2779.brussels691`，`databaseSequenceNumber: 5456`）并拉起前台。
+- 真机待验收：请在 `RCe2027` 滑动首页等页面，确认顶部状态栏与导航栏下方的渐进模糊带明显可见且保持单层清透感。
+
+## 2026-11-17 撤回顶部渐进模糊改动，恢复 GitHub `main`（`6563a1f`）系统滚动边缘效果并重装真机
+
+- 分支与源码基线：`main` / `6563a1f` + 本地未提交改动（仅保留搜索/我的页方案 3、动态页箭头缩放与视频/直播页浅色状态栏修复）。
+- 撤回范围：
+  - 将 [LiquidGlassTabBar.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/LiquidGlassTabBar.swift)、[HomeView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Home/HomeView.swift)、[DynamicView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicView.swift) 与 [LiveView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Live/LiveView.swift) 完整 `git checkout HEAD` 恢复至 GitHub `main`（`6563a1f`）；
+  - 从 [MineView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineView.swift) 与 [SearchView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchView.swift) 移除了 `.feedTopProgressiveBlur(...)`，五大根页面恢复系统原生 `.scrollEdgeEffectStyle(.soft, for: .top)` 与 `.toolbarBackground(.automatic, for: .navigationBar)`。
+- 已验证：
+  - 指定模拟器 `iPhone 18 Pro Max`（`iOS 27.0`）核心单元测试 **`25/25`** 通过（`FeedChromeTitleStateTests` 5/5、`MineSearchCatalogTests` 2/2、`NavigationHistoryTests` 11/11、`SearchFeatureTests` 3/3、`SearchViewModelProgressiveLoadingTests` 4/4）；本轮未重跑 UI 套件（无新功能交互改动，且前序非渐进模糊版本的 `21/21` UI 测试记录已归档）。
+  - 真机签名 `Release` 构建通过（`codesign --verify --deep --strict --verbose=2` 有效，`bili` 可执行文件 SHA-256 `feba75337d23e0d4a97a5b9c3a19d88f8f00259334456105894874ac1569ea4f`），已覆盖安装至 `RCe2027`（UDID `00008160-001C311028434036`）的 `cilicili` 1.1.4 (202)（`app.bamboo2779.brussels691`，`databaseSequenceNumber: 5464`）并成功拉起前台（`Launched application with app.bamboo2779.brussels691 bundle identifier.`）。
+- 真机待验收：请在 `RCe2027` 确认首页、动态、我的、搜索与直播五个页面顶部已恢复 GitHub `main` 的系统原生边缘模糊手感，同时保留搜索/我的方案 3、动态箭头比例优化及视频/直播详情页浅色模式白字状态栏。
+
+
+### 2026-11-17（局部修改：最小化底栏首次点击仅展开不回顶）
+- **分支 / 基线**：`main`（`6563a1f` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/App/NativeBottomBarVisibility.swift`：`NativeRootTabBarTransitionSource.Controller` 新增 `isSearchTab` 标识，调整 `gestureRecognizer(_:shouldReceive:)`：当普通 Tab 处于最小化折叠胶囊态（`accessibilityValue != nil`）且非 `isSearchTab` 时，返回 `false` 放行给系统原生展开底栏，不再触发 `onRootTabTap` 回顶；当底栏已展开（或为独立 `.search` 按钮防系统直接拉起搜索键盘）时，按 `capturesSelectedTabTap` 正常拦截触发 `onRootTabTap`。
+  - `bili/Sources/App/RootTabView.swift`：`coordinatesRootTabBarTransitions(...)` 传入 `isSearchTab: tab == .search`。
+  - `biliUITests/RootTabScrollUITests.swift`：`verifyReselection(arguments:selectedTabs:)` 在 `--test-minimize` 下针对普通 Tab（`首页`、`动态`、`我的`）验证首次点击最小化胶囊仅展开底栏（`offset > top + 50` 且 `requests` 不变），第二次点击才回顶；独立 `.search` 按钮保持单次点击回顶。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests` 指定 5 个测试集（`FeedChromeTitleStateTests`、`MineSearchCatalogTests`、`NavigationHistoryTests`、`SearchFeatureTests`、`SearchViewModelProgressiveLoadingTests`）：**25/25 通过**。
+  - `biliUITests/RootTabScrollUITests`：
+    - `testHomeTabReselectionRefreshesOnlyAtTop`：**通过**。
+    - `testDynamicTabReselectionWithMinimizedTabBar`：**通过**（验证最小化胶囊首次点击仅展开、不回顶、不刷新，二次点击回顶）。
+    - `testReselectionWithMinimizedTabBar`：**`首页`、`动态`、`搜索` 的最小化展开/回顶/保留关键词及不拉起键盘断言均通过**；最终停在 `RootTabScrollUITests.swift:297`（`app.buttons["排序方式"].isHittable` 返回 `false`），该断言失败源于前置「搜索页方案 3」将 `SearchFilterToolbarMenu` 放入原生 `.toolbar` 并启用 `.minimizedToolbarSearch` 后的工具栏可见性变化，非本次底栏手势改动引入。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`）**：
+  - `Release-iphoneos` 签名构建通过，`codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`20a6c22f55cd5ad065a803ba8df843a8be31a3761358bd52ffdc4e0e57f50290`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上向下滑动列表使底栏最小化为胶囊后，轻点胶囊确认仅展开底栏不回顶，展开后再次轻点当前 Tab 确认顺滑回顶。
+
+
+### 2026-11-17（局部修改：保留 `.soft` 并移除顶部 `12pt` `safeAreaInset` 占位）
+- **分支 / 基线**：`main`（`6563a1f` + 本地未提交修改，未推送）
+- **已实现**：
+  - 保留 `LiquidGlassTabBar.swift` 中的系统原生 `.scrollEdgeEffectStyle(.soft, for: .top)` 不变。
+  - 将 `bili/Sources/Features/Home/HomeView.swift`、`bili/Sources/Features/Dynamic/DynamicView.swift`（`usesRootNavigationToolbar == true` 分支）和 `bili/Sources/Features/Live/LiveView.swift` 中原本加在 `.safeAreaInset(edge: .top)` 的 `12pt` 透明占位替换为 `.contentMargins(.top, 12, for: .scrollContent)`，在保持首屏内容与顶栏 12pt 视觉间距的同时，不再撑高系统判定的顶部安全区，从而收窄 `.soft` 渐进模糊的覆盖范围。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/FeedChromeTitleStateTests`：**5/5 通过**。
+  - `biliUITests/RootTabScrollUITests/testHomeTabReselectionRefreshesOnlyAtTop`、`testDynamicTabReselectionWithMinimizedTabBar`：**2/2 通过**（确认改用 `contentMargins` 后列表静止偏移与标题折叠行为均正常）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`ffdd620ab60504bf68319e7101074f88a8b3f70da8e4a87a5274239717066586`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上滚动首页、动态、直播页，确认在保留 `.soft` 效果的同时顶部模糊范围缩减 `12pt` 后的观感是否满意。

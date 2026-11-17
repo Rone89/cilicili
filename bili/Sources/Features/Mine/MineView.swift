@@ -13,7 +13,6 @@ struct MineView: View {
     let onOpenRoute: (MineOverlayRoute) -> Void
     @State private var loginSheet: LoginSheet?
     @State private var isSearching = false
-    @State private var containerWidth: CGFloat = 0
     @StateObject private var titleState = FeedChromeTitleState()
     @State private var loadedMainAccountCredentialVersion: Int?
     @State private var loadedHistoryAccountCredentialVersion: Int?
@@ -37,35 +36,19 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
-            if width > 0 {
-                containerWidth = width
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 18) {
-            if isRootTabContent {
-                MineMorphTopBar(
-                    titleState: titleState,
-                    isSearching: $isSearching,
-                    containerWidth: containerWidth,
-                    searchText: $searchText,
-                    isSearchFocused: isSearchFocused
-                )
-            }
-        }
+        .minimizedToolbarSearch(
+            text: $searchText,
+            isSearching: $isSearching,
+            isFocused: isSearchFocused,
+            prompt: "搜索我的页功能"
+        )
         .toolbar {
-            if !isRootTabContent {
-                MineTopBar(
-                    titleState: titleState,
-                    isRootTabContent: isRootTabContent,
-                    isSearching: $isSearching,
-                    containerWidth: containerWidth,
-                    searchText: $searchText,
-                    isSearchFocused: isSearchFocused
-                )
-            }
+            MineTopBar(
+                titleState: titleState,
+                isRootTabContent: isRootTabContent
+            )
         }
-        .toolbarVisibility(isRootTabContent ? .hidden : .visible, for: .navigationBar)
+        .toolbarVisibility(.visible, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {

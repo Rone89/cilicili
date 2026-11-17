@@ -13,9 +13,7 @@ struct LiveView: View {
     var body: some View {
         LiveFeedScreenContent(holder: holder)
         .environment(\.feedChromeTitleState, titleState)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: 12).accessibilityHidden(true)
-        }
+        .contentMargins(.top, 12, for: .scrollContent)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 FeedToolbarTitle(title: AppTab.live.title, state: titleState, accessibilityID: "live.feed.title")

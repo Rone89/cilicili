@@ -96,8 +96,12 @@ struct DynamicFeedKindMenuButton: UIViewRepresentable {
         var configuration = UIButton.Configuration.plain()
         configuration.title = current.title
         configuration.image = UIImage(systemName: "chevron.down")
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 11,
+            weight: .semibold
+        )
         configuration.imagePlacement = .trailing
-        configuration.imagePadding = 4
+        configuration.imagePadding = 5
         configuration.baseForegroundColor = .label
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 12)
         button.configuration = configuration

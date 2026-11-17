@@ -99,6 +99,25 @@ struct FeedToolbarTitle: View {
     }
 }
 
+/// Toolbar-safe variant of `FeedToolbarTitle`: removes the text node from the
+/// hosting view once scrolled past `0.9` so UIKit `UIBarButtonItem` does not
+/// keep an invisible static text in the accessibility hierarchy.
+struct FeedScrolledToolbarTitle: View {
+    let title: String
+    let accessibilityID: String
+    @ObservedObject var state: FeedChromeTitleState
+
+    var body: some View {
+        if state.progress <= 0.9 {
+            FeedToolbarTitle(title: title, state: state, accessibilityID: accessibilityID)
+        } else {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// Liquid-glass icon button that opens a native single-selection menu to pick
 /// the feed mode. When some root tabs are hidden from the bottom bar, their
 /// entries join the same menu as a second group. UIKit's UIMenu keeps the

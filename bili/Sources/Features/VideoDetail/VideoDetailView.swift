@@ -19,7 +19,6 @@ struct VideoDetailView: View {
     @State private var presentationState = VideoDetailViewPresentationState()
     @State private var pendingCommentAnchor: VideoCommentAnchor?
     @State private var hidesSystemChrome = false
-    @State private var isStatusBarContrastActive = false
 
     init(
         seedVideo: VideoItem,
@@ -69,18 +68,6 @@ struct VideoDetailView: View {
             }
         }
         .toolbarVisibility(usesTransparentNavigationBar ? .visible : .hidden, for: .navigationBar)
-        // A shared visible navigation bar inherits the window style. Keep that style
-        // stable through the home transition and use the player's status-bar bridge.
-        .preference(
-            key: VideoDetailStatusBarContrastPreferenceKey.self,
-            value: !usesTransparentNavigationBar && isStatusBarContrastActive
-        )
-        .onAppear {
-            if !usesTransparentNavigationBar { isStatusBarContrastActive = true }
-        }
-        .onDisappear {
-            if isStatusBarContrastActive { isStatusBarContrastActive = false }
-        }
         .navigationHistoryTitle(seedVideo.title)
         .environment(\.navigationHistoryBackAction, historyBackAction)
     }

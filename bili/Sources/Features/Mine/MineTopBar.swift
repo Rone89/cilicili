@@ -1,59 +1,29 @@
 import SwiftUI
 
 struct MineTopBar: ToolbarContent {
+    @Environment(\.rootHiddenPageSwitcher) private var rootHiddenPageSwitcher
     let titleState: FeedChromeTitleState
     let isRootTabContent: Bool
-    @Binding var isSearching: Bool
-    let containerWidth: CGFloat
-    @Binding var searchText: String
-    var isSearchFocused: FocusState<Bool>.Binding
 
+    @ToolbarContentBuilder
     var body: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            MineMorphTopBar(
-                titleState: titleState,
-                isSearching: $isSearching,
-                containerWidth: containerWidth,
-                searchText: $searchText,
-                isSearchFocused: isSearchFocused,
-                isRootTabContent: isRootTabContent
-            )
+        if isRootTabContent {
+            ToolbarItem(placement: .topBarLeading) {
+                FeedScrolledToolbarTitle(
+                    title: AppTab.mine.title,
+                    accessibilityID: "mine.feed.title",
+                    state: titleState
+                )
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
-        .sharedBackgroundVisibility(.hidden)
-    }
-}
 
-struct MineMorphTopBar: View {
-    @ObservedObject var titleState: FeedChromeTitleState
-    @Binding var isSearching: Bool
-    let containerWidth: CGFloat
-    @Binding var searchText: String
-    var isSearchFocused: FocusState<Bool>.Binding
-    var isRootTabContent: Bool = true
+        DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
 
-    var body: some View {
-        RootMorphSearchTopBar(
-            titleState: titleState,
-            configuration: RootMorphSearchTopBarConfiguration(
-                title: AppTab.mine.title,
-                titleAccessibilityID: "mine.feed.title",
-                searchPrompt: "搜索我的页功能",
-                searchButtonAccessibilityLabel: "搜索我的页功能",
-                searchButtonAccessibilityID: "mine.search.button",
-                fieldAccessibilityID: "mine.search.field",
-                clearAccessibilityID: "mine.search.clear",
-                cancelAccessibilityID: "mine.search.cancel",
-                trailingExpandedGlassID: "mineSearchCancelControl",
-                containerWidth: containerWidth,
-                dismissesFocusOnNonEmptySubmit: true
-            ),
-            isSearching: $isSearching,
-            searchText: $searchText,
-            isSearchFocused: isSearchFocused,
-            isRootTabContent: isRootTabContent,
-            onSubmit: {},
-            compactAccessory: { EmptyView() },
-            expandedTrailingAccessory: { closeButton in closeButton }
-        )
+        if isRootTabContent, let rootHiddenPageSwitcher {
+            ToolbarItem(placement: .topBarTrailing) {
+                RootHiddenPageSwitcherButton(switcher: rootHiddenPageSwitcher)
+            }
+        }
     }
 }

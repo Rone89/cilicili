@@ -8,11 +8,12 @@ extension View {
         isEnabled: Bool = true,
         hidesRootTabBar: Bool = false,
         onRootTabTap: (() -> Void)? = nil,
-        capturesSelectedTabTap: Bool = false
+        capturesSelectedTabTap: Bool = false,
+        isSearchTab: Bool = false
     ) -> some View {
         if isEnabled {
             background(
-                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap)
+                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap, isSearchTab: isSearchTab)
             )
         } else {
             self
@@ -25,14 +26,16 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
     let hidesRootTabBar: Bool
     let onRootTabTap: (() -> Void)?
     let capturesSelectedTabTap: Bool
+    let isSearchTab: Bool
 
     func makeUIViewController(context _: Context) -> Controller {
-        Controller(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap)
+        Controller(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap, isSearchTab: isSearchTab)
     }
 
     func updateUIViewController(_ controller: Controller, context _: Context) {
         controller.onRootTabTap = onRootTabTap
         controller.capturesSelectedTabTap = capturesSelectedTabTap
+        controller.isSearchTab = isSearchTab
         controller.installRootTabTap()
         controller.update(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar)
     }
@@ -44,6 +47,7 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
     final class Controller: UIViewController, UIGestureRecognizerDelegate {
         var onRootTabTap: (() -> Void)?
         var capturesSelectedTabTap: Bool
+        var isSearchTab: Bool
         private lazy var rootTabTap: UITapGestureRecognizer = {
             let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleRootTabTap))
             recognizer.cancelsTouchesInView = false
@@ -56,11 +60,12 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         private var isDetailPresented: Bool
         private var reconcileTask: Task<Void, Never>?
 
-        init(isDetailPresented: Bool, hidesRootTabBar: Bool, onRootTabTap: (() -> Void)?, capturesSelectedTabTap: Bool) {
+        init(isDetailPresented: Bool, hidesRootTabBar: Bool, onRootTabTap: (() -> Void)?, capturesSelectedTabTap: Bool, isSearchTab: Bool) {
             self.isDetailPresented = isDetailPresented
             self.hidesRootTabBar = hidesRootTabBar
             self.onRootTabTap = onRootTabTap
             self.capturesSelectedTabTap = capturesSelectedTabTap
+            self.isSearchTab = isSearchTab
             super.init(nibName: nil, bundle: nil)
         }
 
@@ -99,10 +104,10 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
             rootTabTap.view?.removeGestureRecognizer(rootTabTap)
         }
 
-        // A minimized tab is a menu button: tapping it expands the bar without
-        // calling the selection Binding. Unlike expanded tabs, the current menu
-        // exposes an accessibility value. These tabs have no badge values.
-        // Other tabs and search fields keep their normal path.
+        // A minimized tab is a menu button with a non-nil accessibility value:
+        // let its first tap only expand the tab bar without triggering scroll-to-top.
+        // Once expanded, capture taps that leave a menu-only page or would
+        // activate a Search field instead of reselecting the tab.
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard onRootTabTap != nil, !isDetailPresented, viewIfLoaded?.window != nil,
                   let controller = enclosingTabBarController() else { return false }
@@ -115,10 +120,13 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
                 if candidate.accessibilityLabel == selectedTitle,
                    candidate.accessibilityTraits.contains(.button) {
                     let isCollapsed = candidate.accessibilityValue != nil
-                    guard isCollapsed || capturesSelectedTabTap else { return false }
-                    // Handle a selected tab tap ourselves when it leaves a menu-only page
-                    // or when the system would activate a Search field.
-                    rootTabTap.cancelsTouchesInView = capturesSelectedTabTap && !isCollapsed
+                    if isCollapsed {
+                        guard isSearchTab else { return false }
+                        rootTabTap.cancelsTouchesInView = true
+                        return true
+                    }
+                    guard capturesSelectedTabTap else { return false }
+                    rootTabTap.cancelsTouchesInView = true
                     return true
                 }
                 touchedView = candidate.superview

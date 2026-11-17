@@ -19,6 +19,7 @@ private struct PlaybackDetailViewChrome: ViewModifier {
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(hidesBackButton)
             .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .playbackDetailNavigationBarVisibility(navigationBarVisibility)
     }
 }
