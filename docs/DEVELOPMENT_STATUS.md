@@ -1782,3 +1782,9 @@
 - **已安装真机（`RCe2027` / `00008160-001C311028434036`）**：
   - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`ffdd620ab60504bf68319e7101074f88a8b3f70da8e4a87a5274239717066586`，已安装并拉起 `app.bamboo2779.brussels691`。
 - **真机待验证**：请在 `RCe2027` 上滚动首页、动态、直播页，确认在保留 `.soft` 效果的同时顶部模糊范围缩减 `12pt` 后的观感是否满意。
+
+
+### 2026-11-17（版本发布：`v1.1.5` / build `203`）
+- **分支 / 提交 / Tag**：`main`（`91e27f4`，已推送至 `origin/main`），Tag `v1.1.5`（已推送至 `origin`）。
+- **GitHub Release**：`cilicili 1.1.5`（https://github.com/Rone89/cilicili/releases/tag/v1.1.5）。
+- **未签名 IPA**：`build/release-unsigned-ipa/bili-release-unsigned.ipa`（version `1.1.5` build `203`，SHA-256：`e36207ade208bd6b9d58bd199b7ae2e3547991c676be9bd059f539402c64ade4`），已作为附件上传至 `v1.1.5` Release。
