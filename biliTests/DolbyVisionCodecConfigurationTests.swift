@@ -16,10 +16,6 @@ final class DolbyVisionCodecConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration?.decoderCodecString, "dvh1.08.06")
         XCTAssertEqual(configuration?.hlsAdvertisedCodec(baseLayerCodec: "hev1.2.4.L150.b0"), "hvc1.2.4.L150.b0")
         XCTAssertEqual(configuration?.supplementalCodecString, "dvh1.08.06/db1p")
-        XCTAssertEqual(
-            configuration?.hlsAdvertisedSupplementalCodec(baseLayerCodec: "hev1.2.4.L150.b0"),
-            "dvh1.08.06/db1p"
-        )
         XCTAssertEqual(configuration?.hlsVideoRangeAttribute, "PQ")
     }
 
@@ -192,11 +188,8 @@ final class DolbyVisionCodecConfigurationTests: XCTestCase {
         XCTAssertTrue(normalization?.didRewriteSampleEntry ?? false)
         XCTAssertEqual(normalization?.hlsBaseLayerCodec, "hvc1.1.6.L150.B0")
         XCTAssertEqual(DolbyVisionCodecConfiguration.sampleEntryType(in: normalization?.data), "hvc1")
+        XCTAssertNil(DolbyVisionCodecConfiguration.parse(from: normalization?.data))
         XCTAssertEqual(configuration?.hlsAdvertisedCodec(baseLayerCodec: normalization?.hlsBaseLayerCodec ?? ""), "hvc1.1.6.L150.B0")
-        XCTAssertEqual(
-            configuration?.hlsAdvertisedSupplementalCodec(baseLayerCodec: normalization?.hlsBaseLayerCodec ?? ""),
-            "dvh1.08.06/db1p"
-        )
     }
 
     func testProfileFiveAdvertisesDolbyVisionCodecDirectly() {
@@ -234,231 +227,11 @@ final class DolbyVisionCodecConfigurationTests: XCTestCase {
         )
 
         XCTAssertEqual(configuration?.supplementalCodecString, "dvh1.08.07/db4h")
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .fullEffect
-        ), "hvc1.2.4.H150.90")
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .fullEffect
-        ))
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .supplementalHLS
-        ), "hvc1.2.4.H150.90")
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .supplementalHLS
-        ))
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .metadataPassthrough
-        ), "hvc1.2.4.H150.90")
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .metadataPassthrough
-        ))
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .appleNativeP8HLS
-        ), "hvc1.2.4.H150.90")
-        XCTAssertEqual(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .appleNativeP8HLS
-        ), "dvh1.08.07/db4h")
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: "hvc1.2.4.H150.90",
-            renderingPolicy: .compatibleHLG
-        ))
+        XCTAssertEqual(
+            configuration?.hlsAdvertisedCodec(baseLayerCodec: "hvc1.2.4.H150.90"),
+            "hvc1.2.4.H150.90"
+        )
         XCTAssertEqual(configuration?.hlsVideoRangeAttribute, "HLG")
-    }
-
-    func testAppleNativeP8PolicyKeepsDolbyVisionMetadataAndAdvertisesSupplementalCodec() {
-        let data = makeInitializationDataWithSampleEntry(
-            sampleEntryType: "dvh1",
-            boxType: "dvvC",
-            payload: makePayload(profile: 8, level: 7, compatibilityID: 4),
-            extraSampleEntryBoxes: [
-                makeBox(
-                    "hvcC",
-                    payload: makeHEVCPayload(
-                        profileIDC: 2,
-                        compatibilityFlags: 4,
-                        levelIDC: 150,
-                        constraintBytes: [0x90],
-                        tierFlag: true
-                    )
-                )
-            ]
-        )
-        let configuration = DolbyVisionCodecConfiguration.parse(from: data)
-        let normalization = configuration?.normalizedInitializationDataForHLS(
-            data,
-            renderingPolicy: .appleNativeP8HLS
-        )
-
-        XCTAssertEqual(normalization?.originalSampleEntryType, "dvh1")
-        XCTAssertEqual(normalization?.hlsSampleEntryType, "hvc1")
-        XCTAssertEqual(normalization?.hlsBaseLayerCodec, "hvc1.2.4.H150.90")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.sampleEntryType(in: normalization?.data), "hvc1")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.hevcCodecString(from: normalization?.data), "hvc1.2.4.H150.90")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.videoColorInformation(from: normalization?.data)?.hlsVideoRangeAttribute, "HLG")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.parse(from: normalization?.data), configuration)
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .appleNativeP8HLS
-        ), "hvc1.2.4.H150.90")
-        XCTAssertEqual(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .appleNativeP8HLS
-        ), "dvh1.08.07/db4h")
-    }
-
-    func testDeprecatedFullEffectPolicyNormalizesToBaseLayerOnly() {
-        let data = makeInitializationDataWithSampleEntry(
-            sampleEntryType: "dvh1",
-            boxType: "dvvC",
-            payload: makePayload(profile: 8, level: 7, compatibilityID: 4),
-            extraSampleEntryBoxes: [
-                makeBox(
-                    "hvcC",
-                    payload: makeHEVCPayload(
-                        profileIDC: 2,
-                        compatibilityFlags: 4,
-                        levelIDC: 150,
-                        constraintBytes: [0x90],
-                        tierFlag: true
-                    )
-                )
-            ]
-        )
-        let configuration = DolbyVisionCodecConfiguration.parse(from: data)
-        let normalization = configuration?.normalizedInitializationDataForHLS(
-            data,
-            renderingPolicy: .fullEffect
-        )
-
-        XCTAssertEqual(normalization?.originalSampleEntryType, "dvh1")
-        XCTAssertEqual(normalization?.hlsSampleEntryType, "hvc1")
-        XCTAssertEqual(normalization?.hlsBaseLayerCodec, "hvc1.2.4.H150.90")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.sampleEntryType(in: normalization?.data), "hvc1")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.hevcCodecString(from: normalization?.data), "hvc1.2.4.H150.90")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.videoColorInformation(from: normalization?.data)?.hlsVideoRangeAttribute, "HLG")
-        XCTAssertNil(DolbyVisionCodecConfiguration.parse(from: normalization?.data))
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .fullEffect
-        ), "hvc1.2.4.H150.90")
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .fullEffect
-        ))
-    }
-
-    func testMetadataPassthroughPolicyNowNormalizesToBaseLayerOnly() {
-        let data = makeInitializationDataWithSampleEntry(
-            sampleEntryType: "dvh1",
-            boxType: "dvvC",
-            payload: makePayload(profile: 8, level: 7, compatibilityID: 4),
-            extraSampleEntryBoxes: [
-                makeBox(
-                    "hvcC",
-                    payload: makeHEVCPayload(
-                        profileIDC: 2,
-                        compatibilityFlags: 4,
-                        levelIDC: 150,
-                        constraintBytes: [0x90],
-                        tierFlag: true
-                    )
-                )
-            ]
-        )
-        let configuration = DolbyVisionCodecConfiguration.parse(from: data)
-        let normalization = configuration?.normalizedInitializationDataForHLS(
-            data,
-            renderingPolicy: .metadataPassthrough
-        )
-
-        XCTAssertEqual(normalization?.originalSampleEntryType, "dvh1")
-        XCTAssertEqual(normalization?.hlsSampleEntryType, "hvc1")
-        XCTAssertEqual(normalization?.hlsBaseLayerCodec, "hvc1.2.4.H150.90")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.sampleEntryType(in: normalization?.data), "hvc1")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.hevcCodecString(from: normalization?.data), "hvc1.2.4.H150.90")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.videoColorInformation(from: normalization?.data)?.hlsVideoRangeAttribute, "HLG")
-        XCTAssertNil(DolbyVisionCodecConfiguration.parse(from: normalization?.data))
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .metadataPassthrough
-        ), "hvc1.2.4.H150.90")
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .metadataPassthrough
-        ))
-    }
-
-    func testDeprecatedDolbyPoliciesAreMigratedOutOfUserFacingChoices() {
-        XCTAssertFalse(DolbyVisionRenderingPolicy.allCases.contains(.metadataPassthrough))
-        XCTAssertTrue(DolbyVisionRenderingPolicy.allCases.contains(.appleNativeP8HLS))
-        XCTAssertFalse(DolbyVisionRenderingPolicy.allCases.contains(.fullEffect))
-        XCTAssertFalse(DolbyVisionRenderingPolicy.allCases.contains(.protectedHLG))
-        XCTAssertFalse(DolbyVisionRenderingPolicy.allCases.contains(.supplementalHLS))
-        XCTAssertEqual(DolbyVisionRenderingPolicy.metadataPassthrough.playablePolicy, .compatibleHLG)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.appleNativeP8HLS.playablePolicy, .appleNativeP8HLS)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.appleNativeP8HLS.hlsBridgePolicy, .compatibleHLG)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.fullEffect.playablePolicy, .compatibleHLG)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.protectedHLG.playablePolicy, .compatibleHLG)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.supplementalHLS.playablePolicy, .compatibleHLG)
-
-        let suiteName = "DolbyVisionRenderingPolicyTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
-        defaults.set(DolbyVisionRenderingPolicy.fullEffect.rawValue, forKey: DolbyVisionRenderingPolicy.storageKey)
-
-        XCTAssertEqual(DolbyVisionRenderingPolicy.stored(in: defaults), .appleNativeP8HLS)
-        defaults.set(DolbyVisionRenderingPolicy.protectedHLG.rawValue, forKey: DolbyVisionRenderingPolicy.storageKey)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.stored(in: defaults), .appleNativeP8HLS)
-        defaults.set(DolbyVisionRenderingPolicy.supplementalHLS.rawValue, forKey: DolbyVisionRenderingPolicy.storageKey)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.stored(in: defaults), .appleNativeP8HLS)
-        defaults.set(DolbyVisionRenderingPolicy.appleNativeP8HLS.rawValue, forKey: DolbyVisionRenderingPolicy.storageKey)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.stored(in: defaults), .appleNativeP8HLS)
-        defaults.set(DolbyVisionRenderingPolicy.metadataPassthrough.rawValue, forKey: DolbyVisionRenderingPolicy.storageKey)
-        XCTAssertEqual(DolbyVisionRenderingPolicy.stored(in: defaults), .appleNativeP8HLS)
-        XCTAssertEqual(defaults.string(forKey: DolbyVisionRenderingPolicy.storageKey), DolbyVisionRenderingPolicy.appleNativeP8HLS.rawValue)
-    }
-
-    func testProtectedHLGModeMigratesToBaseLayerOnly() {
-        let data = makeInitializationDataWithSampleEntry(
-            sampleEntryType: "dvh1",
-            boxType: "dvvC",
-            payload: makePayload(profile: 8, level: 7, compatibilityID: 4),
-            extraSampleEntryBoxes: [
-                makeBox(
-                    "hvcC",
-                    payload: makeHEVCPayload(
-                        profileIDC: 2,
-                        compatibilityFlags: 4,
-                        levelIDC: 150,
-                        constraintBytes: [0x90],
-                        tierFlag: true
-                    )
-                )
-            ]
-        )
-        let configuration = DolbyVisionCodecConfiguration.parse(from: data)
-        let normalization = configuration?.normalizedInitializationDataForHLS(
-            data,
-            renderingPolicy: .protectedHLG
-        )
-
-        XCTAssertEqual(DolbyVisionCodecConfiguration.sampleEntryType(in: normalization?.data), "hvc1")
-        XCTAssertEqual(DolbyVisionCodecConfiguration.videoColorInformation(from: normalization?.data)?.hlsVideoRangeAttribute, "HLG")
-        XCTAssertNil(DolbyVisionCodecConfiguration.parse(from: normalization?.data))
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .protectedHLG
-        ))
     }
 
     func testNormalizesProfileEightHLGCompatibleDolbyVisionAsBaseLayerOnlyForHLS() {
@@ -480,10 +253,7 @@ final class DolbyVisionCodecConfigurationTests: XCTestCase {
             ]
         )
         let configuration = DolbyVisionCodecConfiguration.parse(from: data)
-        let normalization = configuration?.normalizedInitializationDataForHLS(
-            data,
-            renderingPolicy: .compatibleHLG
-        )
+        let normalization = configuration?.normalizedInitializationDataForHLS(data)
 
         XCTAssertEqual(normalization?.originalSampleEntryType, "dvh1")
         XCTAssertEqual(normalization?.hlsSampleEntryType, "hvc1")
@@ -492,14 +262,10 @@ final class DolbyVisionCodecConfigurationTests: XCTestCase {
         XCTAssertEqual(DolbyVisionCodecConfiguration.hevcCodecString(from: normalization?.data), "hvc1.2.4.H150.90")
         XCTAssertEqual(DolbyVisionCodecConfiguration.videoColorInformation(from: normalization?.data)?.hlsVideoRangeAttribute, "HLG")
         XCTAssertNil(DolbyVisionCodecConfiguration.parse(from: normalization?.data))
-        XCTAssertEqual(configuration?.hlsAdvertisedCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .compatibleHLG
-        ), "hvc1.2.4.H150.90")
-        XCTAssertNil(configuration?.hlsAdvertisedSupplementalCodec(
-            baseLayerCodec: normalization?.hlsBaseLayerCodec ?? "",
-            renderingPolicy: .compatibleHLG
-        ))
+        XCTAssertEqual(
+            configuration?.hlsAdvertisedCodec(baseLayerCodec: normalization?.hlsBaseLayerCodec ?? ""),
+            "hvc1.2.4.H150.90"
+        )
     }
 
     func testParsesAV1ProfileTenConfiguration() {

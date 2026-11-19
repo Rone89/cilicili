@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import UIKit
 
 /// Keeps the video surface entirely in UIKit.
@@ -7,19 +8,40 @@ import UIKit
 final class DirectUIKitPlayerSurfaceHostView: UIView {
     private var viewModel: PlayerStateViewModel
     private var isPictureInPictureEnabled: Bool
+    private var prefersNativePlaybackSurface: Bool
+    private var showsNativePlaybackControls: Bool
+    private var showsNativePlaybackSpeeds: Bool
+    private var enablesNativeSurfaceGestures: Bool
+    private var nativeAllowsPictureInPicturePlayback: Bool?
     private let surfaceView = VideoSurfaceContainerView()
     private var isTornDown = false
 
+    var nativePlayerViewController: NativeFullScreenPlayerViewController {
+        surfaceView.nativePlayerViewController
+    }
+
     init(
         viewModel: PlayerStateViewModel,
-        isPictureInPictureEnabled: Bool
+        isPictureInPictureEnabled: Bool,
+        prefersNativePlaybackSurface: Bool = NativePlaybackControlsExperiment.stored(),
+        showsNativePlaybackControls: Bool = NativePlaybackControlsExperiment.usesSystemPlaybackControlsUI(),
+        showsNativePlaybackSpeeds: Bool = NativePlaybackControlsExperiment.storedSpeedsEnabled(),
+        enablesNativeSurfaceGestures: Bool = NativePlaybackControlsExperiment.usesNativeSurfaceGestureController(),
+        nativeAllowsPictureInPicturePlayback: Bool? = nil
     ) {
         self.viewModel = viewModel
         self.isPictureInPictureEnabled = isPictureInPictureEnabled
+        self.prefersNativePlaybackSurface = prefersNativePlaybackSurface
+        self.showsNativePlaybackControls = showsNativePlaybackControls
+        self.showsNativePlaybackSpeeds = showsNativePlaybackSpeeds
+        self.enablesNativeSurfaceGestures = enablesNativeSurfaceGestures
+        self.nativeAllowsPictureInPicturePlayback = nativeAllowsPictureInPicturePlayback
         super.init(frame: .zero)
 
+        overrideUserInterfaceStyle = .dark
         backgroundColor = .black
         isUserInteractionEnabled = false
+        surfaceView.overrideUserInterfaceStyle = .dark
         surfaceView.backgroundColor = .black
         surfaceView.disablesImplicitLayoutAnimations = true
         surfaceView.configureSurfaceHandoff(
@@ -66,6 +88,49 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
         viewModel.setPictureInPictureEnabled(isEnabled)
     }
 
+    func setNativePlaybackControlsOptions(
+        prefersNativePlaybackSurface: Bool = NativePlaybackControlsExperiment.stored(),
+        showsPlaybackControls: Bool,
+        showsPlaybackSpeeds: Bool,
+        enablesNativeSurfaceGestures: Bool,
+        allowsPictureInPicturePlayback: Bool?
+    ) {
+        guard !isTornDown else { return }
+        let surfacePreferenceChanged = self.prefersNativePlaybackSurface != prefersNativePlaybackSurface
+            || surfaceView.prefersNativePlaybackControls != prefersNativePlaybackSurface
+        self.prefersNativePlaybackSurface = prefersNativePlaybackSurface
+        showsNativePlaybackControls = showsPlaybackControls
+        showsNativePlaybackSpeeds = showsPlaybackSpeeds
+        self.enablesNativeSurfaceGestures = enablesNativeSurfaceGestures
+        nativeAllowsPictureInPicturePlayback = allowsPictureInPicturePlayback
+        surfaceView.setNativeAllowsPictureInPicturePlayback(
+            prefersNativePlaybackSurface ? allowsPictureInPicturePlayback : nil
+        )
+        surfaceView.setEnablesNativeSurfaceGestures(
+            prefersNativePlaybackSurface && enablesNativeSurfaceGestures
+        )
+        surfaceView.setShowsSystemPlaybackControls(
+            prefersNativePlaybackSurface && showsPlaybackControls
+        )
+        surfaceView.setShowsSystemPlaybackSpeeds(
+            prefersNativePlaybackSurface && showsPlaybackControls && showsPlaybackSpeeds
+        )
+        if surfacePreferenceChanged {
+            surfaceView.setPlayerViewModel(
+                viewModel,
+                prefersNativePlaybackControls: prefersNativePlaybackSurface
+            )
+            viewModel.attachSurface(
+                surfaceView,
+                prefersNativePlaybackControls: prefersNativePlaybackSurface,
+                preservesReadinessDuringSurfaceHandoff: true
+            )
+            surfaceView.setNeedsLayout()
+            surfaceView.invalidateVideoLayout()
+        }
+        viewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
+    }
+
     func setVideoGravity(_ gravity: AVLayerVideoGravity) {
         guard !isTornDown else { return }
         viewModel.setVideoGravity(gravity)
@@ -93,14 +158,24 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
     }
 
     private func bindSurface(to playerViewModel: PlayerStateViewModel, startsPlayback: Bool) {
+        let prefersNativeControls = prefersNativePlaybackSurface
         surfaceView.configureBoundsRefresh(for: playerViewModel, synchronously: true)
         surfaceView.setPictureInPictureEnabled(isPictureInPictureEnabled)
-        surfaceView.setShowsSystemPlaybackControls(false)
-        surfaceView.setPlayerViewModel(playerViewModel, prefersNativePlaybackControls: false)
+        surfaceView.setNativeAllowsPictureInPicturePlayback(
+            prefersNativeControls ? nativeAllowsPictureInPicturePlayback : nil
+        )
+        surfaceView.setEnablesNativeSurfaceGestures(
+            prefersNativeControls && enablesNativeSurfaceGestures
+        )
+        surfaceView.setShowsSystemPlaybackControls(prefersNativeControls && showsNativePlaybackControls)
+        surfaceView.setShowsSystemPlaybackSpeeds(
+            prefersNativeControls && showsNativePlaybackControls && showsNativePlaybackSpeeds
+        )
+        surfaceView.setPlayerViewModel(playerViewModel, prefersNativePlaybackControls: prefersNativeControls)
         playerViewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         playerViewModel.attachSurface(
             surfaceView,
-            prefersNativePlaybackControls: false,
+            prefersNativePlaybackControls: prefersNativeControls,
             preservesReadinessDuringSurfaceHandoff: surfaceView.isLiveSurfaceHandoffActive
         )
         playerViewModel.endSurfaceMigrationHold()

@@ -7,10 +7,8 @@ enum PlaybackDiagnosticsExperiment {
     static var constrainedHighHDR = false
     /// 弹幕叠加层强制进入 load shedding（30fps + 降低数量）。
     static var forceDanmakuLoadShedding = false
-    /// 强制使用 Metal 弹幕渲染器（覆盖 HDR 自动回退）。
+    /// 强制使用 Metal 弹幕渲染器（覆盖默认同步层策略）。
     static var forceMetalDanmaku = false
-    /// 强制使用 DanmakuKit（即使当前为 HDR）。
-    static var forceDanmakuKit = false
     /// 跳过详情页评论加载（诊断详情页内容对 UI 的影响）。
     static var skipCommentLoading = false
     /// 禁用本地代理的"边下边播"流式返回，改为整段下载后返回。
@@ -22,7 +20,6 @@ enum PlaybackDiagnosticsExperiment {
         constrainedHighHDR = false
         forceDanmakuLoadShedding = false
         forceMetalDanmaku = false
-        forceDanmakuKit = false
         forceNonStreamingRanges = false
         skipCommentLoading = false
     }

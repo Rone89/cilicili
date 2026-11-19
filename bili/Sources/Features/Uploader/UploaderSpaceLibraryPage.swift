@@ -71,7 +71,6 @@ private struct UploaderSpaceLibraryContent: View {
         .nativeBottomScrollEdgeBlur()
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await refresh() } }

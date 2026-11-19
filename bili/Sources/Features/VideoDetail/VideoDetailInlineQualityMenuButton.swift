@@ -58,6 +58,7 @@ private struct VideoDetailInlineQualityMenuButton: UIViewRepresentable {
         }
         button.accessibilityLabel = "清晰度"
         button.accessibilityIdentifier = "ui.player.quality.quick"
+        button.overrideUserInterfaceStyle = .dark
         button.tintColor = .white
         return button
     }

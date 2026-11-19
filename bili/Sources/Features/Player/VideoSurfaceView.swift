@@ -6,6 +6,10 @@ struct VideoSurfaceView: UIViewRepresentable {
     @ObservedObject var viewModel: PlayerStateViewModel
     let prefersNativePlaybackControls: Bool
     let isPictureInPictureEnabled: Bool
+    var showsNativePlaybackControls: Bool?
+    var showsNativePlaybackSpeeds: Bool?
+    var enablesNativeSurfaceGestures: Bool?
+    var nativeAllowsPictureInPicturePlayback: Bool?
     var disablesImplicitLayoutAnimations = false
     var usesLiveSurfaceDuringLayoutTransition = false
     var isLayoutTransitioningForSurfaceHandoff: Bool?
@@ -19,7 +23,7 @@ struct VideoSurfaceView: UIViewRepresentable {
             isLayoutTransitioning: isLayoutTransitioningForSurfaceHandoff ?? disablesImplicitLayoutAnimations
         )
         view.configureBoundsRefresh(for: viewModel)
-        view.setPictureInPictureEnabled(isPictureInPictureEnabled)
+        applyNativeControlsPreferences(to: view)
         view.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
         viewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         viewModel.attachSurface(
@@ -44,7 +48,7 @@ struct VideoSurfaceView: UIViewRepresentable {
             guard uiView.cancelPendingSurfaceDetachIfPossible(for: viewModel) else { return }
         }
         uiView.configureBoundsRefresh(for: viewModel)
-        uiView.setPictureInPictureEnabled(isPictureInPictureEnabled)
+        applyNativeControlsPreferences(to: uiView)
         uiView.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
         viewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         viewModel.attachSurface(
@@ -60,6 +64,26 @@ struct VideoSurfaceView: UIViewRepresentable {
         } else {
             uiView.cancelCoordinatedSurfaceLayoutRefresh()
         }
+    }
+
+    private func applyNativeControlsPreferences(to view: VideoSurfaceContainerView) {
+        let resolvedShowsControls = prefersNativePlaybackControls
+            && (showsNativePlaybackControls ?? NativePlaybackControlsExperiment.storedShowsPlaybackControls())
+        let resolvedShowsSpeeds = prefersNativePlaybackControls
+            && resolvedShowsControls
+            && (showsNativePlaybackSpeeds ?? NativePlaybackControlsExperiment.storedSpeedsEnabled())
+        let resolvedEnablesGestures = prefersNativePlaybackControls
+            && (enablesNativeSurfaceGestures ?? NativePlaybackControlsExperiment.usesNativeSurfaceGestureController())
+        let resolvedNativePiP: Bool? = prefersNativePlaybackControls
+            ? (nativeAllowsPictureInPicturePlayback ?? (resolvedShowsControls
+                ? NativePlaybackControlsExperiment.storedAllowsPictureInPicturePlayback(fallback: isPictureInPictureEnabled)
+                : nil))
+            : nil
+        view.setPictureInPictureEnabled(isPictureInPictureEnabled)
+        view.setNativeAllowsPictureInPicturePlayback(resolvedNativePiP)
+        view.setEnablesNativeSurfaceGestures(resolvedEnablesGestures)
+        view.setShowsSystemPlaybackControls(resolvedShowsControls)
+        view.setShowsSystemPlaybackSpeeds(resolvedShowsSpeeds)
     }
 
     static func dismantleUIView(_ uiView: VideoSurfaceContainerView, coordinator _: ()) {
@@ -99,9 +123,37 @@ enum PlayerFullscreenMode: Equatable {
     }
 }
 
+/// 系统全屏由 AVKit 直接展示该控制器；子类只负责声明支持的方向，
+/// 进出全屏的转场与视图摆位全部交给 AVKit。
+final class NativeFullScreenPlayerViewController: AVPlayerViewController {
+    var nativeAllowsPictureInPicturePlaybackOverride: Bool?
+    var isPlaybackControlsSuppressedBySurfaceGesture = false
+    var onPlaybackControlsSuppressionChanged: ((Bool) -> Void)?
+
+    override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
+        super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
+        overrideUserInterfaceStyle = .dark
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        overrideUserInterfaceStyle = .dark
+        view.overrideUserInterfaceStyle = .dark
+    }
+
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        .allButUpsideDown
+    }
+}
+
 final class VideoSurfaceContainerView: UIView {
     let drawableView = UIView()
-    let nativePlayerViewController = AVPlayerViewController()
+    let nativePlayerViewController = NativeFullScreenPlayerViewController()
     var onBoundsChange: (() -> Void)?
     var disablesImplicitLayoutAnimations = false
 
@@ -109,7 +161,11 @@ final class VideoSurfaceContainerView: UIView {
     private let nativeSurfaceGestureController = NativePlayerSurfaceGestureController()
     private(set) var prefersNativePlaybackControls = true
     private var showsSystemPlaybackControls = false
+    private var enablesNativeSurfaceGestures = true
+    private var isSystemPlaybackControlsSuppressedByGesture = false
+    private var showsSystemPlaybackSpeeds = false
     private var isPictureInPictureEnabled = false
+    private var nativeAllowsPictureInPicturePlaybackOverride: Bool?
     private var isNativePlaybackControllerEnabled = false
     private var usesLiveSurfaceDuringLayoutTransition = false
     private var isLayoutTransitioningForSurfaceHandoff = false
@@ -121,6 +177,9 @@ final class VideoSurfaceContainerView: UIView {
     private var deferredBoundSurfaceLayoutRefreshTask: Task<Void, Never>?
 #if DEBUG
     private(set) var debugBoundSurfaceLayoutRefreshCount = 0
+    var debugNativeSurfaceGestureController: NativePlayerSurfaceGestureController {
+        nativeSurfaceGestureController
+    }
 #endif
 
     var isLiveSurfaceHandoffActive: Bool {
@@ -198,6 +257,12 @@ final class VideoSurfaceContainerView: UIView {
         configureNativePlayerViewController()
     }
 
+    func setNativeAllowsPictureInPicturePlayback(_ isAllowed: Bool?) {
+        nativeAllowsPictureInPicturePlaybackOverride = isAllowed
+        nativePlayerViewController.nativeAllowsPictureInPicturePlaybackOverride = isAllowed
+        configureNativePlayerViewController()
+    }
+
     func setShowsSystemPlaybackControls(_ showsPlaybackControls: Bool) {
         guard showsSystemPlaybackControls != showsPlaybackControls else {
             configureNativePlayerViewController()
@@ -207,6 +272,26 @@ final class VideoSurfaceContainerView: UIView {
         showsSystemPlaybackControls = showsPlaybackControls
         configureNativePlayerViewController()
         configureNativeSurfaceGestures()
+    }
+
+    func setEnablesNativeSurfaceGestures(_ isEnabled: Bool) {
+        guard enablesNativeSurfaceGestures != isEnabled else {
+            configureNativePlayerViewController()
+            configureNativeSurfaceGestures()
+            return
+        }
+        enablesNativeSurfaceGestures = isEnabled
+        configureNativePlayerViewController()
+        configureNativeSurfaceGestures()
+    }
+
+    func setShowsSystemPlaybackSpeeds(_ showsSpeeds: Bool) {
+        guard showsSystemPlaybackSpeeds != showsSpeeds else {
+            configureNativePlayerViewController()
+            return
+        }
+        showsSystemPlaybackSpeeds = showsSpeeds
+        configureNativePlayerViewController()
     }
 
     func makePlaybackTransitionSnapshotView() -> UIView? {
@@ -583,6 +668,13 @@ final class VideoSurfaceContainerView: UIView {
         }
     }
 
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        if isNativePlaybackControllerEnabled {
+            applyNativePlayerLayout()
+        }
+    }
+
     private func enclosingNavigationController() -> UINavigationController? {
         var responder: UIResponder? = self
         while let current = responder {
@@ -595,31 +687,72 @@ final class VideoSurfaceContainerView: UIView {
         return nil
     }
 
+    private var effectiveShowsSystemPlaybackControls: Bool {
+        showsSystemPlaybackControls && !isSystemPlaybackControlsSuppressedByGesture
+    }
+
+    private func setSystemPlaybackControlsSuppressedByGesture(
+        _ isSuppressed: Bool,
+        hidesNativeTransportControls: Bool
+    ) {
+        let previousEffective = effectiveShowsSystemPlaybackControls
+        let previousSuppressed = nativePlayerViewController.isPlaybackControlsSuppressedBySurfaceGesture
+        isSystemPlaybackControlsSuppressedByGesture = isSuppressed && hidesNativeTransportControls
+        nativePlayerViewController.isPlaybackControlsSuppressedBySurfaceGesture = isSuppressed
+        let updatedEffective = effectiveShowsSystemPlaybackControls
+        if previousEffective != updatedEffective || nativePlayerViewController.showsPlaybackControls != updatedEffective {
+            nativePlayerViewController.showsPlaybackControls = updatedEffective
+        }
+        if previousSuppressed != isSuppressed || previousEffective != updatedEffective {
+            nativePlayerViewController.onPlaybackControlsSuppressionChanged?(isSuppressed)
+        }
+    }
+
     private func configureNativePlayerViewController() {
-        nativePlayerViewController.showsPlaybackControls = showsSystemPlaybackControls
-        nativePlayerViewController.allowsVideoFrameAnalysis = !showsSystemPlaybackControls
-        nativePlayerViewController.speeds = showsSystemPlaybackControls
-            ? []
-            : AVPlaybackSpeed.systemDefaultSpeeds
+        overrideUserInterfaceStyle = .dark
+        drawableView.overrideUserInterfaceStyle = .dark
+        nativePlayerViewController.overrideUserInterfaceStyle = .dark
+        nativePlayerViewController.view.overrideUserInterfaceStyle = .dark
+        nativePlayerViewController.nativeAllowsPictureInPicturePlaybackOverride =
+            nativeAllowsPictureInPicturePlaybackOverride
+        nativePlayerViewController.showsPlaybackControls = effectiveShowsSystemPlaybackControls
+        nativePlayerViewController.allowsVideoFrameAnalysis =
+            !showsSystemPlaybackControls && enablesNativeSurfaceGestures
+        nativePlayerViewController.speeds = showsSystemPlaybackSpeeds
+            ? AVPlaybackSpeed.systemDefaultSpeeds
+            : []
         nativePlayerViewController.videoGravity = .resizeAspect
-        let isPictureInPictureAllowed = isPictureInPictureEnabled
+        let effectivePictureInPictureEnabled =
+            nativeAllowsPictureInPicturePlaybackOverride ?? isPictureInPictureEnabled
+        let isPictureInPictureAllowed = effectivePictureInPictureEnabled
             && AVPictureInPictureController.isPictureInPictureSupported()
         nativePlayerViewController.allowsPictureInPicturePlayback = isPictureInPictureAllowed
-        nativePlayerViewController.canStartPictureInPictureAutomaticallyFromInline = isPictureInPictureAllowed
+        nativePlayerViewController.canStartPictureInPictureAutomaticallyFromInline =
+            isPictureInPictureAllowed && isPictureInPictureEnabled
         nativePlayerViewController.requiresLinearPlayback = false
         nativePlayerViewController.updatesNowPlayingInfoCenter = false
+        // 全屏进出完全交给系统全屏按钮与 AVKit 转场，不自动进出。
+        nativePlayerViewController.entersFullScreenWhenPlaybackBegins = false
+        nativePlayerViewController.exitsFullScreenWhenPlaybackEnds = false
         nativePlayerViewController.view.backgroundColor = .black
         nativePlayerViewController.view.isOpaque = true
     }
 
     private func configureNativeSurfaceGestures() {
         guard isNativePlaybackControllerEnabled,
-              showsSystemPlaybackControls,
+              enablesNativeSurfaceGestures,
               let playerViewModel,
               !playerViewModel.isTerminated
         else {
+            setSystemPlaybackControlsSuppressedByGesture(false, hidesNativeTransportControls: false)
             nativeSurfaceGestureController.detach()
             return
+        }
+        nativeSurfaceGestureController.onCustomGestureSuppressionChanged = { [weak self] isSuppressed, hidesNativeTransportControls in
+            self?.setSystemPlaybackControlsSuppressedByGesture(
+                isSuppressed,
+                hidesNativeTransportControls: hidesNativeTransportControls
+            )
         }
         nativeSurfaceGestureController.attach(
             to: nativePlayerViewController,
@@ -629,6 +762,9 @@ final class VideoSurfaceContainerView: UIView {
 
     private func installNativePlayerViewControllerIfPossible() {
         guard isNativePlaybackControllerEnabled else { return }
+        guard playerViewModel?.isNativeFullScreenPresented != true,
+              nativePlayerViewController.presentingViewController == nil
+        else { return }
         guard let parentController = nearestViewController else { return }
 
         if nativePlayerViewController.parent !== parentController {
@@ -646,6 +782,20 @@ final class VideoSurfaceContainerView: UIView {
     }
 
     private func applyNativePlayerLayout() {
+        guard playerViewModel?.isNativeFullScreenPresented != true,
+              nativePlayerViewController.presentingViewController == nil
+        else { return }
+        if NativePlaybackControlsExperiment.stored(),
+           let window,
+           let parentController = nativePlayerViewController.parent {
+            let parentTop = parentController.view.safeAreaInsets.top
+            let windowTop = window.safeAreaInsets.top
+            let residualTop = max(0, parentTop - windowTop)
+            let desiredTopInset = -residualTop
+            if abs(nativePlayerViewController.additionalSafeAreaInsets.top - desiredTopInset) > 0.5 {
+                nativePlayerViewController.additionalSafeAreaInsets.top = desiredTopInset
+            }
+        }
         AVPlayerLayoutCoordinator.shared.apply(
             playerController: nativePlayerViewController,
             in: drawableView,
@@ -661,7 +811,7 @@ final class VideoSurfaceContainerView: UIView {
     }
 }
 
-private extension UIView {
+extension UIView {
     var nearestViewController: UIViewController? {
         var responder: UIResponder? = self
         while let currentResponder = responder {

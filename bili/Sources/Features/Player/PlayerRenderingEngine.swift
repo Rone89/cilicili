@@ -194,8 +194,6 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
     var hardwareDecodeRequested: Bool
     var isHardwareDecodeCompatible: Bool?
     var environmentSummary: String?
-    var nativeHDRVideoLayerState: String? = nil
-    var nativeHDRVideoLayerSummary: String? = nil
 
     static let empty = PlayerEngineDiagnostics(
         engineName: "未创建",
@@ -266,9 +264,6 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
         if !hlsVideoVariantDetails.isEmpty {
             parts.append(hlsVideoVariantDetails.joined(separator: "/"))
         }
-        if let nativeHDRVideoLayerSummary, !nativeHDRVideoLayerSummary.isEmpty {
-            parts.append("NativeHDR \(nativeHDRVideoLayerSummary)")
-        }
         return parts.joined(separator: " · ")
     }
 
@@ -277,11 +272,6 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
     }
 
     var renderedDynamicRangeTitle: String {
-        if dynamicRange == .dolbyVision,
-            nativeHDRVideoLayerState == "ready"
-        {
-            return "Dolby Vision (原生视频层)"
-        }
         guard usesLocalHLSBridge,
             let hlsRange = hlsRenderedDynamicRangeTitle
         else { return sourceDynamicRangeTitle }
@@ -296,31 +286,6 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
 
     private var hlsRenderedDynamicRangeTitle: String? {
         let details = hlsVideoVariantDetails.joined(separator: " ")
-        let lowercasedDetails = details.lowercased()
-        if lowercasedDetails.contains("dvpolicy=protectedhlg") {
-            return "HLG (Dolby Vision 元数据关闭)"
-        }
-        if lowercasedDetails.contains("dvpolicy=compatiblehlg") {
-            return "HLG"
-        }
-        if lowercasedDetails.contains("dvpolicy=applenativep8hls")
-            || lowercasedDetails.contains("dvpath=applenativep8hls")
-        {
-            return "Dolby Vision (Apple 原生 P8)"
-        }
-        if lowercasedDetails.contains("dvpolicy=fulleffect") {
-            return "Dolby Vision (原生主轨)"
-        }
-        if lowercasedDetails.contains("dvpolicy=supplementalhls") {
-            return "Dolby Vision (HLS supplemental)"
-        }
-        if lowercasedDetails.contains("supp=dvh1")
-            || lowercasedDetails.contains("supp=dvhe")
-            || lowercasedDetails.contains("supplemental-codecs=\"dvh1")
-            || lowercasedDetails.contains("supplemental-codecs=\"dvhe")
-        {
-            return "Dolby Vision"
-        }
         if details.contains("HLG") || details.contains("color=18") {
             return "HLG"
         }
@@ -462,6 +427,7 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     func detachSurface(_ surface: UIView)
     func refreshSurfaceLayout()
     func recoverSurface()
+    func recoverSurfaceForSeekResume()
     @discardableResult
     func refreshVideoOutputForPlaybackRecovery() -> Bool
     @discardableResult
@@ -495,7 +461,9 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     func seekToLiveEdge() -> TimeInterval?
     func seek(toProgress progress: Double, duration: TimeInterval?) -> TimeInterval?
     func seek(by interval: TimeInterval, from currentTime: TimeInterval, duration: TimeInterval?) -> TimeInterval?
+    func scrubLivePreview(toProgress progress: Double, duration: TimeInterval?)
     func seekAfterUserScrub(toProgress progress: Double, duration: TimeInterval?) async -> TimeInterval?
+    func isTimeBuffered(_ time: TimeInterval) -> Bool
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot
     func recoveryBufferSnapshot() -> PlayerPlaybackSnapshot?
     func currentRenderedVideoTime() -> TimeInterval?
@@ -522,6 +490,16 @@ extension PlayerRenderingEngine {
 
     func pauseForUserScrub() {
         pause()
+    }
+
+    func recoverSurfaceForSeekResume() {
+        recoverSurface()
+    }
+
+    func scrubLivePreview(toProgress _: Double, duration _: TimeInterval?) {}
+
+    func isTimeBuffered(_: TimeInterval) -> Bool {
+        false
     }
 
     func pauseForAppBackground() {

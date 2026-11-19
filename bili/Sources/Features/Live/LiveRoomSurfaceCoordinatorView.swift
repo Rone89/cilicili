@@ -425,8 +425,12 @@ private struct LiveRoomSurfaceOnlyOverlay: View {
     @StateObject private var seekTransitionSnapshotModel = PlayerRotationTransitionSnapshotModel()
     @StateObject private var appBackgroundRecoverySnapshotModel = PlayerRotationTransitionSnapshotModel()
     @StateObject private var speedBoostModel = PlayerSpeedBoostModel()
-    @StateObject private var seekPreviewModel = PlayerSeekPreviewModel()
+    @StateObject private var seekPreviewBox = PlayerSeekPreviewModelBox()
     @StateObject private var playbackProgressCoordinator = PlayerPlaybackProgressCoordinator()
+
+    private var seekPreviewModel: PlayerSeekPreviewModel {
+        seekPreviewBox.model
+    }
     @StateObject private var progressReporter = PlayerPlaybackProgressReporter()
     @State private var lastPreparedScrubProgress = -1.0
 

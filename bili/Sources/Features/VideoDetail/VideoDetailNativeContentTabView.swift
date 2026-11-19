@@ -46,7 +46,6 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         ))
         .nativeBottomScrollEdgeBlur(isEnabled: !hidesBottomToolbar)
         .nativeBottomScrollEdgeBlurVisibility(isHidden: hidesBottomToolbar)
-        .toolbarVisibility(.hidden, for: .tabBar)
         .tint(appTintColor)
         .environment(\.videoDetailStandardHorizontalInset, standardHorizontalInset)
     }

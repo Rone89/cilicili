@@ -189,13 +189,6 @@ private enum PlayerPerformanceOverlayLiveDiagnosticsRowBuilder {
                 style: .secondary
             )
         }
-        appendOptional(
-            &rows,
-            id: "native-hdr-layer",
-            title: "原生层",
-            value: diagnostics.nativeHDRVideoLayerSummary,
-            style: diagnostics.nativeHDRVideoLayerState == "failed" ? .warning : .secondary
-        )
         appendOptional(&rows, id: "error", title: "错误", value: playerViewModel.errorMessage, style: .failure)
         appendOptional(&rows, id: "fallback", title: "降级", value: diagnosticsStore.playbackFallbackMessage, style: .warning)
         if let reason = playerViewModel.lastFailureReason {

@@ -104,40 +104,11 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         }
     }
 
-    func testCollapsedHostPreservesDanmakuKitTracksWithoutViewportRebuild() throws {
-        let diagnostics = DanmakuRendererDiagnostics.shared
-        diagnostics.start()
-        let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
-        defer { host.stop(); diagnostics.stop() }
-        host.setLogicalCanvasSize(host.bounds.size)
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
-        host.layoutIfNeeded()
-        let child = try XCTUnwrap(host.subviews.first as? DanmakuKitOverlayView)
-        child.layoutIfNeeded()
-        host.apply(configuration: configuration(items: items(count: 10)))
-        let rebuilds = diagnostics.danmakuKitSummary.rebuilds
-        XCTAssertGreaterThan(rebuilds, 0)
-
-        for height in [500.0, 350, 220, 54, 600] {
-            host.frame.size.height = height
-            host.layoutIfNeeded()
-            child.layoutIfNeeded()
-            XCTAssertTrue(host.subviews.first === child)
-            XCTAssertEqual(child.frame, CGRect(x: 0, y: 0, width: 390, height: 600))
-            XCTAssertEqual(diagnostics.danmakuKitSummary.rebuilds, rebuilds)
-            XCTAssertTrue(host.clipsToBounds)
-        }
-        // A genuine canvas change still updates the tracks.
-        host.setLogicalCanvasSize(CGSize(width: 844, height: 390))
-        child.layoutIfNeeded()
-        XCTAssertGreaterThan(diagnostics.danmakuKitSummary.rebuilds, rebuilds)
-    }
-
     func testCollapsedHostPreservesMetalFramesAndTimelineThenSupportsSeek() throws {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         defer { host.stop() }
         host.setLogicalCanvasSize(host.bounds.size)
-        host.selectRenderer(preference: true ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .metal)
         guard host.usesMetal else { throw XCTSkip("Metal unavailable") }
         host.layoutIfNeeded()
         let child = try XCTUnwrap(host.subviews.first as? MetalDanmakuView)
@@ -183,7 +154,7 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
     func testHostWithoutCanvasOverrideFollowsBoundsAndRejectsInvalidSizes() throws {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         defer { host.stop() }
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .synchronizedLayer)
         let child = try XCTUnwrap(host.subviews.first)
         host.frame.size.height = 220
         host.layoutIfNeeded()
@@ -201,77 +172,20 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 220))
         defer { host.stop() }
         host.setLogicalCanvasSize(CGSize(width: 390, height: 600))
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .synchronizedLayer)
         let previous = try XCTUnwrap(host.subviews.first)
-        host.selectRenderer(preference: true ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .metal)
         XCTAssertNil(previous.superview)
         XCTAssertEqual(host.subviews.count, 1)
         XCTAssertEqual(host.subviews.first?.frame, CGRect(x: 0, y: 0, width: 390, height: 600))
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .synchronizedLayer)
         XCTAssertEqual(host.subviews.count, 1)
-        XCTAssertTrue(host.subviews.first is DanmakuKitOverlayView)
+        XCTAssertTrue(host.subviews.first is DanmakuSynchronizedLayerView)
         XCTAssertEqual(host.subviews.first?.frame.size.height, 600)
         host.setLogicalCanvasSize(nil)
         XCTAssertEqual(host.subviews.first?.frame, host.bounds)
         host.stop()
         XCTAssertTrue(host.subviews.isEmpty)
-    }
-
-    func testMetalRendererExperimentDefaultsOffAndPersistsAcrossStoreRecreation() {
-        let suite = "metal-tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.metalDanmakuRendererExperimentEnabled)
-        store.setMetalDanmakuRendererExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).metalDanmakuRendererExperimentEnabled)
-        store.setMetalDanmakuRendererExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).metalDanmakuRendererExperimentEnabled)
-    }
-
-    func testDanmakuKitStageTransitionPreservesSceneAndResynchronizesOnFinalCanvas() throws {
-        let diagnostics = DanmakuRendererDiagnostics.shared
-        diagnostics.start()
-        let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 900, height: 500))
-        defer { host.stop(); diagnostics.stop() }
-        host.debugDiagnostics = diagnostics
-        host.setLogicalCanvasSize(CGSize(width: 900, height: 500))
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
-        host.layoutIfNeeded()
-        let child = try XCTUnwrap(host.subviews.first as? DanmakuKitOverlayView)
-        child.layoutIfNeeded()
-        host.apply(configuration: configuration(items: items(count: 10), videoAspectRatio: 1.8))
-
-        let initialRebuilds = diagnostics.danmakuKitSummary.rebuilds
-        let initialActiveCount = diagnostics.danmakuKitSummary.activeItems
-        XCTAssertGreaterThan(initialActiveCount, 0)
-        let originalBounds = child.bounds
-
-        host.setLayoutTransitioning(true)
-        host.frame = CGRect(x: 0, y: 0, width: 500, height: 900)
-        host.setLogicalCanvasSize(CGSize(width: 500, height: 500 / 1.8))
-        host.apply(configuration: configuration(items: items(count: 10), videoAspectRatio: 1.8))
-        host.layoutIfNeeded()
-        child.layoutIfNeeded()
-
-        XCTAssertTrue(host.subviews.first === child)
-        XCTAssertEqual(child.bounds, originalBounds, "DanmakuKit must retain its source stage during the transition")
-        XCTAssertEqual(child.transform.a, child.transform.d, accuracy: 0.001)
-        XCTAssertEqual(child.transform.a, 0.5 / 0.9, accuracy: 0.01)
-        XCTAssertEqual(diagnostics.danmakuKitSummary.rebuilds, initialRebuilds,
-                       "Viewport animation must not repeatedly rebuild or reassign tracks")
-        XCTAssertEqual(diagnostics.danmakuKitSummary.activeItems, initialActiveCount)
-
-        host.setLayoutTransitioning(false)
-        child.layoutIfNeeded()
-
-        XCTAssertEqual(child.transform, .identity)
-        XCTAssertEqual(child.bounds.size.width, 500, accuracy: 0.01)
-        XCTAssertEqual(child.bounds.size.height, 500 / 1.8, accuracy: 0.01)
-        XCTAssertEqual(diagnostics.danmakuKitSummary.rebuilds, initialRebuilds + 1)
-        XCTAssertEqual(diagnostics.danmakuKitSummary.lastRebuildReason, "stage-transition")
-        XCTAssertGreaterThan(diagnostics.danmakuKitSummary.activeItems, 0,
-                             "Existing comments must be reconstructed at their current media-time progress")
     }
 
     func testMetalStageTransitionKeepsActiveEntriesAndPresentsContinuously() throws {
@@ -397,15 +311,15 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertEqual(view.debugActiveItemIDs, Set(fixture.filter { $0.time <= 2 }.map(\.id)))
     }
 
-    func testHostSwitchHasExactlyOneRendererAndOffRestoresDanmakuKit() async throws {
+    func testHostSwitchHasExactlyOneRendererAndRestoresSynchronizedLayer() async throws {
         let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 900, height: 400))
         defer { host.stop() }
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .synchronizedLayer)
         host.apply(configuration: configuration(items: items(count: 10)))
         XCTAssertEqual(host.subviews.count, 1)
-        XCTAssertTrue(host.subviews.first is DanmakuKitOverlayView)
+        XCTAssertTrue(host.subviews.first is DanmakuSynchronizedLayerView)
         let previous = WeakView(host.subviews.first)
-        host.selectRenderer(preference: true ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .metal)
         XCTAssertNil(previous.value?.superview)
         // Core Animation may retain the retired layer until its transaction drains.
         let releaseLimit = ContinuousClock.now.advanced(by: .seconds(1))
@@ -420,11 +334,11 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertFalse(metal.metalView.isOpaque)
         XCTAssertEqual(metal.metalView.clearColor.alpha, 0)
         XCTAssertFalse(metal.isUserInteractionEnabled)
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .synchronizedLayer)
         XCTAssertTrue(metal.metalView.isPaused)
         XCTAssertEqual(metal.debugActiveCount, 0)
         XCTAssertEqual(host.subviews.count, 1)
-        XCTAssertTrue(host.subviews.first is DanmakuKitOverlayView)
+        XCTAssertTrue(host.subviews.first is DanmakuSynchronizedLayerView)
     }
 
     func testRepeatedCreateSeekResizeStopKeepsAtlasAndSceneBounded() throws {

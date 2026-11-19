@@ -487,64 +487,85 @@ final class HLSBridgePlaylistRenderingTests: XCTestCase {
     }
 
     @MainActor
-    func testRendersNativeHDRVideoOnlyPlaylistWithoutAudioGroup() throws {
+    func testRendersDolbyVisionCompatibleBaseLayerPlaylist() throws {
         let baseURL = try XCTUnwrap(URL(string: "http://127.0.0.1:50123"))
         let videoURL = try XCTUnwrap(URL(string: "https://upos.example.test/video-dv.m4s"))
-        let rendition = HLSRendition(
-            sourceURL: videoURL,
-            fallbackSourceURLs: [],
-            mediaType: .video,
-            quality: 126,
-            initialization: HTTPByteRange(start: 0, endInclusive: 999),
-            initializationData: nil,
-            references: [
-                SIDXParser.Reference(
-                    range: HTTPByteRange(start: 1_000, endInclusive: 1_999),
-                    duration: 1,
-                    startTime: 0,
-                    startTimeTicks: 0,
-                    timescale: 1_000
+        let audioURL = try XCTUnwrap(URL(string: "https://upos.example.test/audio-aac.m4s"))
+        let plan = HLSBridgeRoutePlan(
+            videoRenditions: [
+                HLSRendition(
+                    sourceURL: videoURL,
+                    fallbackSourceURLs: [],
+                    mediaType: .video,
+                    quality: 126,
+                    initialization: HTTPByteRange(start: 0, endInclusive: 999),
+                    initializationData: nil,
+                    references: [
+                        SIDXParser.Reference(
+                            range: HTTPByteRange(start: 1_000, endInclusive: 1_999),
+                            duration: 1,
+                            startTime: 0,
+                            startTimeTicks: 0,
+                            timescale: 1_000
+                        )
+                    ],
+                    targetDuration: 1,
+                    bandwidth: 9_040_460,
+                    codec: "hvc1.2.4.H150.90",
+                    mediaTimeOffset: 0,
+                    baseMediaDecodeTimeOffsetTicks: 0,
+                    dynamicRange: .dolbyVision,
+                    dolbyVisionConfiguration: DolbyVisionCodecConfiguration(
+                        boxType: "dvvC",
+                        profile: 8,
+                        level: 7,
+                        rpuPresent: true,
+                        enhancementLayerPresent: false,
+                        baseLayerPresent: true,
+                        baseLayerSignalCompatibilityID: 4
+                    ),
+                    hlsBaseLayerCodec: "hvc1.2.4.H150.90",
+                    dimensions: CGSize(width: 3840, height: 2160),
+                    frameRate: 29.97003
                 )
             ],
-            targetDuration: 1,
-            bandwidth: 9_040_460,
-            codec: "hvc1.2.4.H150.90",
-            mediaTimeOffset: 0,
-            baseMediaDecodeTimeOffsetTicks: 0,
-            dynamicRange: .dolbyVision,
-            dolbyVisionConfiguration: DolbyVisionCodecConfiguration(
-                boxType: "dvvC",
-                profile: 8,
-                level: 7,
-                rpuPresent: true,
-                enhancementLayerPresent: false,
-                baseLayerPresent: true,
-                baseLayerSignalCompatibilityID: 4
+            audioRendition: HLSRendition(
+                sourceURL: audioURL,
+                fallbackSourceURLs: [],
+                mediaType: .audio,
+                quality: 30280,
+                initialization: HTTPByteRange(start: 0, endInclusive: 299),
+                initializationData: nil,
+                references: [
+                    SIDXParser.Reference(
+                        range: HTTPByteRange(start: 300, endInclusive: 699),
+                        duration: 1,
+                        startTime: 0,
+                        startTimeTicks: 0,
+                        timescale: 1_000
+                    )
+                ],
+                targetDuration: 1,
+                bandwidth: 128_000,
+                codec: "mp4a.40.2",
+                mediaTimeOffset: 0,
+                baseMediaDecodeTimeOffsetTicks: 0,
+                dynamicRange: .sdr,
+                dolbyVisionConfiguration: nil,
+                hlsBaseLayerCodec: nil,
+                dimensions: nil,
+                frameRate: nil
             ),
-            dolbyVisionRenderingPolicy: .appleNativeP8HLS,
-            hlsBaseLayerCodec: "hvc1.2.4.H150.90",
-            dimensions: CGSize(width: 3840, height: 2160),
-            frameRate: 29.97003
+            masterPlaylistVersion: 8
         )
 
-        let rendered = LocalHLSBridge.renderVideoOnlyPlaylists(
-            rendition: rendition,
-            masterPlaylistVersion: 10,
-            baseURL: baseURL
-        )
+        let rendered = LocalHLSBridge.renderPlaylists(from: plan, baseURL: baseURL)
 
-        XCTAssertEqual(Set(rendered.routes.keys), Set([
-            "/master.m3u8",
-            "/video.m3u8",
-            "/media/video/init.mp4",
-            "/media/video/segment-0.m4s"
-        ]))
         let master = try dataRouteString("/master.m3u8", in: rendered.routes)
-        XCTAssertFalse(master.playlist.contains("#EXT-X-MEDIA:TYPE=AUDIO"))
-        XCTAssertFalse(master.playlist.contains("AUDIO=\"audio\""))
-        XCTAssertTrue(master.playlist.contains("CODECS=\"hvc1.2.4.H150.90\""))
+        XCTAssertTrue(master.playlist.contains("#EXT-X-MEDIA:TYPE=AUDIO"))
+        XCTAssertTrue(master.playlist.contains("CODECS=\"hvc1.2.4.H150.90,mp4a.40.2\""))
         XCTAssertTrue(master.playlist.contains("VIDEO-RANGE=HLG"))
-        XCTAssertTrue(master.playlist.contains("SUPPLEMENTAL-CODECS=\"dvh1.08.07/db4h\""))
+        XCTAssertFalse(master.playlist.contains("SUPPLEMENTAL-CODECS"))
         XCTAssertTrue(master.playlist.contains("RESOLUTION=3840x2160"))
         XCTAssertTrue(master.playlist.contains("FRAME-RATE=29.97"))
 

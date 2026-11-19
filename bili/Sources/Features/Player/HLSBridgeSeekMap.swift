@@ -10,15 +10,14 @@ struct HLSBridgeSeekMap: Sendable {
         guard let segment = segment(near: playbackTime) else { return nil }
         let offset = playbackTime - segment.startTime
         guard offset.isFinite, offset >= 0 else { return nil }
-        let alignmentWindow = min(max(segment.duration * 0.45, 0.65), 2.8)
+        let alignmentWindow = min(max(segment.duration * 0.65, 0.8), 3.2)
         guard offset <= alignmentWindow else { return nil }
         return segment.startTime
     }
 
     nonisolated func warmRanges(around playbackTime: TimeInterval) -> [HTTPByteRange] {
         guard let index = segmentIndex(near: playbackTime) else { return [initialization] }
-        let segmentCount = includeExtraSegment ? 3 : 2
-        let upperBound = min(segments.count, index + segmentCount)
+        let upperBound = min(segments.count, index + 1)
         return [initialization] + segments[index..<upperBound].map(\.range)
     }
 

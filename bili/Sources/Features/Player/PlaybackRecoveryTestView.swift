@@ -37,6 +37,9 @@ struct PlaybackRecoveryTestView: View {
                     if let message = runner.readinessMessage {
                         Text(message).foregroundStyle(.secondary)
                     }
+                    Button("快进跳转短测（4项）") { runner.start(onlySeek: true) }
+                        .disabled(runner.readinessMessage != nil)
+                        .accessibilityIdentifier("recovery.test.startSeek")
                     Button("暂停边界短测（3次）") { runner.start(onlyPauseBoundary: true) }
                         .disabled(runner.readinessMessage != nil)
                         .accessibilityIdentifier("recovery.test.startBoundary")

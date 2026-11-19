@@ -49,10 +49,6 @@ final class PlaybackHitchSelfTest {
         let mode = Self.argumentValue(after: "--hitch-mode") ?? "off"
         PlaybackDiagnosticsExperiment.reset()
         switch mode {
-        case "kit":
-            PlaybackDiagnosticsExperiment.forceDanmakuKit = true
-            libraryStore?.setDanmakuEnabled(true)
-            viewModel.isDanmakuEnabled = true
         case "metal":
             PlaybackDiagnosticsExperiment.forceMetalDanmaku = true
             libraryStore?.setDanmakuEnabled(true)

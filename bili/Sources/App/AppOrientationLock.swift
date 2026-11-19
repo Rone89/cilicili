@@ -53,9 +53,13 @@ enum AppOrientationLock {
             .filter(\.participatesInAppOrientationChrome)
             .compactMap(\.rootViewController)
             .forEach { controller in
-                controller.setNeedsUpdateOfSupportedInterfaceOrientations()
-                controller.setNeedsStatusBarAppearanceUpdate()
-                controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
+                var cursor: UIViewController? = controller
+                while let current = cursor {
+                    current.setNeedsUpdateOfSupportedInterfaceOrientations()
+                    current.setNeedsStatusBarAppearanceUpdate()
+                    current.setNeedsUpdateOfHomeIndicatorAutoHidden()
+                    cursor = current.presentedViewController
+                }
             }
     }
 
@@ -110,10 +114,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        print("[AppLifecycle] applicationDidEnterBackground")
         ActivePlaybackCoordinator.shared.pauseActivePlaybackForAppBackground()
     }
 
     func applicationProtectedDataWillBecomeUnavailable(_ application: UIApplication) {
+        print("[AppLifecycle] protectedDataWillBecomeUnavailable")
         ActivePlaybackCoordinator.shared.pauseActivePlaybackForAppBackground()
     }
 

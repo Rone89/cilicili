@@ -72,17 +72,10 @@ struct VideoDetailDanmakuOverlay: View {
         )
     }
 
-    /// 弹幕渲染后端选择。优先级：诊断强制 > 同步层实验（需引擎暴露 AVPlayer，
-    /// 直播等无播放器场景自动回退）> Metal 实验 > DanmakuKit。
-    /// Metal 弹幕与 HDR 无关（已用自动自测验证两种渲染器在 4K HDR 下均流畅），
-    /// 遵循用户的 Metal 弹幕实验开关。
+    /// 弹幕渲染后端选择：点播默认走系统媒体时钟同步层（`AVSynchronizedLayer`），
+    /// 直播或无 AVPlayer 场景自动回退到 Metal。
     private var danmakuRendererPreference: DanmakuRendererPreference {
-        if PlaybackDiagnosticsExperiment.forceDanmakuKit { return .danmakuKit }
         if PlaybackDiagnosticsExperiment.forceMetalDanmaku { return .metal }
-        if libraryStore.danmakuSynchronizedLayerRendererEnabled,
-           playerViewModel.danmakuSyncPlayer != nil {
-            return .synchronizedLayer
-        }
-        return libraryStore.metalDanmakuRendererExperimentEnabled ? .metal : .danmakuKit
+        return playerViewModel.danmakuSyncPlayer != nil ? .synchronizedLayer : .metal
     }
 }

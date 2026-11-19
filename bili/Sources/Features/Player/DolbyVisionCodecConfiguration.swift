@@ -73,37 +73,16 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         "\(codecPrefix).\(Self.twoDigit(profile)).\(Self.twoDigit(level))"
     }
 
-    nonisolated func hlsAdvertisedCodec(
-        baseLayerCodec: String,
-        renderingPolicy: DolbyVisionRenderingPolicy = .stored()
-    ) -> String {
-        let renderingPolicy = renderingPolicy.playablePolicy
-        if usesNativeDolbyVisionTrack(renderingPolicy: renderingPolicy) {
-            return decoderCodecString
-        }
+    nonisolated func hlsAdvertisedCodec(baseLayerCodec: String) -> String {
         guard advertisesBaseLayerCodecForHLS(baseLayerCodec: baseLayerCodec) else {
             return decoderCodecString
         }
         return Self.hlsBaseLayerCodec(baseLayerCodec)
     }
 
-    nonisolated func hlsAdvertisedSupplementalCodec(
-        baseLayerCodec: String,
-        renderingPolicy: DolbyVisionRenderingPolicy = .stored()
-    ) -> String? {
-        let renderingPolicy = renderingPolicy.playablePolicy
-        guard usesSupplementalCodecsAttribute(
-            baseLayerCodec: baseLayerCodec,
-            renderingPolicy: renderingPolicy
-        ) else { return nil }
-        return supplementalCodecString
-    }
-
     nonisolated func normalizedInitializationDataForHLS(
-        _ initializationData: Data?,
-        renderingPolicy: DolbyVisionRenderingPolicy = .stored()
+        _ initializationData: Data?
     ) -> DolbyVisionInitializationNormalization {
-        let renderingPolicy = renderingPolicy.playablePolicy
         guard let initializationData, !initializationData.isEmpty else {
             return DolbyVisionInitializationNormalization(
                 data: initializationData,
@@ -118,7 +97,7 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         var bytes = [UInt8](initializationData)
         guard let sampleEntryTypeOffset = Self.sampleEntryTypeOffset(in: bytes),
               let originalType = Self.string(in: bytes, at: sampleEntryTypeOffset),
-              let hlsType = hlsSampleEntryType(for: originalType, renderingPolicy: renderingPolicy)
+              let hlsType = hlsSampleEntryType(for: originalType)
         else {
             return DolbyVisionInitializationNormalization(
                 data: initializationData,
@@ -130,7 +109,8 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         if hlsType != originalType {
             bytes.replaceSubrange(sampleEntryTypeOffset..<(sampleEntryTypeOffset + 4), with: Array(hlsType.utf8))
         }
-        if usesCompatibleBaseLayerOnlyHLS(renderingPolicy: renderingPolicy) {
+        // 统一移除 Profile 8/10 兼容基层的杜比配置盒，避免 AVPlayer 因 B 站非标准元数据触发过曝。
+        if usesBaseLayerCodecForHLS {
             bytes = Self.removingDolbyVisionConfigurationBoxes(from: bytes)
         }
         if usesHLGCompatibleBaseLayer {
@@ -292,25 +272,6 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         profile == 8 || (profile == 10 && baseLayerSignalCompatibilityID != 0)
     }
 
-    nonisolated func usesSupplementalCodecsAttribute(
-        renderingPolicy: DolbyVisionRenderingPolicy = .stored()
-    ) -> Bool {
-        let renderingPolicy = renderingPolicy.playablePolicy
-        guard renderingPolicy != .metadataPassthrough else { return false }
-        return usesBaseLayerCodecForHLS
-            && !usesCompatibleBaseLayerOnlyHLS(renderingPolicy: renderingPolicy)
-            && !usesNativeDolbyVisionTrack(renderingPolicy: renderingPolicy)
-    }
-
-    nonisolated func usesSupplementalCodecsAttribute(
-        baseLayerCodec: String,
-        renderingPolicy: DolbyVisionRenderingPolicy = .stored()
-    ) -> Bool {
-        let renderingPolicy = renderingPolicy.playablePolicy
-        guard usesSupplementalCodecsAttribute(renderingPolicy: renderingPolicy) else { return false }
-        return !Self.isDolbyVisionCodec(baseLayerCodec)
-    }
-
     nonisolated func advertisesBaseLayerCodecForHLS(baseLayerCodec: String) -> Bool {
         guard usesBaseLayerCodecForHLS else { return false }
         return !Self.isDolbyVisionCodec(baseLayerCodec)
@@ -349,15 +310,9 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
             || lowercased.hasPrefix("dvhe.")
     }
 
-    nonisolated private func hlsSampleEntryType(
-        for originalType: String,
-        renderingPolicy: DolbyVisionRenderingPolicy
-    ) -> String? {
+    nonisolated private func hlsSampleEntryType(for originalType: String) -> String? {
         switch originalType {
         case "hev1", "hvc1", "dvhe", "dvh1":
-            if usesNativeDolbyVisionTrack(renderingPolicy: renderingPolicy) {
-                return codecPrefix
-            }
             return usesBaseLayerCodecForHLS ? "hvc1" : "dvh1"
         default:
             return nil
@@ -366,14 +321,6 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
 
     nonisolated private var usesHLGCompatibleBaseLayer: Bool {
         profile == 8 && baseLayerSignalCompatibilityID == 4
-    }
-
-    nonisolated private func usesCompatibleBaseLayerOnlyHLS(renderingPolicy: DolbyVisionRenderingPolicy) -> Bool {
-        usesBaseLayerCodecForHLS && renderingPolicy == .compatibleHLG
-    }
-
-    nonisolated private func usesNativeDolbyVisionTrack(renderingPolicy: DolbyVisionRenderingPolicy) -> Bool {
-        false
     }
 
     nonisolated private static func hlsHEVCSampleEntryType(for originalType: String) -> String? {

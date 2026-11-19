@@ -234,6 +234,70 @@ final class RootTabScrollUITests: XCTestCase {
         }
     }
 
+    func testMinimizedTabBarContinuesToCollapseAfterDetailPushAndPop() {
+        let app = launch(arguments: ["--test-minimize"])
+
+        func assertCollapsed(_ tab: String, phase: String) {
+            let button = app.tabBars.buttons[tab]
+            let collapsed = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    button.exists && (button.value as? String) == "Collapsed" && button.frame.width < 60
+                },
+                object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 4), .completed, "\(tab) \(phase) should collapse tab bar")
+        }
+
+        func expandIfCollapsed(_ tab: String) {
+            let button = app.tabBars.buttons[tab]
+            if (button.value as? String) == "Collapsed" || button.frame.width < 60 {
+                button.tap()
+                let expanded = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in button.exists && button.frame.width > 60 },
+                    object: nil
+                )
+                XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 3), .completed, "\(tab) should expand")
+            }
+        }
+
+        func scrollDown(_ tab: String) {
+            let scroll = mainScroll(in: app)
+            let startY: CGFloat = 0.72
+            let endY: CGFloat = tab == "我的" ? 0.42 : 0.32
+            scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+                .press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY)))
+        }
+
+        // Expanded push/pop on Home, then repeat collapsed-before-push/pop across Home, Dynamic, Mine
+        select("首页", in: app)
+        app.buttons["fixture.root.detail"].tap()
+        XCTAssertTrue(app.staticTexts["二级页面"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        app.buttons["返回"].tap()
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 3))
+        scrollDown("首页")
+        assertCollapsed("首页", phase: "after expanded push/pop")
+        expandIfCollapsed("首页")
+        app.tabBars.buttons["首页"].tap() // scroll back to top
+
+        for tab in ["首页", "动态", "我的"] {
+            select(tab, in: app)
+            scrollDown(tab)
+            assertCollapsed(tab, phase: "before detail push")
+
+            app.buttons["fixture.root.detail"].tap()
+            XCTAssertTrue(app.staticTexts["二级页面"].waitForExistence(timeout: 3))
+            XCTAssertFalse(app.tabBars.firstMatch.exists)
+
+            app.buttons["返回"].tap()
+            XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 3))
+            expandIfCollapsed(tab)
+            scrollDown(tab)
+            assertCollapsed(tab, phase: "after collapsed detail push/pop")
+            expandIfCollapsed(tab)
+        }
+    }
+
     func testActiveSearchScrollRequestKeepsQueryKeyboardAndFilters() {
         let app = launch()
         select("搜索", in: app)

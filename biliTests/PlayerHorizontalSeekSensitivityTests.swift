@@ -30,4 +30,32 @@ final class PlayerHorizontalSeekSensitivityTests: XCTestCase {
 
         XCTAssertEqual(clock.seekPreviewProgress, 0.5001)
     }
+
+    @MainActor
+    func testVelocityBoostPreservesPrecisionAtSlowSpeedsAndAcceleratesFastFlicks() {
+        XCTAssertEqual(
+            PlayerHorizontalSeekSensitivity.effectiveSecondsPerFullWidth(
+                duration: 1_800,
+                horizontalVelocity: 60
+            ),
+            90
+        )
+        let normalThumbSeconds = PlayerHorizontalSeekSensitivity.effectiveSecondsPerFullWidth(
+            duration: 1_800,
+            horizontalVelocity: 300
+        )
+        XCTAssertGreaterThan(normalThumbSeconds, 600)
+
+        let fastSwipeSeconds = PlayerHorizontalSeekSensitivity.effectiveSecondsPerFullWidth(
+            duration: 1_800,
+            horizontalVelocity: 1_600
+        )
+        XCTAssertEqual(fastSwipeSeconds, 1_500, accuracy: 0.5)
+
+        let shortVideoFastSwipeSeconds = PlayerHorizontalSeekSensitivity.effectiveSecondsPerFullWidth(
+            duration: 240,
+            horizontalVelocity: 1_600
+        )
+        XCTAssertLessThanOrEqual(shortVideoFastSwipeSeconds, 240)
+    }
 }

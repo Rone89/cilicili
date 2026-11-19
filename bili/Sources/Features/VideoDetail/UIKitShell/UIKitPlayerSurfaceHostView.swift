@@ -27,7 +27,10 @@ final class UIKitPlayerSurfaceHostView: UIView {
         )
         super.init(frame: .zero)
 
+        overrideUserInterfaceStyle = .dark
         backgroundColor = .black
+        hostingController.overrideUserInterfaceStyle = .dark
+        hostingController.view.overrideUserInterfaceStyle = .dark
         hostingController.view.backgroundColor = .black
         // 双保险：让 hosting controller 自身也不参与 safe area 内缩。
         if #available(iOS 16.4, *) {
@@ -116,14 +119,14 @@ final class UIKitPlayerSurfaceHostView: UIView {
     ) -> AnyView {
         let surface = VideoSurfaceView(
             viewModel: viewModel,
-            prefersNativePlaybackControls: false,
+            prefersNativePlaybackControls: NativePlaybackControlsExperiment.stored(),
             isPictureInPictureEnabled: isPictureInPictureEnabled,
             // 原型阶段先用即时布局，不引入 SwiftUI 协调动画，
             // 让旋转时的 frame 变化直接驱动 layer，观察“裸”手感。
             disablesImplicitLayoutAnimations: true,
             usesLiveSurfaceDuringLayoutTransition: true
         )
-        return AnyView(surface.ignoresSafeArea())
+        return AnyView(surface.ignoresSafeArea().environment(\.colorScheme, .dark))
     }
 
     private func scheduleVisibleSurfaceRebind(
@@ -180,13 +183,28 @@ final class UIKitPlayerSurfaceHostView: UIView {
         to playerViewModel: PlayerStateViewModel,
         startsPlayback: Bool
     ) {
+        let prefersNativeControls = NativePlaybackControlsExperiment.stored()
+        let showsSystemControls = prefersNativeControls
+            && NativePlaybackControlsExperiment.usesSystemPlaybackControlsUI()
         surfaceView.configureBoundsRefresh(for: playerViewModel)
         surfaceView.setPictureInPictureEnabled(isPictureInPictureEnabled)
-        surfaceView.setPlayerViewModel(playerViewModel, prefersNativePlaybackControls: false)
+        surfaceView.setNativeAllowsPictureInPicturePlayback(
+            showsSystemControls
+                ? NativePlaybackControlsExperiment.storedAllowsPictureInPicturePlayback(fallback: isPictureInPictureEnabled)
+                : nil
+        )
+        surfaceView.setEnablesNativeSurfaceGestures(
+            prefersNativeControls && NativePlaybackControlsExperiment.usesNativeSurfaceGestureController()
+        )
+        surfaceView.setShowsSystemPlaybackControls(showsSystemControls)
+        surfaceView.setShowsSystemPlaybackSpeeds(
+            showsSystemControls && NativePlaybackControlsExperiment.storedSpeedsEnabled()
+        )
+        surfaceView.setPlayerViewModel(playerViewModel, prefersNativePlaybackControls: prefersNativeControls)
         playerViewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         playerViewModel.attachSurface(
             surfaceView,
-            prefersNativePlaybackControls: false,
+            prefersNativePlaybackControls: prefersNativeControls,
             preservesReadinessDuringSurfaceHandoff: surfaceView.isLiveSurfaceHandoffActive
         )
         surfaceView.setNeedsLayout()

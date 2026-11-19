@@ -2,6 +2,13 @@ import SwiftUI
 import UIKit
 
 extension View {
+    /// Coordinates root `UITabBar` push/pop visibility via `UITabBarController.setTabBarHidden`.
+    ///
+    /// IMPORTANT: Do NOT add `.toolbarVisibility(.hidden, for: .tabBar)` or `.toolbar(.hidden, for: .tabBar)`
+    /// on pushed secondary/detail views. Mixing declarative `.toolbarVisibility(.hidden, for: .tabBar)` with
+    /// `setTabBarHidden` detaches `UITabBarController._observingScrollView` on pop (breaking scroll-minimization),
+    /// while relying on `.toolbarVisibility(.hidden, for: .tabBar)` alone causes the TabBar to flash in abruptly
+    /// after the pop transition completes.
     @ViewBuilder
     func coordinatesRootTabBarTransitions(
         isDetailPresented: Bool,
@@ -109,7 +116,11 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         // Once expanded, capture taps that leave a menu-only page or would
         // activate a Search field instead of reselecting the tab.
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            guard onRootTabTap != nil, !isDetailPresented, viewIfLoaded?.window != nil,
+            guard onRootTabTap != nil,
+                  !isDetailPresented,
+                  !hidesRootTabBar,
+                  viewIfLoaded?.window != nil,
+                  (selectedNavigationController()?.viewControllers.count ?? 1) <= 1,
                   let controller = enclosingTabBarController() else { return false }
             guard let selectedTitle = controller.selectedTab?.title
                 ?? controller.selectedViewController?.tabBarItem.title
@@ -140,7 +151,7 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         }
 
         @objc private func handleRootTabTap() {
-            guard !isDetailPresented else { return }
+            guard !isDetailPresented, !hidesRootTabBar else { return }
             onRootTabTap?()
         }
 

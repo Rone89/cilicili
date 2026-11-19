@@ -685,6 +685,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                     onToggleDanmaku: onToggleDanmaku,
                     onShowDanmakuSettings: onShowDanmakuSettings
                 )
+                .environment(\.colorScheme, .dark)
                 .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
                 .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
                 .disablingRotationTransaction(suppressesRotationAnimation)

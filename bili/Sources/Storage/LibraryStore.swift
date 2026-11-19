@@ -110,7 +110,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var playbackStreamSourcePreference: PlaybackStreamSourcePreference
     @Published private(set) var videoCodecPreference: VideoCodecPreference
     @Published private(set) var forceHardwareDecodeEnabled: Bool
-    @Published private(set) var dolbyVisionRenderingPolicy: DolbyVisionRenderingPolicy
     @Published private(set) var playbackCDNPreference: PlaybackCDNPreference
     @Published private(set) var playbackCustomCDNHost: String?
     @Published private(set) var playbackCDNProbeRefreshPolicy: PlaybackCDNProbeRefreshPolicy
@@ -127,8 +126,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var recommendMinimumLikeRatioPercent: Int
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
-    @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
-    @Published private(set) var danmakuSynchronizedLayerRendererEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
@@ -192,7 +189,6 @@ final class LibraryStore: ObservableObject {
     private static let playbackStreamSourcePreferenceKey = "cc.bili.playback.streamSourcePreference.v1"
     private static let videoCodecPreferenceKey = VideoCodecPreference.storageKey
     private static let forceHardwareDecodeKey = PlaybackHardwareDecodePolicy.storageKey
-    private static let dolbyVisionRenderingPolicyKey = DolbyVisionRenderingPolicy.storageKey
     private static let playbackCDNPreferenceKey = "cc.bili.playback.cdnPreference.v1"
     private static let playbackCustomCDNHostKey = PlaybackCDNPreference.customHostStorageKey
     private static let playbackCDNProbeRefreshPolicyKey = "cc.bili.playback.cdnProbeRefreshPolicy.v1"
@@ -212,8 +208,6 @@ final class LibraryStore: ObservableObject {
     private static let blockedRecommendKeywordsKey = "cc.bili.content.blockedRecommendKeywords.v1"
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
-    private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
-    private static let danmakuSynchronizedLayerRendererEnabledKey = "cc.bili.playback.danmakuSynchronizedLayerRenderer.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
@@ -341,6 +335,15 @@ final class LibraryStore: ObservableObject {
         "cc.bili.videoDetail.moreControlsSwiftUISheetExperimentEnabled.v1",
         "cc.bili.playback.nativePlayerProgressSliderExperimentEnabled.v1",
         "cc.bili.playback.iosNativePlaybackControlsExperimentEnabled.v1",
+        NativePlaybackControlsExperiment.storageKey,
+        NativePlaybackControlsExperiment.primaryDefaultMigrationKey,
+        NativePlaybackControlsExperiment.overlayModeStorageKey,
+        NativePlaybackControlsExperiment.customOverlayDefaultMigrationKey,
+        NativePlaybackControlsExperiment.speedsStorageKey,
+        NativePlaybackControlsExperiment.showsPlaybackControlsStorageKey,
+        NativePlaybackControlsExperiment.allowsPictureInPicturePlaybackStorageKey,
+        "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1",
+        "cc.bili.playback.danmakuSynchronizedLayerRenderer.v1",
         "cc.bili.display.unifiedVideoCoverBorderExperimentEnabled.v1",
         "cc.bili.display.thumbnailLongPressPreviewExperimentEnabled.v1",
         "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1",
@@ -552,7 +555,6 @@ final class LibraryStore: ObservableObject {
             ) ?? Self.defaultPlaybackStreamSourcePreference
         self.videoCodecPreference = VideoCodecPreference.stored(in: userDefaults)
         self.forceHardwareDecodeEnabled = PlaybackHardwareDecodePolicy.stored(in: userDefaults)
-        self.dolbyVisionRenderingPolicy = DolbyVisionRenderingPolicy.stored(in: userDefaults)
         self.playbackCDNPreference =
             PlaybackCDNPreference(
                 rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
@@ -633,12 +635,12 @@ final class LibraryStore: ObservableObject {
         // 已退役实验：分P/分集紧凑选择（转为默认功能）、AI 字幕（整体移除）。
         userDefaults.removeObject(forKey: "cc.bili.videoDetail.compactPageSelectorExperimentEnabled.v1")
         userDefaults.removeObject(forKey: "cc.bili.experimental.aiSubtitle.v1")
-        self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
-        self.danmakuSynchronizedLayerRendererEnabled = userDefaults.object(forKey: Self.danmakuSynchronizedLayerRendererEnabledKey) as? Bool ?? true
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
-        self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
-        self.autoPictureInPictureOnExitEnabled =
+        let initialPictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
+        let initialAutoPictureInPictureOnExitEnabled =
             userDefaults.object(forKey: Self.autoPictureInPictureOnExitEnabledKey) as? Bool ?? false
+        self.pictureInPictureEnabled = initialPictureInPictureEnabled
+        self.autoPictureInPictureOnExitEnabled = initialAutoPictureInPictureOnExitEnabled
         self.backgroundPlaybackEnabled = userDefaults.object(forKey: Self.backgroundPlaybackEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
             userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
@@ -889,12 +891,6 @@ final class LibraryStore: ObservableObject {
     func setForceHardwareDecodeEnabled(_ isEnabled: Bool) {
         forceHardwareDecodeEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.forceHardwareDecodeKey)
-        PlayerSettings.shared.reload()
-    }
-
-    func setDolbyVisionRenderingPolicy(_ policy: DolbyVisionRenderingPolicy) {
-        dolbyVisionRenderingPolicy = policy
-        userDefaults.set(policy.rawValue, forKey: Self.dolbyVisionRenderingPolicyKey)
         PlayerSettings.shared.reload()
     }
 
@@ -1253,16 +1249,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.backgroundPlaybackEnabledKey)
     }
 
-    func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {
-        metalDanmakuRendererExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.metalDanmakuRendererExperimentEnabledKey)
-    }
-
-    func setDanmakuSynchronizedLayerRendererEnabled(_ enabled: Bool) {
-        danmakuSynchronizedLayerRendererEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.danmakuSynchronizedLayerRendererEnabledKey)
-    }
-
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {
         playerPerformanceOverlayEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.playerPerformanceOverlayEnabledKey)
@@ -1279,6 +1265,18 @@ final class LibraryStore: ObservableObject {
             isEnabled,
             forKey: Self.playbackPlayableFallbackDeadlineExperimentEnabledKey
         )
+    }
+
+    var usesNativePlaybackSurface: Bool {
+        true
+    }
+
+    var usesSystemNativePlaybackControlsUI: Bool {
+        false
+    }
+
+    var usesCustomPlaybackControlsOverlay: Bool {
+        true
     }
 
     func setVideoRotationFrameReportOverlayEnabled(_ isEnabled: Bool) {

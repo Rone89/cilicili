@@ -199,8 +199,7 @@ struct LiveDanmakuSettingsSheet: View {
 
     private var settingsSummary: String {
         if viewModel.isDanmakuEnabled {
-            let settings = viewModel.danmakuSettings.danmakuKit
-            return "当前使用 \(settings.displayArea.title)，字号 \(Int((settings.fontScale * 100).rounded()))%，不透明度 \(Int((settings.opacity * 100).rounded()))%。"
+            return viewModel.danmakuSettings.danmakuKit.summaryDescription
         }
         return "弹幕已关闭，直播画面不会显示滚动评论。"
     }

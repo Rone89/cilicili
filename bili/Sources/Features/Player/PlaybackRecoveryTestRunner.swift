@@ -37,20 +37,34 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         return nil
     }
 
-    func start(onlyPauseBoundary: Bool = false) {
+    func start(onlyPauseBoundary: Bool = false, onlySeek: Bool = false) {
         guard !isRunning, readinessMessage == nil else { return }
         generation &+= 1
         let token = generation
         let snapshot = driver.observation
         sourceIdentity = snapshot.sourceIdentity
         networkClass = snapshot.networkClass
-        let scenarios: [PlaybackRecoveryTestScenario] = onlyPauseBoundary
-            ? [.deactivatedImmediatePause] : PlaybackRecoveryTestScenario.allCases
+        let scenarios: [PlaybackRecoveryTestScenario]
+        let testPlanName: String
+        let repetitions: Int
+        if onlySeek {
+            scenarios = [.nearbySeek, .distantSeek, .pausedSeek, .continuousSeek]
+            testPlanName = "seekOnly"
+            repetitions = 1
+        } else if onlyPauseBoundary {
+            scenarios = [.deactivatedImmediatePause]
+            testPlanName = "pauseBoundary"
+            repetitions = timing.repetitions
+        } else {
+            scenarios = PlaybackRecoveryTestScenario.allCases
+            testPlanName = "full"
+            repetitions = timing.repetitions
+        }
         var context = driver.reportContext
-        context["testPlan"] = onlyPauseBoundary ? "pauseBoundary" : "full"
+        context["testPlan"] = testPlanName
         report = PlaybackRecoveryTestReport(
             context: context,
-            plannedTrialCount: scenarios.count * timing.repetitions
+            plannedTrialCount: scenarios.count * repetitions
         )
         guard let report else { return }
         reports.begin(report)
@@ -66,7 +80,7 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         }
         driver.setTestingActive(true)
         task = Task { @MainActor [weak self] in
-            await self?.execute(scenarios: scenarios, generation: token)
+            await self?.execute(scenarios: scenarios, repetitions: repetitions, generation: token)
         }
     }
 
@@ -78,12 +92,12 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         finish(status: "interrupted", reason: reason, pausePlayback: pausePlayback)
     }
 
-    private func execute(scenarios: [PlaybackRecoveryTestScenario], generation token: Int) async {
+    private func execute(scenarios: [PlaybackRecoveryTestScenario], repetitions: Int, generation token: Int) async {
         do {
             for scenario in scenarios {
-                for repetition in 1...timing.repetitions {
+                for repetition in 1...repetitions {
                     try check(token)
-                    progressText = "\(scenario.title) · 第\(repetition)/\(timing.repetitions)次 · 准备"
+                    progressText = "\(scenario.title) · 第\(repetition)/\(repetitions)次 · 准备"
                     trialStartedAt = nil
                     try await prepare(scenario: scenario, token: token)
                     try check(token)
@@ -91,7 +105,7 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
                     report?.trials.append(trial)
                     trialStartedAt = timing.now()
                     checkpoint()
-                    progressText = "\(scenario.title) · 第\(repetition)/\(timing.repetitions)次"
+                    progressText = "\(scenario.title) · 第\(repetition)/\(repetitions)次"
                     if let pause = scenario.pauseSeconds {
                         try await pauseTrial(seconds: pause, token: token)
                     } else if scenario == .deactivatedImmediatePause {

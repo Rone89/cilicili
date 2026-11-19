@@ -120,6 +120,11 @@ struct PlayerSeekPreviewPresentation {
 }
 
 @MainActor
+final class PlayerSeekPreviewModelBox: ObservableObject {
+    let model = PlayerSeekPreviewModel()
+}
+
+@MainActor
 final class PlayerSeekPreviewModel: ObservableObject {
     @Published private(set) var presentation: PlayerSeekPreviewPresentation?
 
@@ -174,8 +179,20 @@ final class PlayerSeekPreviewModel: ObservableObject {
 
     func updateScrub(progress: Double, duration: TimeInterval) {
         guard duration > 0, let presentation else { return }
+        let clampedProgress = min(max(progress, 0), 1)
+        let nextRoundedSecond = Int((clampedProgress * duration).rounded())
+        let currentRoundedSecond = Int(presentation.currentTime.rounded())
+        let nextTile: VideoShotTile?
+        if case .ready(let metadata) = metadataState {
+            nextTile = metadata.tile(for: clampedProgress * duration)
+        } else {
+            nextTile = nil
+        }
+        guard nextRoundedSecond != currentRoundedSecond || nextTile != activeTile else {
+            return
+        }
         publish(
-            progress: progress,
+            progress: clampedProgress,
             duration: duration,
             isCancelPending: presentation.isCancelPending
         )
@@ -326,9 +343,20 @@ final class PlayerSeekPreviewModel: ObservableObject {
                   self.activeTile == tile
             else { return }
             self.imageLoadTask = nil
-            guard let sprite,
-                  let frame = PlayerSeekPreviewImageCropper.crop(sprite: sprite, tile: tile)
-            else {
+            guard let sprite else {
+                self.refreshPresentation()
+                self.record("preview state=frameUnavailable")
+                return
+            }
+            let croppedFrame = await Task.detached(priority: .userInitiated) {
+                PlayerSeekPreviewImageCropper.crop(sprite: sprite, tile: tile)
+            }.value
+            guard !Task.isCancelled,
+                  self.imageLoadGeneration == generation,
+                  self.activeContext == context,
+                  self.activeTile == tile
+            else { return }
+            guard let frame = croppedFrame else {
                 self.refreshPresentation()
                 self.record("preview state=frameUnavailable")
                 return
@@ -398,7 +426,7 @@ final class PlayerSeekPreviewModel: ObservableObject {
     }
 }
 
-private enum PlayerSeekPreviewImageCropper {
+nonisolated private enum PlayerSeekPreviewImageCropper {
     static func crop(sprite: UIImage, tile: VideoShotTile) -> UIImage? {
         guard let source = sprite.cgImage,
               tile.columnCount > 0,

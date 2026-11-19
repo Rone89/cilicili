@@ -199,3 +199,99 @@ nonisolated enum PendingTaskDeadline {
         return try await operationTask.value
     }
 }
+
+
+nonisolated enum NativePlaybackControlsOverlayMode: String, CaseIterable, Identifiable, Sendable {
+    case customOverlay
+    case systemControls
+    case gestureOnly
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .customOverlay:
+            return "原生底座 + 自绘控件"
+        case .systemControls:
+            return "系统原生控制栏"
+        case .gestureOnly:
+            return "纯净手势（无控制栏）"
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .customOverlay:
+            return "自绘控件"
+        case .systemControls:
+            return "系统原生"
+        case .gestureOnly:
+            return "纯净手势"
+        }
+    }
+}
+
+nonisolated enum NativePlaybackControlsExperiment {
+    static let storageKey = "cc.bili.playback.nativePlaybackControlsExperimentEnabled.v1"
+    static let primaryDefaultMigrationKey = "cc.bili.playback.nativePlaybackControlsPrimaryDefaultMigration.v2"
+    static let overlayModeStorageKey = "cc.bili.playback.nativePlaybackControlsOverlayMode.v1"
+    static let customOverlayDefaultMigrationKey =
+        "cc.bili.playback.nativeSurfaceCustomOverlayDefaultMigration.v1"
+    static let speedsStorageKey = "cc.bili.playback.nativePlaybackControlsSpeedsEnabled.v1"
+    static let showsPlaybackControlsStorageKey = "cc.bili.playback.nativePlaybackControlsShowsPlaybackControls.v1"
+    static let allowsPictureInPicturePlaybackStorageKey =
+        "cc.bili.playback.nativePlaybackControlsAllowsPictureInPicturePlayback.v1"
+
+    static let retiredKeys: [String] = [
+        storageKey,
+        primaryDefaultMigrationKey,
+        overlayModeStorageKey,
+        customOverlayDefaultMigrationKey,
+        speedsStorageKey,
+        showsPlaybackControlsStorageKey,
+        allowsPictureInPicturePlaybackStorageKey,
+    ]
+
+    static let defaultIsEnabled = true
+    static let defaultOverlayMode: NativePlaybackControlsOverlayMode = .customOverlay
+    static let defaultSpeedsEnabled = true
+    static let defaultShowsPlaybackControls = false
+    static let defaultAllowsPictureInPicturePlayback = false
+
+    static func stored(in _: UserDefaults = .standard) -> Bool {
+        true
+    }
+
+    static func storedOverlayMode(
+        in _: UserDefaults = .standard
+    ) -> NativePlaybackControlsOverlayMode {
+        .customOverlay
+    }
+
+    static func storedSpeedsEnabled(in _: UserDefaults = .standard) -> Bool {
+        true
+    }
+
+    static func storedShowsPlaybackControls(in _: UserDefaults = .standard) -> Bool {
+        false
+    }
+
+    static func usesSystemPlaybackControlsUI(in _: UserDefaults = .standard) -> Bool {
+        false
+    }
+
+    static func usesCustomControlsOverlay(in _: UserDefaults = .standard) -> Bool {
+        true
+    }
+
+    static func usesNativeSurfaceGestureController(in _: UserDefaults = .standard) -> Bool {
+        false
+    }
+
+    static func storedAllowsPictureInPicturePlayback(
+        in _: UserDefaults = .standard,
+        fallback: Bool? = nil
+    ) -> Bool {
+        fallback ?? defaultAllowsPictureInPicturePlayback
+    }
+}

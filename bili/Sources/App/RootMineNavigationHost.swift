@@ -16,7 +16,6 @@ struct RootMineNavigationDestination: View {
                 destinationContent
             }
         }
-        .toolbarVisibility(route == .accountMessages ? .automatic : .hidden, for: .tabBar)
         .toolbarVisibility(.visible, for: .navigationBar)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .nativeBottomScrollEdgeBlurVisibility(isHidden: true)
@@ -46,7 +45,6 @@ struct RootMineNavigationDestination: View {
             )
         case .history:
             accountLibraryPage(kind: .history)
-                .toolbarVisibility(.hidden, for: .tabBar)
         case .favorites:
             accountLibraryPage(kind: .favorites)
         case .watchLater:

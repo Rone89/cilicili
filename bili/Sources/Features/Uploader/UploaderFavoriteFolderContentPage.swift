@@ -56,7 +56,6 @@ private struct UploaderFavoriteFolderList: View {
         .nativeTopScrollEdgeEffect()
         .navigationTitle(folder.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await model.refresh() } }

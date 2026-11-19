@@ -101,6 +101,13 @@ struct DanmakuSettings: Codable, Equatable, Sendable {
 }
 
 nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
+    static let minimumVisibleCount = 20
+    static let maximumFiniteVisibleCount = 200
+    static let unlimitedVisibleCountValue = 210
+    static let defaultMaxVisibleCount = 80
+    /// 「不限」模式下仍保留保护性安全上限，避免极端高密度 XML/分段阻塞动画渲染管线。
+    static let unlimitedProtectionCeiling = 450
+
     var displayArea: DanmakuDisplayArea
     var allowsDanmakuOverlap: Bool
     var fontScale: Double
@@ -112,6 +119,7 @@ nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
     var enablesFloating: Bool
     var enablesTop: Bool
     var enablesBottom: Bool
+    var maxVisibleCount: Int
 
     nonisolated init(
         displayArea: DanmakuDisplayArea = .topHalf,
@@ -124,7 +132,8 @@ nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
         bottomPadding: Double = 0,
         enablesFloating: Bool = true,
         enablesTop: Bool = true,
-        enablesBottom: Bool = true
+        enablesBottom: Bool = true,
+        maxVisibleCount: Int = DanmakuKitRenderSettings.defaultMaxVisibleCount
     ) {
         self.displayArea = displayArea
         self.allowsDanmakuOverlap = allowsDanmakuOverlap
@@ -137,6 +146,7 @@ nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
         self.enablesFloating = enablesFloating
         self.enablesTop = enablesTop
         self.enablesBottom = enablesBottom
+        self.maxVisibleCount = maxVisibleCount
     }
 
     enum CodingKeys: String, CodingKey {
@@ -151,6 +161,7 @@ nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
         case enablesFloating
         case enablesTop
         case enablesBottom
+        case maxVisibleCount
     }
 
     nonisolated init(from decoder: Decoder) throws {
@@ -166,11 +177,36 @@ nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
             bottomPadding: try container.decodeIfPresent(Double.self, forKey: .bottomPadding) ?? 0,
             enablesFloating: try container.decodeIfPresent(Bool.self, forKey: .enablesFloating) ?? true,
             enablesTop: try container.decodeIfPresent(Bool.self, forKey: .enablesTop) ?? true,
-            enablesBottom: try container.decodeIfPresent(Bool.self, forKey: .enablesBottom) ?? true
+            enablesBottom: try container.decodeIfPresent(Bool.self, forKey: .enablesBottom) ?? true,
+            maxVisibleCount: try container.decodeIfPresent(Int.self, forKey: .maxVisibleCount)
+                ?? Self.defaultMaxVisibleCount
         )
     }
 
     nonisolated static let `default` = DanmakuKitRenderSettings()
+
+    nonisolated static func clampedMaxVisibleCount(_ value: Int) -> Int {
+        if value >= unlimitedVisibleCountValue {
+            return unlimitedVisibleCountValue
+        }
+        return min(max(value, minimumVisibleCount), maximumFiniteVisibleCount)
+    }
+
+    nonisolated var normalizedMaxVisibleCount: Int {
+        Self.clampedMaxVisibleCount(maxVisibleCount)
+    }
+
+    nonisolated var isUnlimitedVisibleCount: Bool {
+        normalizedMaxVisibleCount >= Self.unlimitedVisibleCountValue
+    }
+
+    nonisolated var maxVisibleCountTitle: String {
+        isUnlimitedVisibleCount ? "不限" : "\(normalizedMaxVisibleCount) 条"
+    }
+
+    nonisolated var summaryDescription: String {
+        "当前使用 \(displayArea.title)，上限 \(maxVisibleCountTitle)，字号 \(Int((fontScale * 100).rounded()))%，不透明度 \(Int((opacity * 100).rounded()))%。"
+    }
 
     nonisolated var normalized: DanmakuKitRenderSettings {
         DanmakuKitRenderSettings(
@@ -184,7 +220,8 @@ nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
             bottomPadding: min(max(bottomPadding.isFinite ? bottomPadding : 0, 0), 100),
             enablesFloating: enablesFloating,
             enablesTop: enablesTop,
-            enablesBottom: enablesBottom
+            enablesBottom: enablesBottom,
+            maxVisibleCount: normalizedMaxVisibleCount
         )
     }
 }
@@ -293,11 +330,15 @@ nonisolated enum DanmakuFontWeightOption: String, Codable, CaseIterable, Identif
 }
 
 nonisolated struct DanmakuItem: Identifiable, Hashable, Sendable {
+    /// B 站大会员渐变彩色弹幕（Protobuf `DmColorfulType.VipGradualColor = 60001`）。
+    static let vipGradualColorType = 60_001
+
     let id: String
     let time: TimeInterval
     let mode: Int
     let fontSize: Double
     let color: UInt32
+    let colorful: Int
     let text: String
     let senderName: String?
     let inlineEmotes: [String: BiliInlineEmote]
@@ -308,6 +349,7 @@ nonisolated struct DanmakuItem: Identifiable, Hashable, Sendable {
         mode: Int,
         fontSize: Double,
         color: UInt32,
+        colorful: Int = 0,
         text: String,
         senderName: String? = nil,
         inlineEmotes: [String: BiliInlineEmote] = [:]
@@ -317,9 +359,14 @@ nonisolated struct DanmakuItem: Identifiable, Hashable, Sendable {
         self.mode = mode
         self.fontSize = fontSize
         self.color = color
+        self.colorful = colorful
         self.text = text
         self.senderName = senderName
         self.inlineEmotes = inlineEmotes
+    }
+
+    nonisolated var isVIPGradientColorful: Bool {
+        colorful == Self.vipGradualColorType
     }
 
     nonisolated var isScrolling: Bool {
@@ -452,7 +499,7 @@ nonisolated struct DanmakuSegmentProtobufParser {
     private let segmentIndex: Int
     private let maxItems: Int
 
-    init(cid: Int, segmentIndex: Int, maxItems: Int = 2_200) {
+    init(cid: Int, segmentIndex: Int, maxItems: Int = 6_000) {
         self.cid = cid
         self.segmentIndex = segmentIndex
         self.maxItems = maxItems
@@ -463,7 +510,7 @@ nonisolated struct DanmakuSegmentProtobufParser {
         var reader = ProtobufWireReader(data: data)
         var items = [DanmakuItem]()
         var elementIndex = 0
-        items.reserveCapacity(min(maxItems, 600))
+        items.reserveCapacity(min(maxItems, 1_200))
 
         while !reader.isAtEnd, items.count < maxItems {
             let key = try reader.readVarint()
@@ -491,6 +538,7 @@ nonisolated struct DanmakuSegmentProtobufParser {
         var mode = 1
         var fontSize = 25.0
         var color: UInt32 = 0xFF_FF_FF
+        var colorful = 0
         var content = ""
 
         while !reader.isAtEnd {
@@ -513,6 +561,8 @@ nonisolated struct DanmakuSegmentProtobufParser {
                 content = try reader.readString()
             case (12, ProtobufWireType.lengthDelimited):
                 idString = try reader.readString()
+            case (24, ProtobufWireType.varint):
+                colorful = Int(try reader.readVarint())
             default:
                 try reader.skipField(wireType: wireType)
             }
@@ -538,6 +588,7 @@ nonisolated struct DanmakuSegmentProtobufParser {
             mode: mode,
             fontSize: fontSize,
             color: color,
+            colorful: colorful,
             text: text
         )
         return item.isSupported ? item : nil

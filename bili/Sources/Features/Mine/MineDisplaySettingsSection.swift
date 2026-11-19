@@ -5,6 +5,8 @@ struct MineDisplaySettingsSection: View {
     @AppStorage(MediaContentShadowSettings.storageKey) private var imageShadowEnabled = true
     @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
     private var commentLongPressActionsEnabled = false
+    @AppStorage(CommentInteractionSettings.limitsSheetMaxHeightKey)
+    private var limitsCommentSheetMaxHeight = CommentInteractionSettings.defaultLimitsSheetMaxHeight
 
     var body: some View {
         Section("显示") {
@@ -200,6 +202,18 @@ struct MineDisplaySettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            Toggle(isOn: $limitsCommentSheetMaxHeight) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("评论弹窗不展开到最大高度", systemImage: "rectangle.bottomhalf.inset.filled")
+
+                    Text("开启后，竖屏下评论与回复弹窗固定在 70% 高度并直接滚动内容，不再自动展开遮挡上方视频。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.display.commentSheetLimitsMaxHeight")
 
             Toggle(
                 isOn: Binding(

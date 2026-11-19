@@ -1,3 +1,4 @@
+import AVKit
 import Combine
 import SwiftUI
 import UIKit
@@ -89,6 +90,8 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        // 实验与经典模式一致：跟随 App 层掩码（由 rotationCoordinator 按视频
+        // 内容方向与全屏状态维护），重力旋转走页面旋转机制。
         AppOrientationLock.supportedOrientations
     }
 
@@ -128,13 +131,26 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         }
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        isViewActive = true
+        updateOrientationLock()
+        reconcileTransparentNavigationBarSafeAreaIfNeeded()
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        reconcileTransparentNavigationBarSafeAreaIfNeeded()
 #if DEBUG
         print(
             "[VideoDetailGeometry] stage=rotationBridgeLayout window=\(view.window?.bounds as Any) root=\(view.bounds) safeArea=\(view.safeAreaInsets) playerFrame=\(contentController.playerFrame)"
         )
 #endif
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        reconcileTransparentNavigationBarSafeAreaIfNeeded()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -156,6 +172,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             contentController.recoverStableLayout()
         }
         updateOrientationLock()
+        reconcileTransparentNavigationBarSafeAreaIfNeeded()
         restoreSystemBackGestures()
         if usesTransparentNavigationBar {
             navigationBarTouchPassthrough.begin(in: navigationController)
@@ -163,13 +180,62 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         contentController.setBackgroundRenderFreezeActive(false)
     }
 
+    /// 当外层页面保留透明 NavigationBar 时，UINavigationController 会向
+    /// NavigationStackHostingController 注入导航栏高度（~54pt）的顶部安全区。
+    /// 详情页播放器已自行按 `window.safeAreaInsets.top` 排版，若不抵消该残留安全区，
+    /// 会沿 UIKit 视图树透传进内嵌 `AVPlayerViewController` 并挤压折叠顶部系统控件
+    /// （全屏、AirPlay 与静音按钮在竖屏 16:9 播放器内归零隐藏）。
+    private func reconcileTransparentNavigationBarSafeAreaIfNeeded() {
+        guard usesTransparentNavigationBar,
+              !isCoveredByNativePlayerFullscreenPresentation,
+              let navHost = parent,
+              let navController = navHost.parent as? UINavigationController,
+              navController.viewControllers.first !== navHost,
+              let window = view.window
+        else { return }
+        let baseTopInset = navHost.view.safeAreaInsets.top - navHost.additionalSafeAreaInsets.top
+        let windowTopInset = window.safeAreaInsets.top
+        let desiredAdditionalTop = -max(0, baseTopInset - windowTopInset)
+        if abs(navHost.additionalSafeAreaInsets.top - desiredAdditionalTop) > 0.5 {
+            navHost.additionalSafeAreaInsets.top = desiredAdditionalTop
+        }
+    }
+
+    /// 同步识别"被系统全屏模态覆盖"：全屏标记经 AVKit 回调异步置位，
+    /// 转场早期生命周期回调可能先到，需直接查 presentedViewController 链
+    /// （AVKit 私有全屏容器类名含 FullScreen；手动 present 的即播放器本身）。
+    private var isCoveredByNativePlayerFullscreenPresentation: Bool {
+        if contentController.viewModel.stablePlayerViewModel?.isNativeFullScreenPresented == true {
+            return true
+        }
+        var cursor: UIViewController? = self
+        while let controller = cursor {
+            if let presented = controller.presentedViewController {
+                if presented is AVPlayerViewController { return true }
+                if NSStringFromClass(type(of: presented)).contains("FullScreen") { return true }
+            }
+            cursor = controller.parent
+        }
+        return false
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         navigationBarTouchPassthrough.end()
         isViewActive = false
         let isLeavingHierarchy = isRemovedOrLeavingNavigationHierarchy
+        if NativePlaybackControlsExperiment.stored(),
+           !isLeavingHierarchy,
+           isCoveredByNativePlayerFullscreenPresentation {
+            return
+        }
         if isLeavingHierarchy {
+            NativeFullscreenOrientationLease.shared.cancel()
             contentController.viewModel.markExitingVideoDetailRoute()
+        } else if NativePlaybackControlsExperiment.stored() {
+            // 被其他页面/标签页/弹层覆盖时收回 App 层自由旋转，恢复全局竖屏。
+            NativeFullscreenOrientationLease.shared.cancel()
+            AppOrientationLock.update(to: .portrait, in: view.window?.windowScene)
         }
         let preferredWindow = view.window
         let playerFrameInWindow = contentController.playerFrame.width > 16
@@ -236,17 +302,27 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         guard !didRegisterNavigationStopCompletion else { return }
         didRegisterNavigationStopCompletion = true
 
+        let attemptHandoff: () -> Bool = { [weak self] in
+            guard let self else { return false }
+            let viewModel = self.contentController.viewModel
+            guard isLeavingHierarchy || self.isRemovedOrLeavingNavigationHierarchy else {
+                return false
+            }
+            viewModel.markExitingVideoDetailRoute()
+            let currentWindow = self.view.window ?? preferredWindow
+            let liveFrameInWindow: CGRect? = self.contentController.playerFrame.width > 16
+                ? self.contentController.view.convert(self.contentController.playerFrame, to: currentWindow)
+                : preferredFrameInWindow
+            return viewModel.handoffToSystemMiniPlayerIfEligible(
+                preferredFrameInWindow: liveFrameInWindow,
+                preferredWindow: currentWindow
+            )
+        }
+
         let finish = { [weak self] in
             guard let self else { return }
-            let viewModel = self.contentController.viewModel
-            if isLeavingHierarchy || self.isRemovedOrLeavingNavigationHierarchy {
-                viewModel.markExitingVideoDetailRoute()
-                if viewModel.handoffToSystemMiniPlayerIfEligible(
-                    preferredFrameInWindow: preferredFrameInWindow,
-                    preferredWindow: preferredWindow
-                ) {
-                    return
-                }
+            if attemptHandoff() {
+                return
             }
             _ = Task { @MainActor [weak self] in
                 await Task.yield()
@@ -258,6 +334,22 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             finish()
             return
         }
+
+        if transitionCoordinator.isInteractive {
+            // Hand off as soon as the user releases the swipe-back gesture without cancelling,
+            // so system PiP begins shrinking alongside the remaining pop animation instead of
+            // popping in abruptly after the detail page has already disappeared.
+            transitionCoordinator.notifyWhenInteractionChanges { [weak self] context in
+                guard !context.isCancelled else {
+                    self?.contentController.viewModel.clearExitingVideoDetailRoute()
+                    return
+                }
+                _ = attemptHandoff()
+            }
+        } else {
+            _ = attemptHandoff()
+        }
+
         transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
             guard !context.isCancelled else {
                 self?.contentController.viewModel.clearExitingVideoDetailRoute()
@@ -269,10 +361,21 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        let isLeavingHierarchy = isRemovedOrLeavingNavigationHierarchy
+        if NativePlaybackControlsExperiment.stored(),
+           !isLeavingHierarchy,
+           isCoveredByNativePlayerFullscreenPresentation {
+            // 系统全屏模态覆盖期间（.fullScreen 呈现会触发本回调）：
+            // 不做方向回收与页面清理，交给方向租约与全屏退出流程。
+            isViewActive = false
+            releaseSystemBackGestureOwnership()
+            return
+        }
         contentController.markPageDisappeared()
         isViewActive = false
         setImmersivePlayback(false)
         cancelRotationTasks()
+        NativeFullscreenOrientationLease.shared.cancel()
         rotationCoordinator.deactivate(in: view.window?.windowScene)
         rotationCoordinator.restorePortrait(in: view.window?.windowScene)
         releaseSystemBackGestureOwnership()
@@ -286,6 +389,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     func prepareForDismantle() {
         guard !didPrepareForDismantle else { return }
         didPrepareForDismantle = true
+        NativeFullscreenOrientationLease.shared.cancel()
         let viewModel = contentController.viewModel
         viewModel.isRouteRemovedFromNavigationStack = nil
         if !viewModel.isAwaitingRelatedVideoReturnPlayback {
@@ -426,6 +530,13 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
 
     private func updateOrientationLock() {
         guard isViewActive else { return }
+        if contentController.viewModel.libraryStore.usesSystemNativePlaybackControlsUI {
+            // 系统原生控制栏模式下放开 App 层方向：这是 AVKit 显示系统自带全屏按钮的前提；
+            // 「原生底座 + 自绘控件」与纯自绘模式统一走 rotationCoordinator 方向策略。
+            guard NativeFullscreenOrientationLease.shared.phase == nil else { return }
+            AppOrientationLock.update(to: .allButUpsideDown, in: view.window?.windowScene)
+            return
+        }
         rotationCoordinator.updateOrientationLock(
             isPortraitVideo: contentController.isPortraitVideo,
             isCurrentlyLandscape: rotationCoordinator.isLandscape,

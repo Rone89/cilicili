@@ -43,21 +43,27 @@ struct BiliPlayerViewContent: View {
     private var playbackSurface: some View {
         VideoSurfaceView(
             viewModel: context.viewModel,
-            prefersNativePlaybackControls: false,
+            prefersNativePlaybackControls: NativePlaybackControlsExperiment.stored(),
             isPictureInPictureEnabled: context.isPictureInPictureEnabled,
+            showsNativePlaybackControls: NativePlaybackControlsExperiment.usesSystemPlaybackControlsUI(),
+            enablesNativeSurfaceGestures: NativePlaybackControlsExperiment.usesNativeSurfaceGestureController(),
             disablesImplicitLayoutAnimations: context.configuration.isLayoutTransitioning
                 || context.configuration.disablesSurfaceImplicitLayoutAnimations,
             usesLiveSurfaceDuringLayoutTransition: context.configuration.usesLiveSurfaceDuringLayoutTransition,
             isLayoutTransitioningForSurfaceHandoff: context.configuration.isLayoutTransitioning
         )
+        .environment(\.colorScheme, .dark)
     }
 
+    @ViewBuilder
     private var playbackControls: some View {
-        BiliPlayerNativeControlsHost(
-            context: context,
-            renderState: renderState,
-            actions: nativePlaybackControlsActions
-        )
+        if NativePlaybackControlsExperiment.usesCustomControlsOverlay() {
+            BiliPlayerNativeControlsHost(
+                context: context,
+                renderState: renderState,
+                actions: nativePlaybackControlsActions
+            )
+        }
     }
 
     private var nativePlaybackControlsActions: PlayerNativePlaybackControlsActions {

@@ -167,12 +167,10 @@ final class DanmakuRendererDiagnosticsTests: XCTestCase {
         host.debugDiagnostics = diagnostics
         host.debugPreferredFramesPerSecond = 60
         defer { host.stop() }
-        host.selectRenderer(preference: false ? .metal : .danmakuKit)
-        let kit = try XCTUnwrap(host.subviews.first as? DanmakuKitOverlayView)
-        XCTAssertTrue(kit.debugDiagnostics === diagnostics)
-        XCTAssertEqual(kit.debugPreferredFramesPerSecond, 60)
-        XCTAssertEqual(diagnostics.rendererType, "DanmakuKit")
-        host.selectRenderer(preference: true ? .metal : .danmakuKit)
+        host.selectRenderer(preference: .synchronizedLayer)
+        XCTAssertTrue(host.subviews.first is DanmakuSynchronizedLayerView)
+        XCTAssertTrue(host.usesSynchronizedLayer)
+        host.selectRenderer(preference: .metal)
         guard host.usesMetal else { throw XCTSkip("Metal unavailable") }
         let metal = try XCTUnwrap(host.subviews.first as? MetalDanmakuView)
         XCTAssertTrue(metal.debugDiagnostics === diagnostics)

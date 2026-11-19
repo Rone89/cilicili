@@ -11,8 +11,12 @@ struct BiliPlayerView: View {
     @StateObject private var seekTransitionSnapshotModel = PlayerRotationTransitionSnapshotModel()
     @StateObject private var appBackgroundRecoverySnapshotModel = PlayerRotationTransitionSnapshotModel()
     @StateObject private var speedBoostModel = PlayerSpeedBoostModel()
-    @StateObject private var seekPreviewModel = PlayerSeekPreviewModel()
+    @StateObject private var seekPreviewBox = PlayerSeekPreviewModelBox()
     @StateObject private var playbackProgressCoordinator = PlayerPlaybackProgressCoordinator()
+
+    private var seekPreviewModel: PlayerSeekPreviewModel {
+        seekPreviewBox.model
+    }
     @State private var lastPreparedScrubProgress = -1.0
     @StateObject private var progressReporter = PlayerPlaybackProgressReporter()
     private let historyVideo: VideoItem?
@@ -381,6 +385,10 @@ struct BiliPlayerView: View {
     }
 
     private func holdCurrentFrameForSeek() {
+        guard !viewModel.usesNativePlaybackSurfaceController else {
+            seekTransitionSnapshotModel.release(immediate: true)
+            return
+        }
         seekTransitionSnapshotModel.hold(
             hasPresentedPlayback: surfaceState.hasPresentedPlayback,
             surfaceLayoutGeneration: viewModel.surfaceLayoutGeneration
@@ -391,9 +399,17 @@ struct BiliPlayerView: View {
 
     private func updateSeekTransitionSnapshot(isUserSeeking: Bool) {
         if isUserSeeking {
-            guard viewModel.shouldHoldSeekSnapshotAtInteractionStart else { return }
+            guard viewModel.shouldHoldSeekSnapshotAtInteractionStart,
+                  !viewModel.usesNativePlaybackSurfaceController
+            else { return }
             holdCurrentFrameForSeek()
         } else {
+            if viewModel.usesNativePlaybackSurfaceController {
+                seekTransitionSnapshotModel.release(immediate: true) {
+                    viewModel.finishUserSeekVisualReveal()
+                }
+                return
+            }
             seekTransitionSnapshotModel.releaseForSeekTransition(
                 isReadyForReveal: {
                     viewModel.isSeekRecoverySnapshotReadyForReveal()

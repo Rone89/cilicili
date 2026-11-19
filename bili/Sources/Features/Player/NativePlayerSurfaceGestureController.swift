@@ -8,19 +8,29 @@ import UIKit
 final class NativePlayerSurfaceGestureController: NSObject {
     private enum PanMode {
         case undecided
-        case seeking(startProgress: Double, duration: TimeInterval)
+        case seeking(duration: TimeInterval)
         case adjusting(target: PlayerSurfaceVerticalAdjustmentTarget, initialValue: Float)
         case ignored
     }
 
+    var onCustomGestureSuppressionChanged: ((_ isSuppressed: Bool, _ hidesNativeTransportControls: Bool) -> Void)?
+
     private weak var playerViewController: AVPlayerViewController?
     private weak var viewModel: PlayerStateViewModel?
     private let hudModel = NativePlayerSurfaceGestureHUDModel()
+    private let speedBoostModel = PlayerSpeedBoostModel()
     private let systemControlsController = PlayerSystemControlsController()
     private let volumeView = MPVolumeView(frame: .zero)
-    private lazy var hostingController = UIHostingController(
-        rootView: NativePlayerSurfaceGestureHUD(model: hudModel)
-    )
+    private lazy var hostingController: UIHostingController<NativePlayerSurfaceGestureHUD> = {
+        let controller = UIHostingController(
+            rootView: NativePlayerSurfaceGestureHUD(
+                model: hudModel,
+                speedBoostModel: speedBoostModel
+            )
+        )
+        controller.overrideUserInterfaceStyle = .dark
+        return controller
+    }()
     private lazy var doubleTapGesture = UITapGestureRecognizer(
         target: self,
         action: #selector(handleDoubleTap(_:))
@@ -29,20 +39,135 @@ final class NativePlayerSurfaceGestureController: NSObject {
         target: self,
         action: #selector(handlePan(_:))
     )
+    private lazy var longPressGesture = UILongPressGestureRecognizer(
+        target: self,
+        action: #selector(handleLongPress(_:))
+    )
 
     private var panMode = PanMode.undecided
     private var panStartLocation: CGPoint?
+    private var lastHorizontalTranslationX: CGFloat = 0
     private var currentSeekProgress: Double?
+    private var isSpeedBoostGestureActive = false
+    private var isCustomGestureSuppressingControls = false
+    private var didGestureHideVisibleNativeControls = false
+    private var directRestoredShowsPlaybackControls: Bool?
+    private var resignActiveCancellable: AnyCancellable?
+
+    private var isPanInteractionActive: Bool {
+        switch panMode {
+        case .seeking, .adjusting:
+            return true
+        case .undecided, .ignored:
+            return false
+        }
+    }
+
+    override init() {
+        super.init()
+        resignActiveCancellable = NotificationCenter.default
+            .publisher(for: UIApplication.willResignActiveNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.cancelActiveInteraction(speedBoostReason: .background)
+                }
+            }
+    }
+
+#if DEBUG
+    var debugLongPressGesture: UILongPressGestureRecognizer { longPressGesture }
+    var debugDoubleTapGesture: UITapGestureRecognizer { doubleTapGesture }
+    var debugPanGesture: UIPanGestureRecognizer { panGesture }
+    var debugSpeedBoostPhase: PlayerSpeedBoostPhase { speedBoostModel.phase }
+    var debugSpeedBoostDisplayedRate: BiliPlaybackRate { speedBoostModel.displayedRate }
+    var debugIsSpeedBoostIndicatorVisible: Bool { speedBoostModel.isIndicatorVisible }
+    var debugHostingViewController: UIViewController { hostingController }
+
+    func debugTriggerLongPress(state: UIGestureRecognizer.State) {
+        handleLongPressState(state)
+    }
+
+    func debugSimulatePanActive(isSeeking: Bool) {
+        if isSeeking {
+            panMode = .seeking(duration: 100)
+            currentSeekProgress = 0.2
+            beginCustomGestureControlsSuppressionIfNeeded()
+        } else {
+            panMode = .undecided
+            endCustomGestureControlsSuppressionIfNeeded()
+        }
+    }
+
+    func debugSimulatePanGesture(
+        state: UIGestureRecognizer.State,
+        startLocation: CGPoint,
+        translation: CGPoint,
+        velocity: CGPoint = .zero,
+        in size: CGSize
+    ) {
+        guard let viewModel, !viewModel.isTerminated else {
+            cancelActiveInteraction()
+            return
+        }
+        switch state {
+        case .began:
+            panStartLocation = startLocation
+            lastHorizontalTranslationX = 0
+            currentSeekProgress = nil
+            panMode = isSpeedBoostGestureActive ? .ignored : .undecided
+        case .changed:
+            guard !isSpeedBoostGestureActive else { return }
+            if case .undecided = panMode {
+                beginPanInteractionIfNeeded(
+                    translation: translation,
+                    startLocation: panStartLocation ?? startLocation,
+                    size: size,
+                    viewModel: viewModel
+                )
+            }
+            updatePanInteraction(
+                translation: translation,
+                velocity: velocity,
+                size: size,
+                viewModel: viewModel
+            )
+        case .ended:
+            finishPanInteraction(commitsSeek: !isSpeedBoostGestureActive)
+        case .cancelled, .failed:
+            finishPanInteraction(commitsSeek: false)
+        default:
+            break
+        }
+    }
+
+    func debugShouldBeginLongPress(
+        at location: CGPoint,
+        in bounds: CGRect,
+        safeAreaInsets: UIEdgeInsets = .zero,
+        showsPlaybackControls: Bool
+    ) -> Bool {
+        shouldBeginLongPress(
+            at: location,
+            in: bounds,
+            safeAreaInsets: safeAreaInsets,
+            showsPlaybackControls: showsPlaybackControls
+        )
+    }
+#endif
 
     func attach(to playerViewController: AVPlayerViewController, viewModel: PlayerStateViewModel) {
         if self.viewModel !== viewModel {
-            cancelActiveInteraction()
+            cancelActiveInteraction(speedBoostReason: .playerChanged)
             self.viewModel = viewModel
         }
 
         guard let containerView = playerViewController.contentOverlayView else { return }
         if self.playerViewController === playerViewController,
            hostingController.view.superview === containerView {
+            containerView.isUserInteractionEnabled = true
+            hostingController.overrideUserInterfaceStyle = .dark
+            hostingController.view.overrideUserInterfaceStyle = .dark
+            hostingController.view.isUserInteractionEnabled = true
             refreshSystemControlsAttachment()
             return
         }
@@ -55,12 +180,18 @@ final class NativePlayerSurfaceGestureController: NSObject {
 
         configureGestureRecognizersIfNeeded()
         let hostedView = hostingController.view!
+        hostingController.overrideUserInterfaceStyle = .dark
+        hostedView.overrideUserInterfaceStyle = .dark
         hostedView.translatesAutoresizingMaskIntoConstraints = false
         hostedView.backgroundColor = .clear
         hostedView.isOpaque = false
         hostedView.isUserInteractionEnabled = true
 
-        playerViewController.addChild(hostingController)
+        // Do not call `playerViewController.addChild(hostingController)`:
+        // AVKit moves `contentOverlayView` into a separate `AVFullScreenViewController`
+        // during native fullscreen presentation (`-[AVFullScreenViewController attachContentView]`),
+        // which triggers `UIViewControllerHierarchyInconsistency` if a child VCinside
+        // `contentOverlayView` still points to `playerViewController` as its parent.
         containerView.addSubview(hostedView)
         NSLayoutConstraint.activate([
             hostedView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
@@ -68,7 +199,6 @@ final class NativePlayerSurfaceGestureController: NSObject {
             hostedView.topAnchor.constraint(equalTo: containerView.topAnchor),
             hostedView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
         ])
-        hostingController.didMove(toParent: playerViewController)
 
         volumeView.translatesAutoresizingMaskIntoConstraints = false
         volumeView.showsVolumeSlider = true
@@ -85,7 +215,8 @@ final class NativePlayerSurfaceGestureController: NSObject {
     }
 
     func detach() {
-        cancelActiveInteraction()
+        cancelActiveInteraction(speedBoostReason: .disappear)
+        endCustomGestureControlsSuppressionIfNeeded()
         removeHostedViews()
         playerViewController = nil
         viewModel = nil
@@ -93,17 +224,32 @@ final class NativePlayerSurfaceGestureController: NSObject {
 
     private func configureGestureRecognizersIfNeeded() {
         let hostedView = hostingController.view!
-        guard doubleTapGesture.view == nil else { return }
+        if doubleTapGesture.view == nil {
+            doubleTapGesture.numberOfTapsRequired = 2
+            doubleTapGesture.cancelsTouchesInView = false
+            doubleTapGesture.delaysTouchesBegan = false
+            doubleTapGesture.delegate = self
+            hostedView.addGestureRecognizer(doubleTapGesture)
+        }
 
-        doubleTapGesture.numberOfTapsRequired = 2
-        doubleTapGesture.cancelsTouchesInView = false
-        doubleTapGesture.delegate = self
-        hostedView.addGestureRecognizer(doubleTapGesture)
+        if panGesture.view == nil {
+            panGesture.maximumNumberOfTouches = 1
+            panGesture.cancelsTouchesInView = true
+            panGesture.delaysTouchesBegan = false
+            panGesture.delaysTouchesEnded = false
+            panGesture.delegate = self
+            hostedView.addGestureRecognizer(panGesture)
+        }
 
-        panGesture.maximumNumberOfTouches = 1
-        panGesture.cancelsTouchesInView = false
-        panGesture.delegate = self
-        hostedView.addGestureRecognizer(panGesture)
+        if longPressGesture.view == nil {
+            longPressGesture.minimumPressDuration = 0.28
+            longPressGesture.allowableMovement = 24
+            longPressGesture.cancelsTouchesInView = true
+            longPressGesture.delaysTouchesBegan = false
+            longPressGesture.delaysTouchesEnded = true
+            longPressGesture.delegate = self
+            hostedView.addGestureRecognizer(longPressGesture)
+        }
     }
 
     private func refreshSystemControlsAttachment() {
@@ -136,11 +282,14 @@ final class NativePlayerSurfaceGestureController: NSObject {
 
         switch gesture.state {
         case .began:
-            panMode = .undecided
             panStartLocation = gesture.location(in: view)
+            lastHorizontalTranslationX = 0
             currentSeekProgress = nil
+            panMode = isSpeedBoostGestureActive ? .ignored : .undecided
         case .changed:
+            guard !isSpeedBoostGestureActive else { return }
             let translation = gesture.translation(in: view)
+            let velocity = gesture.velocity(in: view)
             if case .undecided = panMode {
                 beginPanInteractionIfNeeded(
                     translation: translation,
@@ -151,13 +300,51 @@ final class NativePlayerSurfaceGestureController: NSObject {
             }
             updatePanInteraction(
                 translation: translation,
+                velocity: velocity,
                 size: view.bounds.size,
                 viewModel: viewModel
             )
         case .ended:
-            finishPanInteraction(commitsSeek: true)
+            finishPanInteraction(commitsSeek: !isSpeedBoostGestureActive)
         case .cancelled, .failed:
             finishPanInteraction(commitsSeek: false)
+        default:
+            break
+        }
+    }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        handleLongPressState(gesture.state)
+    }
+
+    private func handleLongPressState(_ state: UIGestureRecognizer.State) {
+        guard let viewModel, !viewModel.isTerminated else {
+            cancelActiveInteraction(speedBoostReason: .terminated)
+            return
+        }
+
+        switch state {
+        case .began:
+            guard !isSpeedBoostGestureActive, !isPanInteractionActive else { return }
+            let isSurfacePlaying = viewModel.isPlaying || (playerViewController?.player?.rate ?? 0) > 0
+            let didBegin = speedBoostModel.beginIfNeeded(
+                playerViewModel: viewModel,
+                isSurfacePlaying: isSurfacePlaying,
+                hidePlaybackControls: { [weak self] in
+                    self?.beginCustomGestureControlsSuppressionIfNeeded()
+                }
+            )
+            isSpeedBoostGestureActive = didBegin
+            if didBegin {
+                beginCustomGestureControlsSuppressionIfNeeded()
+                if case .undecided = panMode {
+                    panMode = .ignored
+                }
+            }
+        case .ended:
+            endSpeedBoostIfActive(reason: .gestureEnded)
+        case .cancelled, .failed:
+            endSpeedBoostIfActive(reason: .systemInterrupted)
         default:
             break
         }
@@ -189,8 +376,10 @@ final class NativePlayerSurfaceGestureController: NSObject {
                 max(viewModel.playbackClock.currentTime / duration, 0),
                 1
             )
-            panMode = .seeking(startProgress: startProgress, duration: duration)
+            panMode = .seeking(duration: duration)
+            lastHorizontalTranslationX = 0
             currentSeekProgress = startProgress
+            beginCustomGestureControlsSuppressionIfNeeded()
             viewModel.playbackClock.updateSeekPreview(progress: startProgress, force: true)
             viewModel.beginUserScrubInteraction(source: .surfaceGesture)
         case .vertical:
@@ -207,22 +396,28 @@ final class NativePlayerSurfaceGestureController: NSObject {
                 return
             }
             panMode = .adjusting(target: target, initialValue: initialValue)
+            beginCustomGestureControlsSuppressionIfNeeded()
         }
     }
 
     private func updatePanInteraction(
         translation: CGPoint,
+        velocity: CGPoint,
         size: CGSize,
         viewModel: PlayerStateViewModel
     ) {
         switch panMode {
-        case let .seeking(startProgress, duration):
+        case let .seeking(duration):
             guard size.width > 0 else { return }
-            let secondsPerWidth = PlayerHorizontalSeekSensitivity.secondsPerFullWidth(
-                duration: duration
+            let stepDX = translation.x - lastHorizontalTranslationX
+            lastHorizontalTranslationX = translation.x
+            let baseProgress = currentSeekProgress ?? viewModel.playbackClock.progress
+            let secondsPerWidth = PlayerHorizontalSeekSensitivity.effectiveSecondsPerFullWidth(
+                duration: duration,
+                horizontalVelocity: velocity.x
             )
-            let progressDelta = Double(translation.x / size.width) * secondsPerWidth / duration
-            let progress = min(max(startProgress + progressDelta, 0), 1)
+            let progressDelta = Double(stepDX / size.width) * secondsPerWidth / duration
+            let progress = min(max(baseProgress + progressDelta, 0), 1)
             currentSeekProgress = progress
             viewModel.playbackClock.updateSeekPreview(progress: progress)
             hudModel.presentation = .seek(progress: progress, duration: duration)
@@ -250,12 +445,144 @@ final class NativePlayerSurfaceGestureController: NSObject {
         }
         panMode = .undecided
         panStartLocation = nil
+        lastHorizontalTranslationX = 0
         currentSeekProgress = nil
         hudModel.presentation = nil
+        if !isSpeedBoostGestureActive && speedBoostModel.phase != .boosting {
+            endCustomGestureControlsSuppressionIfNeeded()
+        }
     }
 
-    private func cancelActiveInteraction() {
+    private func cancelActiveInteraction(
+        speedBoostReason: PlayerSpeedBoostEndReason = .systemInterrupted
+    ) {
         finishPanInteraction(commitsSeek: false)
+        endSpeedBoostIfActive(reason: speedBoostReason)
+        endCustomGestureControlsSuppressionIfNeeded()
+    }
+
+    private func endSpeedBoostIfActive(reason: PlayerSpeedBoostEndReason) {
+        guard isSpeedBoostGestureActive || speedBoostModel.phase == .boosting else {
+            isSpeedBoostGestureActive = false
+            if !isPanInteractionActive {
+                endCustomGestureControlsSuppressionIfNeeded()
+            }
+            return
+        }
+        isSpeedBoostGestureActive = false
+        guard let viewModel else {
+            if !isPanInteractionActive {
+                endCustomGestureControlsSuppressionIfNeeded()
+            }
+            return
+        }
+        speedBoostModel.end(
+            reason: reason,
+            playerViewModel: viewModel,
+            showPlaybackControls: {}
+        )
+        if !isPanInteractionActive {
+            endCustomGestureControlsSuppressionIfNeeded()
+        }
+    }
+
+    private func beginCustomGestureControlsSuppressionIfNeeded() {
+        let wereNativeControlsVisible = Self.areNativeControlsCurrentlyVisible(in: playerViewController)
+        if wereNativeControlsVisible {
+            didGestureHideVisibleNativeControls = true
+        }
+        isCustomGestureSuppressingControls = true
+        if let onCustomGestureSuppressionChanged {
+            onCustomGestureSuppressionChanged(true, didGestureHideVisibleNativeControls)
+        } else if didGestureHideVisibleNativeControls,
+                  let playerViewController,
+                  playerViewController.showsPlaybackControls {
+            directRestoredShowsPlaybackControls = true
+            playerViewController.showsPlaybackControls = false
+        }
+    }
+
+    private func endCustomGestureControlsSuppressionIfNeeded() {
+        guard isCustomGestureSuppressingControls || directRestoredShowsPlaybackControls != nil else { return }
+        isCustomGestureSuppressingControls = false
+        didGestureHideVisibleNativeControls = false
+        if let onCustomGestureSuppressionChanged {
+            onCustomGestureSuppressionChanged(false, false)
+        }
+        if let restored = directRestoredShowsPlaybackControls {
+            directRestoredShowsPlaybackControls = nil
+            playerViewController?.showsPlaybackControls = restored
+        }
+    }
+
+    static func areNativeControlsCurrentlyVisible(in playerViewController: AVPlayerViewController?) -> Bool {
+        guard let playerViewController,
+              playerViewController.showsPlaybackControls,
+              let rootView = playerViewController.viewIfLoaded
+        else { return false }
+        let overlay = playerViewController.contentOverlayView
+        var queue: [UIView] = rootView.subviews.filter { $0 !== overlay }
+        var controlsRoot: UIView?
+        var animatedViews: [UIView] = []
+        while !queue.isEmpty {
+            let view = queue.removeFirst()
+            if view === overlay { continue }
+            let className = NSStringFromClass(type(of: view))
+            if controlsRoot == nil,
+               className.contains("MobileGlassControls") || className.contains("ChromelessControls") {
+                controlsRoot = view
+            } else if className.contains("DisplayModeControls")
+                || className.contains("TimelineView")
+                || className.contains("AuxiliaryControls")
+                || className.contains("PlaybackControls") {
+                animatedViews.append(view)
+            }
+            queue.append(contentsOf: view.subviews)
+        }
+        if let controlsRoot, controlsRoot.isHidden || controlsRoot.alpha <= 0.05 {
+            return false
+        }
+        if !animatedViews.isEmpty {
+            return animatedViews.contains { !$0.isHidden && $0.window != nil && $0.alpha > 0.05 }
+        }
+        return true
+    }
+
+    private func shouldBeginSurfaceGesture(
+        at location: CGPoint,
+        in bounds: CGRect,
+        safeAreaInsets: UIEdgeInsets,
+        showsPlaybackControls: Bool
+    ) -> Bool {
+        let leftInset = max(safeAreaInsets.left, 24)
+        let rightInset = max(safeAreaInsets.right, 24)
+        guard location.x > leftInset && location.x < bounds.width - rightInset else {
+            return false
+        }
+        if showsPlaybackControls {
+            let bottomExclusionStart = bounds.height - safeAreaInsets.bottom - 52
+            if location.y > bottomExclusionStart {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func shouldBeginLongPress(
+        at location: CGPoint,
+        in bounds: CGRect,
+        safeAreaInsets: UIEdgeInsets,
+        showsPlaybackControls: Bool
+    ) -> Bool {
+        guard shouldBeginSurfaceGesture(
+            at: location,
+            in: bounds,
+            safeAreaInsets: safeAreaInsets,
+            showsPlaybackControls: showsPlaybackControls
+        ) else {
+            return false
+        }
+        return !isPanInteractionActive
     }
 
     private func resolvedDuration(for viewModel: PlayerStateViewModel) -> TimeInterval? {
@@ -283,28 +610,58 @@ final class NativePlayerSurfaceGestureController: NSObject {
     private func removeHostedViews() {
         volumeView.removeFromSuperview()
         guard hostingController.parent != nil || hostingController.view.superview != nil else { return }
-        hostingController.willMove(toParent: nil)
+        if hostingController.parent != nil {
+            hostingController.willMove(toParent: nil)
+        }
         hostingController.view.removeFromSuperview()
-        hostingController.removeFromParent()
+        if hostingController.parent != nil {
+            hostingController.removeFromParent()
+        }
     }
 }
 
 extension NativePlayerSurfaceGestureController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard gestureRecognizer === panGesture,
-              let view = gestureRecognizer.view
-        else { return true }
+        guard let view = gestureRecognizer.view else { return true }
         let location = gestureRecognizer.location(in: view)
-        let leftInset = max(view.safeAreaInsets.left, 24)
-        let rightInset = max(view.safeAreaInsets.right, 24)
-        return location.x > leftInset && location.x < view.bounds.width - rightInset
+        let nativeControlsVisible = Self.areNativeControlsCurrentlyVisible(in: playerViewController)
+        if gestureRecognizer === panGesture {
+            guard !isSpeedBoostGestureActive else { return false }
+            return shouldBeginSurfaceGesture(
+                at: location,
+                in: view.bounds,
+                safeAreaInsets: view.safeAreaInsets,
+                showsPlaybackControls: nativeControlsVisible
+            )
+        }
+        if gestureRecognizer === longPressGesture {
+            return shouldBeginLongPress(
+                at: location,
+                in: view.bounds,
+                safeAreaInsets: view.safeAreaInsets,
+                showsPlaybackControls: nativeControlsVisible
+            )
+        }
+        return true
     }
 
     func gestureRecognizer(
-        _: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        true
+        let isOwnGesture = gestureRecognizer === panGesture
+            || gestureRecognizer === longPressGesture
+            || gestureRecognizer === doubleTapGesture
+        let isOtherOwnGesture = otherGestureRecognizer === panGesture
+            || otherGestureRecognizer === longPressGesture
+            || otherGestureRecognizer === doubleTapGesture
+        if isOwnGesture && isOtherOwnGesture {
+            return gestureRecognizer !== doubleTapGesture && otherGestureRecognizer !== doubleTapGesture
+        }
+        if gestureRecognizer === doubleTapGesture {
+            return true
+        }
+        return false
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
@@ -329,6 +686,7 @@ private final class NativePlayerSurfaceGestureHUDModel: ObservableObject {
 
 private struct NativePlayerSurfaceGestureHUD: View {
     @ObservedObject var model: NativePlayerSurfaceGestureHUDModel
+    @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
 
     var body: some View {
         ZStack {
@@ -349,8 +707,20 @@ private struct NativePlayerSurfaceGestureHUD: View {
             case nil:
                 EmptyView()
             }
+
+            if speedBoostModel.isIndicatorVisible {
+                PlayerSpeedBoostIndicator(
+                    phase: speedBoostModel.phase,
+                    displayedRate: speedBoostModel.displayedRate
+                )
+                .padding(.top, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                .accessibilityIdentifier("ui.player.nativeSpeedBoostIndicator")
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.colorScheme, .dark)
         .allowsHitTesting(false)
     }
 }

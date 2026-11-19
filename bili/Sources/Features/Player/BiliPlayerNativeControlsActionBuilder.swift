@@ -31,6 +31,7 @@ struct BiliPlayerNativeControlsActionBuilder {
                 guard !viewModel.isTerminated else { return }
                 seekPreviewModel.updateScrub(progress: progress, duration: resolvedDuration)
                 prepareUserSeekWarmup(progress, false)
+                viewModel.updateLiveScrubPreview(toProgress: progress)
             },
             onScrubEnded: { progress in
                 seekPreviewModel.endScrub()

@@ -18,3 +18,10 @@ Follow [the build-cache guide](docs/build-cache.md) for every Xcode build, test,
 - With XcodeBuildMCP, set the session `derivedDataPath` to the output of `python3 Scripts/build-cache.py path` before building; the tool injects that option itself, so do not repeat it in `extraArgs`. Do not start another build against the shared path until it finishes. Keep parallel builds on separate temporary paths.
 - For simulator development and validation, use only the existing local iPhone 18 Pro Max simulator running iOS 27.0. Do not create, clone, boot, or switch to another simulator unless the user explicitly requests it.
 - Keep `.xcarchive`, IPA, dSYM, signing configuration, and release files in their existing release locations. Do not change signing identity, profiles, bundle identifiers, or release settings as part of cache work.
+
+# Root TabBar visibility & transition rules
+
+- Root `TabBar` push/pop visibility is owned exclusively by `NativeRootTabBarTransitionSource` (`bili/Sources/App/NativeBottomBarVisibility.swift`) via `tabBarController.setTabBarHidden(isDetailPresented || hidesRootTabBar, animated: animated)`.
+- **Never** add `.toolbarVisibility(.hidden, for: .tabBar)` or `.toolbar(.hidden, for: .tabBar)` on pushed secondary/detail views, and **never** replace `setRootTabBarHidden` with declarative `.toolbarVisibility(.hidden, for: .tabBar)` or post-pop `tabBar.alpha` fades:
+  - Using `.toolbarVisibility(.hidden, for: .tabBar)` alone causes iOS 26/27 `NavigationStack` to keep `tabBar.isHidden = true` until after the pop transition finishes and then flash the `TabBar` in abruptly.
+  - Mixing `.toolbarVisibility(.hidden, for: .tabBar)` on any pushed view alongside `setTabBarHidden` causes a dual-ownership conflict that nulls `UITabBarController._observingScrollView` on pop and breaks `.tabBarMinimizeBehavior(.onScrollDown)`.

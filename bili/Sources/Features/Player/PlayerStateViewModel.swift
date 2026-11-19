@@ -515,6 +515,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var startupMediaWarmupTask: Task<Void, Never>?
     private var scrubSeekTask: Task<Void, Never>?
     private var scrubSeekGeneration = 0
+    private var liveScrubPreviewTask: Task<Void, Never>?
+    private var liveScrubPreviewGeneration = 0
+    private var lastLiveScrubDispatchedAt: CFTimeInterval = 0
     private var deferredStartupResumeTask: Task<Void, Never>?
     private var startupResumeRetryTask: Task<Void, Never>?
     private var startupResumeRetryGeneration = 0
@@ -550,6 +553,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var isSurfaceMigrating = false
     private var currentPlaybackSurfaceReadyGeneration: Int?
     private var isNativePictureInPictureActive = false
+    @Published private(set) var isNativeFullScreenPresented = false
     private var allowsAutomaticPictureInPictureFromInline = true
     private var shouldPausePlaybackAfterPictureInPictureStops = false
     private var pictureInPictureStartRetryTask: Task<Void, Never>?
@@ -624,7 +628,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private let seekCoalescingDelayNanoseconds: UInt64 = 45_000_000
     private let resumeRecoveryWatchdogDelayNanoseconds: UInt64 = 2_400_000_000
     private let seekRecoveryWatchdogDelayNanoseconds: UInt64 = 2_800_000_000
-    private let userSeekRevealSettleDelay: CFTimeInterval = 0.12
+    private let userSeekRevealSettleDelay: CFTimeInterval = 0.02
     private let userSeekRevealMaximumWait: CFTimeInterval = 2.4
     private static let currentSurfaceReadinessConfirmationDelays: [UInt64] = [
         34_000_000,
@@ -900,6 +904,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     var usesNativePlaybackControls: Bool {
         engine.usesNativePlaybackControls
+    }
+
+    var usesNativePlaybackSurfaceController: Bool {
+        nativePlaybackController != nil
     }
 
     var displayDuration: TimeInterval? {
@@ -1765,6 +1773,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         debugManualPauseStartedAt = nil
         #endif
         guard !isTerminated else { return false }
+        // 系统全屏展示会让内嵌播放器视图消失，SwiftUI 生命周期会把这误判为
+        // 应用退后台并暂停/回收渲染表面（真机黑屏根因）；全屏期间不响应。
+        guard !isNativeFullScreenPresented else { return false }
         guard ActivePlaybackCoordinator.shared.isActive(self) else { return false }
         syncPictureInPictureState()
         guard !isPictureInPictureActive else { return false }
@@ -3308,6 +3319,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         scrubSeekGeneration &+= 1
         scrubSeekTask?.cancel()
         scrubSeekTask = nil
+        cancelLiveScrubPreview()
         if resetUserSeeking, isUserSeeking {
             isUserSeeking = false
             shouldResumePlaybackAfterUserScrub = false
@@ -3315,6 +3327,61 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             engine.setTemporaryAudioSuppressed(false)
         }
         clearActiveUserScrubInteraction()
+    }
+
+    private func cancelLiveScrubPreview() {
+        liveScrubPreviewGeneration &+= 1
+        liveScrubPreviewTask?.cancel()
+        liveScrubPreviewTask = nil
+    }
+
+    func updateLiveScrubPreview(toProgress progress: Double, horizontalVelocity: CGFloat = 0) {
+        guard !isTerminated,
+              isUserSeeking,
+              usesNativePlaybackSurfaceController,
+              engine.hasMedia
+        else { return }
+        let clampedProgress = min(max(progress, 0), 1)
+        let resolvedDuration = duration
+            ?? durationHint
+            ?? playbackClock.duration
+            ?? engine.snapshot(durationHint: durationHint).duration
+            ?? 0
+        guard resolvedDuration > 0 else { return }
+
+        let targetTime = clampedProgress * resolvedDuration
+        liveScrubPreviewGeneration &+= 1
+        let generation = liveScrubPreviewGeneration
+        // Only scrub buffered keyframes live so AVPlayer renders from memory/cache
+        // without spawning unbuffered Range HTTP requests that compete with finger-lift commit.
+        guard engine.isTimeBuffered(targetTime) else {
+            liveScrubPreviewTask?.cancel()
+            liveScrubPreviewTask = nil
+            return
+        }
+        let now = CACurrentMediaTime()
+        if now - lastLiveScrubDispatchedAt >= 0.075 {
+            liveScrubPreviewTask?.cancel()
+            liveScrubPreviewTask = nil
+            lastLiveScrubDispatchedAt = now
+            engine.scrubLivePreview(toProgress: clampedProgress, duration: resolvedDuration)
+            return
+        }
+
+        liveScrubPreviewTask?.cancel()
+        liveScrubPreviewTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 75_000_000)
+            guard let self,
+                  !Task.isCancelled,
+                  !self.isTerminated,
+                  self.isUserSeeking,
+                  self.liveScrubPreviewGeneration == generation,
+                  self.engine.isTimeBuffered(targetTime)
+            else { return }
+            self.liveScrubPreviewTask = nil
+            self.lastLiveScrubDispatchedAt = CACurrentMediaTime()
+            self.engine.scrubLivePreview(toProgress: clampedProgress, duration: resolvedDuration)
+        }
     }
 
     private func clearActiveUserScrubInteraction() {
@@ -3450,6 +3517,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     func seekAfterSliderCommit(to progress: Double) {
         guard !isTerminated else { return }
         guard engine.hasMedia else { return }
+        cancelLiveScrubPreview()
         markUserSeekIntent()
         cancelSeekRecoveryTracking()
         cancelDeferredBufferingIndicator()
@@ -3575,7 +3643,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.engine.setTemporaryAudioSuppressed(false)
                 return
             }
-            self.setPendingUserSeekRevealTarget(appliedTime)
+            if !self.usesNativePlaybackSurfaceController {
+                self.setPendingUserSeekRevealTarget(appliedTime)
+            }
             self.updatePlaybackTime(appliedTime, force: true, countsAsNaturalPlayback: false)
             if shouldResumeAfterSeek {
                 self.beginSeekRecoveryTracking(
@@ -3596,33 +3666,64 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 baselineContext: recoveryBaselineContext
             )
             signpostMessage = "mode=slider target=\(String(format: "%.3f", targetProgress)) applied=\(String(format: "%.2f", appliedTime)) total=\(String(format: "%.1f", totalElapsed))ms engine=\(String(format: "%.1f", engineElapsed))ms reason=\(seekReason)"
-            self.isPreparing = false
-            if shouldResumeAfterSeek {
-                self.isBuffering = true
-                self.loadingProgress = max(self.loadingProgress, 0.86)
-                self.playbackPhase = .seeking
-                self.shouldResumePlaybackAfterUserScrub = false
-                self.resumePlaybackAfterUserSeek()
-            } else {
-                #if DEBUG
-                self.engine.debugRecoveryEvent("uiReveal", fields: ["reason": "pausedSeekOverlayRemoved"])
-                #endif
-                self.isUserSeeking = false
-                self.isBuffering = false
-                self.wantsAutoplay = false
-                self.isPlaying = false
-                self.playbackPhase = .paused
-                self.clearPendingUserSeekRevealTarget()
-                self.refreshPlaybackState()
-                self.pendingPausedSeekRecoveryMetric = PendingSeekRecoveryMetric(
-                    reason: seekReason, targetTime: appliedTime, targetProgress: targetProgress,
-                    startedAt: userSeekStart, engineElapsedMilliseconds: engineElapsed,
-                    baselineContext: recoveryBaselineContext
-                )
-                self.engine.setTemporaryAudioSuppressed(false)
-            }
+            self.finishCommittedUserSeek(shouldResumeAfterSeek: shouldResumeAfterSeek, clearPendingReveal: true, seekReason: seekReason, appliedTime: appliedTime, targetProgress: targetProgress, startedAt: userSeekStart, engineElapsedMilliseconds: engineElapsed, baselineContext: recoveryBaselineContext)
         }
         invalidatePictureInPicturePlaybackState()
+    }
+
+    private func finishCommittedUserSeek(
+        shouldResumeAfterSeek: Bool,
+        clearPendingReveal: Bool,
+        seekReason: String,
+        appliedTime: TimeInterval?,
+        targetProgress: Double,
+        startedAt: CFTimeInterval,
+        engineElapsedMilliseconds: Double,
+        baselineContext: String
+    ) {
+        isPreparing = false
+        if shouldResumeAfterSeek {
+            if usesNativePlaybackSurfaceController {
+                // Native AVPlayerViewController renders directly without a screenshot cover;
+                // restore audio and clear blocking seek UI as soon as playback starts.
+                isUserSeeking = false
+                isBuffering = false
+                clearPendingUserSeekRevealTarget()
+                engine.setTemporaryAudioSuppressed(false)
+            } else {
+                isBuffering = true
+                loadingProgress = max(loadingProgress, 0.86)
+                playbackPhase = .seeking
+            }
+            shouldResumePlaybackAfterUserScrub = false
+            resumePlaybackAfterUserSeek()
+        } else {
+            #if DEBUG
+            if clearPendingReveal {
+                engine.debugRecoveryEvent("uiReveal", fields: ["reason": "pausedSeekOverlayRemoved"])
+            }
+            #endif
+            if isUserSeeking {
+                isUserSeeking = false
+            }
+            isBuffering = false
+            if clearPendingReveal {
+                shouldResumePlaybackAfterUserScrub = false
+            }
+            wantsAutoplay = false
+            isPlaying = false
+            playbackPhase = .paused
+            clearPendingUserSeekRevealTarget()
+            refreshPlaybackState()
+            if let appliedTime {
+                pendingPausedSeekRecoveryMetric = PendingSeekRecoveryMetric(
+                    reason: seekReason, targetTime: appliedTime, targetProgress: targetProgress,
+                    startedAt: startedAt, engineElapsedMilliseconds: engineElapsedMilliseconds,
+                    baselineContext: baselineContext
+                )
+            }
+            engine.setTemporaryAudioSuppressed(false)
+        }
     }
 
     func seekAfterUserScrub(to progress: Double) {
@@ -3681,13 +3782,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     message: signpostMessage
                 )
             }
-            try? await Task.sleep(nanoseconds: self.seekCoalescingDelayNanoseconds)
-            guard !Task.isCancelled,
-                  !self.isTerminated,
-                  self.scrubSeekGeneration == generation
-            else {
-                signpostMessage = "mode=scrub cancelled"
-                return
+            if !self.usesNativePlaybackSurfaceController {
+                try? await Task.sleep(nanoseconds: self.seekCoalescingDelayNanoseconds)
+                guard !Task.isCancelled,
+                      !self.isTerminated,
+                      self.scrubSeekGeneration == generation
+                else {
+                    signpostMessage = "mode=scrub cancelled"
+                    return
+                }
             }
             let engineSeekStart = CACurrentMediaTime()
             var appliedTime = await self.engine.seekAfterUserScrub(
@@ -3720,7 +3823,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 return
             }
             if let appliedTime {
-                self.setPendingUserSeekRevealTarget(appliedTime)
+                if !self.usesNativePlaybackSurfaceController {
+                    self.setPendingUserSeekRevealTarget(appliedTime)
+                }
                 self.updatePlaybackTime(appliedTime, force: true, countsAsNaturalPlayback: false)
                 if shouldResumeAfterSeek {
                     self.beginSeekRecoveryTracking(
@@ -3744,33 +3849,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             signpostMessage = "mode=scrub target=\(String(format: "%.3f", targetProgress)) applied=\(String(format: "%.2f", appliedTime ?? 0)) total=\(String(format: "%.1f", totalElapsed))ms engine=\(String(format: "%.1f", engineElapsed))ms reason=\(seekReason)"
             self.playbackRecoveryWatchdogTask?.cancel()
             self.playbackRecoveryWatchdogTask = nil
-            self.isPreparing = false
-            if shouldResumeAfterSeek {
-                self.isBuffering = true
-                self.loadingProgress = max(self.loadingProgress, 0.86)
-                self.playbackPhase = .seeking
-                self.shouldResumePlaybackAfterUserScrub = false
-                self.resumePlaybackAfterUserSeek()
-            } else {
-                if self.isUserSeeking {
-                    self.isUserSeeking = false
-                }
-                self.isBuffering = false
-                self.shouldResumePlaybackAfterUserScrub = false
-                self.wantsAutoplay = false
-                self.isPlaying = false
-                self.playbackPhase = .paused
-                self.clearPendingUserSeekRevealTarget()
-                self.refreshPlaybackState()
-                if let appliedTime {
-                    self.pendingPausedSeekRecoveryMetric = PendingSeekRecoveryMetric(
-                        reason: seekReason, targetTime: appliedTime, targetProgress: targetProgress,
-                        startedAt: userSeekStart, engineElapsedMilliseconds: engineElapsed,
-                        baselineContext: recoveryBaselineContext
-                    )
-                }
-                self.engine.setTemporaryAudioSuppressed(false)
-            }
+            self.finishCommittedUserSeek(
+                shouldResumeAfterSeek: shouldResumeAfterSeek,
+                clearPendingReveal: false,
+                seekReason: seekReason,
+                appliedTime: appliedTime,
+                targetProgress: targetProgress,
+                startedAt: userSeekStart,
+                engineElapsedMilliseconds: engineElapsed,
+                baselineContext: recoveryBaselineContext
+            )
         }
     }
 
@@ -4602,7 +4690,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             loadingProgress = max(loadingProgress, 0.78)
             playbackPhase = .waitingForFirstFrame
         }
-        engine.recoverSurface()
+        engine.recoverSurfaceForSeekResume()
         refreshSurfaceLayout()
         engine.play()
         engine.setPlaybackRate(playbackRate.rawValue)
@@ -4808,7 +4896,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func desiredPlaybackStateRefreshInterval() -> TimeInterval {
         if isUserSeeking {
-            return 0.08
+            return 0.04
         }
         if isPreparing || isBuffering || playbackPhase == .waitingForFirstFrame || playbackPhase == .recovering || playbackPhase == .seeking {
             return 0.35
@@ -5729,8 +5817,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             let snapshot = self.engine.snapshot(durationHint: self.durationHint)
             if let snapshotTime = snapshot.currentTime,
                snapshot.isPlaying,
-               self.isSeekRecoveryMatch(currentTime: snapshotTime, pending: pending),
-               self.hasStableSeekRecoveryFrameForReveal(pending: pending, snapshot: snapshot) {
+               self.hasVerifiedSeekRecoveryForPlayback(
+                   pending: pending,
+                   snapshot: snapshot,
+                   currentTime: snapshotTime
+               ) {
                 self.finishSeekRecoveryMetric(
                     pending,
                     recovered: true,
@@ -5787,15 +5878,46 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func recordSeekRecoveryIfNeeded(currentTime: TimeInterval, source: String) {
         guard let pending = pendingSeekRecoveryMetric else { return }
-        guard isSeekRecoveryMatch(currentTime: currentTime, pending: pending) else { return }
         let snapshot = engine.snapshot(durationHint: durationHint)
-        guard hasStableSeekRecoveryFrameForReveal(pending: pending, snapshot: snapshot) else { return }
+        guard hasVerifiedSeekRecoveryForPlayback(
+            pending: pending,
+            snapshot: snapshot,
+            currentTime: currentTime
+        ) else { return }
         finishSeekRecoveryMetric(
             pending,
             recovered: true,
             currentTime: snapshot.renderedVideoTime ?? currentTime,
             source: source
         )
+    }
+
+    private func hasVerifiedSeekRecoveryForPlayback(
+        pending: PendingSeekRecoveryMetric,
+        snapshot: PlayerPlaybackSnapshot,
+        currentTime: TimeInterval
+    ) -> Bool {
+        guard isSeekRecoveryMatch(currentTime: currentTime, pending: pending) else {
+            return false
+        }
+        if hasStableSeekRecoveryFrameForReveal(pending: pending, snapshot: snapshot) {
+            return true
+        }
+        guard usesNativePlaybackSurfaceController, snapshot.isPlaying else {
+            return false
+        }
+        guard let targetTime = pending.targetTime else {
+            return true
+        }
+        if currentTime > targetTime + 0.15 {
+            return true
+        }
+        if let resolvedDuration = snapshot.duration ?? duration ?? durationHint,
+           targetTime >= max(resolvedDuration - 0.35, 0),
+           currentTime >= max(targetTime - 0.08, 0) {
+            return true
+        }
+        return false
     }
 
     private func finishSeekRecoveryMetric(
@@ -6539,11 +6661,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func applyPictureInPicturePreferenceToNativePlaybackController() {
         guard let nativePlaybackController else { return }
-        let isSupportedAndEnabled = isPictureInPictureEnabled
+        let effectivePictureInPictureEnabled = (nativePlaybackController as? NativeFullScreenPlayerViewController)?
+            .nativeAllowsPictureInPicturePlaybackOverride ?? isPictureInPictureEnabled
+        let isSupportedAndEnabled = effectivePictureInPictureEnabled
             && AVPictureInPictureController.isPictureInPictureSupported()
         nativePlaybackController.allowsPictureInPicturePlayback = isSupportedAndEnabled
         nativePlaybackController.canStartPictureInPictureAutomaticallyFromInline =
-            isSupportedAndEnabled && allowsAutomaticPictureInPictureFromInline
+            isSupportedAndEnabled && isPictureInPictureEnabled && allowsAutomaticPictureInPictureFromInline
     }
 
     private func invalidatePictureInPicturePlaybackState() {
@@ -6727,6 +6851,101 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
 }
 
 extension PlayerStateViewModel: AVPlayerViewControllerDelegate {
+    /// 全屏展示期间的方向掩码由 `NativeFullscreenOrientationLease` 持有，
+    /// 这里只负责同步展示状态标记（弹幕/字幕层迁移、布局守卫都依赖它）。
+    func setNativeFullScreenPresented(_ presented: Bool, in scene: UIWindowScene?) {
+        guard !isTerminated else { return }
+        isNativeFullScreenPresented = presented
+    }
+
+    nonisolated func playerViewController(
+        _ playerViewController: AVPlayerViewController,
+        willBeginFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        let fullscreenController = coordinator.viewController(forKey: .to) ?? playerViewController
+        // AVKit 全屏回调通常在主线程触发：同步强制 `AVFullScreenViewController` 使用深色外观，
+        // 避免浅色主题窗口下模态全屏控件变成乳白玻璃，并立即建立方向租约。
+        let applyWillBegin: @MainActor () -> Void = { [weak self] in
+            fullscreenController.overrideUserInterfaceStyle = .dark
+            fullscreenController.viewIfLoaded?.overrideUserInterfaceStyle = .dark
+            guard let self,
+                  !self.isTerminated,
+                  self.nativePlaybackController === playerViewController
+            else { return }
+            let scene = fullscreenController.viewIfLoaded?.window?.windowScene
+                ?? playerViewController.viewIfLoaded?.window?.windowScene
+            let lease = NativeFullscreenOrientationLease.shared
+            lease.onRelease = { [weak self] in
+                guard let self, !self.isTerminated, NativePlaybackControlsExperiment.stored() else { return }
+                // 退出回正到位后恢复详情页置顶时的 App 层自由旋转，确保系统全屏按钮持续可用。
+                AppOrientationLock.update(to: .allButUpsideDown, in: scene)
+            }
+            print("[NativeFullscreen] AVKit willBegin scene=\(scene != nil) controllerPlayer=\(playerViewController.player != nil)")
+            self.setNativeFullScreenPresented(true, in: scene)
+            if lease.phase == nil {
+                lease.beginEntry(
+                    target: NativeFullscreenOrientationLease.fullscreenTargetOrientation(
+                        presentationSize: playerViewController.player?.currentItem?.presentationSize ?? .zero
+                    ),
+                    entry: scene?.effectiveGeometry.interfaceOrientation ?? .portrait,
+                    scene: scene,
+                    orientationController: fullscreenController
+                )
+            }
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { applyWillBegin() }
+        } else {
+            Task { @MainActor in applyWillBegin() }
+        }
+        coordinator.animate(alongsideTransition: { _ in
+            MainActor.assumeIsolated {
+                fullscreenController.overrideUserInterfaceStyle = .dark
+                fullscreenController.viewIfLoaded?.overrideUserInterfaceStyle = .dark
+            }
+        }) { context in
+            guard !context.isCancelled else {
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          !self.isTerminated,
+                          self.nativePlaybackController === playerViewController
+                    else { return }
+                    NativeFullscreenOrientationLease.shared.cancel()
+                    self.isNativeFullScreenPresented = false
+                }
+                return
+            }
+            Task { @MainActor in
+                NativeFullscreenOrientationLease.shared.beginFullscreenRotation()
+            }
+        }
+    }
+
+    nonisolated func playerViewController(
+        _ playerViewController: AVPlayerViewController,
+        willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self,
+                  !self.isTerminated,
+                  self.nativePlaybackController === playerViewController
+            else { return }
+            print("[NativeFullscreen] AVKit willEnd")
+            NativeFullscreenOrientationLease.shared.beginRestore()
+            self.isNativeFullScreenPresented = false
+        }
+        coordinator.animate(alongsideTransition: nil) { context in
+            guard !context.isCancelled else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      !self.isTerminated,
+                      self.nativePlaybackController === playerViewController
+                else { return }
+                NativeFullscreenOrientationLease.shared.finishRestoreIfNeeded()
+            }
+        }
+    }
+
     nonisolated func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
         Task { @MainActor [weak self] in
             guard let self,

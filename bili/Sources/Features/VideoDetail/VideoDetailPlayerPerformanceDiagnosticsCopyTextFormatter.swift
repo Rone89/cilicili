@@ -128,7 +128,6 @@ enum PlayerPerformanceOverlayDiagnosticsCopyTextFormatter {
         if !diagnostics.hlsVideoVariantDetails.isEmpty {
             lines.append("hlsVariantDetails: \(diagnostics.hlsVideoVariantDetails.joined(separator: " | "))")
         }
-        appendOptional("nativeHDRVideoLayer", diagnostics.nativeHDRVideoLayerSummary, to: &lines)
         lines.append("hardwareDecodeRequested: \(diagnostics.hardwareDecodeRequested ? "true" : "false")")
         lines.append("hardwareDecodeCompatible: \(PlaybackNetworkPlayerDiagnosticSnapshot.hardwareCompatibilityTitle(diagnostics.isHardwareDecodeCompatible))")
         lines.append("asyncDecompression: \(diagnostics.asynchronousDecompressionEnabled ? "true" : "false")")

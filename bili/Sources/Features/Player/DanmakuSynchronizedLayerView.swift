@@ -63,6 +63,21 @@ struct DanmakuSyncLaneAllocator {
         Self.reserveStaticLane(in: &bottomFreeAt, at: startTime, duration: duration, allowsOverlap: allowsOverlap)
     }
 
+    mutating func markScrollingLane(_ lane: Int, reusableAt: Double) {
+        guard scrollingFreeAt.indices.contains(lane) else { return }
+        scrollingFreeAt[lane] = max(scrollingFreeAt[lane], reusableAt)
+    }
+
+    mutating func markTopLane(_ lane: Int, freeAt: Double) {
+        guard topFreeAt.indices.contains(lane) else { return }
+        topFreeAt[lane] = max(topFreeAt[lane], freeAt)
+    }
+
+    mutating func markBottomLane(_ lane: Int, freeAt: Double) {
+        guard bottomFreeAt.indices.contains(lane) else { return }
+        bottomFreeAt[lane] = max(bottomFreeAt[lane], freeAt)
+    }
+
     private static func earliestFreeLane(in pool: [Double]) -> Int {
         pool.indices.min(by: { pool[$0] < pool[$1] }) ?? 0
     }
@@ -128,6 +143,14 @@ final class DanmakuSyncBulletLayer: CALayer {
         shouldRasterize = false
     }
 
+    var debugContentLayerImage: CGImage? {
+        guard let raw = contentLayer.contents,
+              CFGetTypeID(raw as CFTypeRef) == CGImage.typeID else {
+            return nil
+        }
+        return unsafeBitCast(raw as CFTypeRef, to: CGImage.self)
+    }
+
     var contentLayerContentsPresent: Bool { contentLayer.contents != nil }
 
     func prepareForReuse() {
@@ -141,14 +164,26 @@ final class DanmakuSyncBulletLayer: CALayer {
 
 // MARK: - Text bitmap cache
 
-private final class DanmakuSyncCachedText {
+private nonisolated final class DanmakuSyncCachedText: @unchecked Sendable {
     let image: CGImage
     let size: CGSize
+    let missingEmoteURLs: Set<URL>
 
-    init(image: CGImage, size: CGSize) {
+    init(image: CGImage, size: CGSize, missingEmoteURLs: Set<URL> = []) {
         self.image = image
         self.size = size
+        self.missingEmoteURLs = missingEmoteURLs
     }
+}
+
+private nonisolated struct DanmakuPrewarmRawJob: Sendable {
+    let key: String
+    let item: DanmakuItem
+    let viewportWidth: CGFloat
+    let fontWeight: DanmakuFontWeightOption
+    let fontScale: Double
+    let scale: CGFloat
+    let emotes: [URL: DanmakuEmoteBitmap]
 }
 
 // MARK: - Synchronized-layer renderer
@@ -167,8 +202,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private struct SyncActiveEntry {
         let layer: DanmakuSyncBulletLayer
         let mode: DanmakuSyncMode
+        var lane: Int
+        let size: CGSize
         let startTime: Double
         let endTime: Double
+        let item: DanmakuItem
+        var missingEmoteURLs: Set<URL>
     }
 
     private struct SyncLayoutParameters: Equatable {
@@ -181,19 +220,24 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     private static let schedulerInterval: Double = 0.25
     private static let schedulingLookAhead: Double = 2
-    private static let minimumRollingStartInterval: Double = 0.05
+    private static let prewarmLookAhead: Double = 4.5
+    private static let maximumPrewarmItemsPerPass = 24
+    private static let minimumRollingStartInterval: Double = 0.01
     private static let seekResyncThreshold: Double = 1.25
+    private static let backwardSeekResyncThreshold: Double = 0.35
     private static let recycleGrace: Double = 0.2
     /// 排队宽限：弹幕因泳道/容量繁忙而等待超过该时长后放弃。泳道复用最坏
     /// 等待 ≈ 时长 × 0.5（位图与画布等宽的极端弹幕），3.0s 覆盖绝大多数排队。
     private static let lateEntryGrace: Double = 3
-    private static let maximumPooledLayers = 128
+    private static let maximumPooledLayers = 256
     private static let baseFontSize: CGFloat = 18
+    private static let emoteRetryCooldown: Duration = .seconds(15)
 
     // MARK: Configuration state
 
     private var configuration: DanmakuOverlayConfiguration?
     private var layoutParameters: SyncLayoutParameters?
+    private var lastAppliedMaxVisibleCount: Int?
     private var viewportWidth: CGFloat { max(bounds.width, 1) }
 
     // MARK: Timeline state
@@ -201,7 +245,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private weak var playbackPlayer: AVPlayer?
     private var currentItemObservation: NSKeyValueObservation?
     private var timeObserver: Any?
+    private weak var timeObserverPlayer: AVPlayer?
     private var timeJumpObserver: NSObjectProtocol?
+    private var prewarmTask: Task<Void, Never>?
+    private var activeEmoteLoadTasks: [URL: Task<Void, Never>] = [:]
+    private var incompleteCacheKeysByURL: [URL: Set<String>] = [:]
+    private var failedEmoteCooldownByURL: [URL: ContinuousClock.Instant] = [:]
     private var synchronizedLayer: AVSynchronizedLayer?
     private var containerLayer: CALayer?
     private var sortedItems: [DanmakuItem] = []
@@ -213,6 +262,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     //（重复体占满 maximumActiveCount 配额，新弹幕停止进场）。
     private var materializedAheadIds: Set<String> = []
     private var lastObservedPlaybackTime: Double?
+    private var lastRemappedParameters: SyncLayoutParameters?
     private var layoutResynchronizationWork: DispatchWorkItem?
     private var lastLayoutSize: CGSize = .zero
     private var isTransitioning = false
@@ -225,11 +275,16 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         updateRenderingActivity()
     }
 
+    var cachedEmoteImageProvider: (URL) -> UIImage? = { BiliEmoteImageStore.shared.cachedImage(for: $0) }
+    var loadEmoteImageHandler: (URL) async -> UIImage? = { await BiliEmoteImageStore.shared.image(for: $0) }
+
     // MARK: Test hooks（@testable 使用）
 
     var isSyncLayerInstalled: Bool { synchronizedLayer != nil }
     var activeDanmakuCount: Int { activeEntries.count }
     var pooledLayerCount: Int { layerPool.count }
+    private(set) var debugSynchronousTextRasterizationCount = 0
+    private(set) var debugBackgroundPrewarmRasterizationCount = 0
     /// 游标之后尚未处理的物品数（含排队等待泳道的弹幕）。
     var debugPendingDanmakuCount: Int { max(0, sortedItems.count - cursor) }
 
@@ -237,6 +292,30 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     var debugScrollLaneCount: Int { layoutParameters?.scrollLaneCount ?? 0 }
     var debugContentFrameHeight: CGFloat { layoutParameters?.contentFrame.height ?? 0 }
     var debugContentFrame: CGRect? { layoutParameters?.contentFrame }
+
+    func debugIsTextCached(for item: DanmakuItem, settings: DanmakuSettings) -> Bool {
+        let key = cacheKey(for: item, viewportWidth: max(viewportWidth, 1), settings: settings.normalized)
+        return textCache.object(forKey: key as NSString) != nil
+    }
+
+    func debugCachedTextHasMissingEmotes(for item: DanmakuItem, settings: DanmakuSettings) -> Bool? {
+        let key = cacheKey(for: item, viewportWidth: max(viewportWidth, 1), settings: settings.normalized)
+        guard let cached = textCache.object(forKey: key as NSString) else { return nil }
+        return !cached.missingEmoteURLs.isEmpty
+    }
+
+    func debugActiveBulletContents(for itemID: String) -> CGImage? {
+        activeEntries.first(where: { $0.item.id == itemID })?.layer.debugContentLayerImage
+    }
+
+    func debugPrewarmForTesting(at now: Double) {
+        guard let configuration else { return }
+        prewarmUpcomingTextCache(
+            after: now,
+            through: now + Self.prewarmLookAhead,
+            configuration: configuration
+        )
+    }
 
     /// 以显式媒体时刻驱动一次排程/回收（单测与诊断用，绕过真实播放器时钟）。
     func debugScheduleForTesting(at now: Double) {
@@ -303,8 +382,19 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     required init?(coder: NSCoder) { nil }
 
+    private var resolvedDisplayScale: CGFloat {
+        if let scale = window?.windowScene?.screen.scale, scale > 0 {
+            return scale
+        }
+        let traitScale = traitCollection.displayScale
+        return traitScale > 0 ? traitScale : 3
+    }
+
     deinit {
         MainActor.assumeIsolated {
+            cancelEmoteLoads()
+            currentItemObservation?.invalidate()
+            currentItemObservation = nil
             teardownRendering()
         }
     }
@@ -313,18 +403,23 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     func apply(configuration: DanmakuOverlayConfiguration) {
         let previousParameters = layoutParameters
+        let previousMaxVisibleCount = lastAppliedMaxVisibleCount
+        let nextMaxVisibleCount = configuration.settings.danmakuKit.normalizedMaxVisibleCount
         self.configuration = configuration
+        self.lastAppliedMaxVisibleCount = nextMaxVisibleCount
         isLoadSheddingValue = configuration.isLoadShedding
 
         let parameters = resolveLayoutParameters(for: configuration)
         let parametersChanged = parameters != previousParameters
         if parametersChanged {
             layoutParameters = parameters
-            rebuildAllocatorIfNeeded(parameters: parameters)
         }
         applyContainerOpacity(parameters: parameters)
 
         guard configuration.isEnabled, configuration.hasPresentedPlayback else {
+            if parametersChanged {
+                rebuildAllocatorIfNeeded(parameters: parameters)
+            }
             sortedItems = []
             restartSchedulingAtPlaybackTime()
             updateRenderingActivity()
@@ -332,16 +427,38 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         }
 
         // 窗口滑动（每 8s 重算 + 状态变化）走增量合并：飞行中子弹保留，
-        // 不清场。全量重放仅限首次、泳道几何变化与禁用切换。
+        // 不清场。全量重放仅限空集合、可见上限收紧与禁用切换；几何/布局参数
+        // 变更（如横竖屏旋转、inset 切换）保留在途弹幕并重映射坐标。
         let incoming = configuration.items.sorted { $0.time < $1.time }
         let merged = Self.mergedById(current: sortedItems, incoming: incoming)
         let itemsChanged = merged != sortedItems
         sortedItems = merged
 
-        if parametersChanged || sortedItems.isEmpty {
+        if sortedItems.isEmpty
+            || (previousMaxVisibleCount.map { nextMaxVisibleCount < $0 } ?? false) {
+            if parametersChanged {
+                rebuildAllocatorIfNeeded(parameters: parameters)
+            }
             restartSchedulingAtPlaybackTime()
+        } else if parametersChanged {
+            relayoutActiveEntriesForGeometryChange()
+        } else if let previousMaxVisibleCount,
+                  nextMaxVisibleCount > previousMaxVisibleCount,
+                  isRenderingActive,
+                  synchronizedLayer != nil {
+            let now = resolvedPlaybackTime()
+            positionCursor(at: now)
+            scheduleItems(through: now + Self.schedulingLookAhead, currentTime: now)
         } else if itemsChanged {
-            positionCursor(at: resolvedPlaybackTime())
+            let now = resolvedPlaybackTime()
+            positionCursor(at: now)
+            if isRenderingActive {
+                prewarmUpcomingTextCache(
+                    after: now + Self.schedulingLookAhead,
+                    through: now + Self.prewarmLookAhead,
+                    configuration: configuration
+                )
+            }
         } else if synchronizedLayer == nil {
             updateRenderingActivity()
         }
@@ -376,19 +493,25 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         guard isTransitioning != transitioning else { return }
         isTransitioning = transitioning
         if !transitioning {
-            scheduleLayoutResynchronization()
+            layoutResynchronizationWork?.cancel()
+            layoutResynchronizationWork = nil
+            relayoutActiveEntriesForGeometryChange()
         }
     }
 
     func stop() {
+        cancelEmoteLoads()
+        incompleteCacheKeysByURL.removeAll()
+        failedEmoteCooldownByURL.removeAll()
         teardownRendering()
     }
 
     func attachPlaybackPlayer(_ player: AVPlayer?) {
         guard playbackPlayer !== player else { return }
-        playbackPlayer = player
+        teardownRendering()
         currentItemObservation?.invalidate()
         currentItemObservation = nil
+        playbackPlayer = player
         updateRenderingActivity()
         guard let player else { return }
         currentItemObservation = player.observe(\.currentItem, options: [.initial, .new]) { [weak self] observedPlayer, _ in
@@ -424,13 +547,10 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     }
 
     private func teardownRendering() {
+        prewarmTask?.cancel()
+        prewarmTask = nil
         teardownSynchronizedLayer()
-        if let timeObserver, let player = playbackPlayer {
-            player.removeTimeObserver(timeObserver)
-        }
-        timeObserver = nil
-        currentItemObservation?.invalidate()
-        currentItemObservation = nil
+        removeTimeObserverIfNeeded()
         layoutResynchronizationWork?.cancel()
         layoutResynchronizationWork = nil
         lastObservedPlaybackTime = nil
@@ -443,16 +563,21 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         teardownSynchronizedLayer()
         guard let item else { return }
 
+        let nullActions: [String: CAAction] = [
+            "position": NSNull(),
+            "bounds": NSNull(),
+            "frame": NSNull(),
+            "opacity": NSNull(),
+            "sublayers": NSNull(),
+            "masksToBounds": NSNull(),
+        ]
         let syncLayer = AVSynchronizedLayer(playerItem: item)
+        syncLayer.actions = nullActions
         syncLayer.frame = bounds
         syncLayer.masksToBounds = true
         let container = CALayer()
         container.frame = bounds
-        container.actions = [
-            "position": NSNull(),
-            "bounds": NSNull(),
-            "opacity": NSNull(),
-        ]
+        container.actions = nullActions
         syncLayer.addSublayer(container)
         layer.addSublayer(syncLayer)
         synchronizedLayer = syncLayer
@@ -465,10 +590,27 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.resynchronizePresentation()
+                self?.handleTimeJumpNotification()
             }
         }
         restartSchedulingAtPlaybackTime()
+    }
+
+    private func handleTimeJumpNotification() {
+        guard isRenderingActive, synchronizedLayer != nil else { return }
+        let now = resolvedPlaybackTime()
+        if let lastObservedPlaybackTime,
+           !hasDiscontinuousTimeJump(from: lastObservedPlaybackTime, to: now) {
+            // AVPlayer 在暂停/恢复播放及倍速切换时也会发出 AVPlayerItemTimeJumped；
+            // 若媒体时间未真正跳变，直接交给 AVSynchronizedLayer 顺延继续，避免清屏重排。
+            return
+        }
+        resynchronizePresentation(at: now)
+    }
+
+    private func hasDiscontinuousTimeJump(from previous: Double, to current: Double) -> Bool {
+        current + Self.backwardSeekResyncThreshold < previous
+            || current - previous > Self.seekResyncThreshold
     }
 
     private func teardownSynchronizedLayer() {
@@ -482,7 +624,17 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     // MARK: Scheduling
 
+    private func removeTimeObserverIfNeeded() {
+        if let timeObserver, let observerPlayer = timeObserverPlayer {
+            observerPlayer.removeTimeObserver(timeObserver)
+        }
+        timeObserver = nil
+        timeObserverPlayer = nil
+    }
+
     private func addScheduler(to player: AVPlayer) {
+        removeTimeObserverIfNeeded()
+        timeObserverPlayer = player
         let interval = CMTime(seconds: Self.schedulerInterval, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             let seconds = time.seconds.isFinite ? max(0, time.seconds) : 0
@@ -495,8 +647,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     private func handleSchedulerTick(at now: Double) {
         guard isRenderingActive, synchronizedLayer != nil else { return }
         if let lastObservedPlaybackTime,
-           now + 0.05 < lastObservedPlaybackTime
-                || now - lastObservedPlaybackTime > Self.seekResyncThreshold {
+           hasDiscontinuousTimeJump(from: lastObservedPlaybackTime, to: now) {
             resynchronizePresentation(at: now)
             return
         }
@@ -563,6 +714,11 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             }
         }
         cursor = firstBusyIndex ?? min(index, sortedItems.count)
+        prewarmUpcomingTextCache(
+            after: horizon,
+            through: currentTime + Self.prewarmLookAhead,
+            configuration: configuration
+        )
     }
 
     private enum ItemSchedulingOutcome {
@@ -672,12 +828,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         bulletLayer.configure(
             image: cached.image,
             size: cached.size,
-            contentsScale: window?.windowScene?.screen.scale ?? UIScreen.main.scale
+            contentsScale: resolvedDisplayScale
         )
         containerLayer.addSublayer(bulletLayer)
         configureAnimations(
             on: bulletLayer,
-            cached: cached,
+            bulletSize: cached.size,
             mode: mode,
             lane: lane,
             parameters: parameters,
@@ -688,8 +844,12 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         activeEntries.append(SyncActiveEntry(
             layer: bulletLayer,
             mode: mode,
+            lane: lane,
+            size: cached.size,
             startTime: effectiveStart,
-            endTime: endTime
+            endTime: endTime,
+            item: item,
+            missingEmoteURLs: cached.missingEmoteURLs
         ))
     }
 
@@ -725,7 +885,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     private func configureAnimations(
         on layer: DanmakuSyncBulletLayer,
-        cached: DanmakuSyncCachedText,
+        bulletSize: CGSize,
         mode: DanmakuSyncMode,
         lane: Int,
         parameters: SyncLayoutParameters,
@@ -741,8 +901,8 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         switch mode {
         case .scroll:
             let y = contentFrame.minY + laneHeight * (CGFloat(lane) + 0.5)
-            let startX = contentFrame.maxX + cached.size.width / 2
-            let endX = contentFrame.minX - cached.size.width / 2
+            let startX = contentFrame.maxX + bulletSize.width / 2
+            let endX = contentFrame.minX - bulletSize.width / 2
             layer.position = CGPoint(x: endX, y: y)
             layer.opacity = 1
             let movement = CABasicAnimation(keyPath: "position.x")
@@ -782,6 +942,57 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         CATransaction.commit()
     }
 
+    private func remapAnimations(
+        on layer: DanmakuSyncBulletLayer,
+        bulletSize: CGSize,
+        mode: DanmakuSyncMode,
+        lane: Int,
+        parameters: SyncLayoutParameters,
+        configuration: DanmakuOverlayConfiguration,
+        startTime: Double,
+        duration: Double
+    ) {
+        let contentFrame = parameters.contentFrame
+        let laneHeight = parameters.laneHeight
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        switch mode {
+        case .scroll:
+            let y = contentFrame.minY + laneHeight * (CGFloat(lane) + 0.5)
+            let startX = contentFrame.maxX + bulletSize.width / 2
+            let endX = contentFrame.minX - bulletSize.width / 2
+            layer.position = CGPoint(x: endX, y: y)
+            let existing = layer.animation(forKey: "danmaku.sync.scroll") as? CABasicAnimation
+            let existingFrom = (existing?.fromValue as? NSNumber)?.doubleValue
+            let existingTo = (existing?.toValue as? NSNumber)?.doubleValue
+            let matchesTrack = existingFrom.map { abs($0 - Double(startX)) <= 0.5 } ?? false
+                && existingTo.map { abs($0 - Double(endX)) <= 0.5 } ?? false
+            if !matchesTrack {
+                let movement = CABasicAnimation(keyPath: "position.x")
+                movement.fromValue = startX
+                movement.toValue = endX
+                configureAnimation(
+                    movement,
+                    beginTime: startTime,
+                    duration: duration,
+                    timingFunction: CAMediaTimingFunction(name: .linear),
+                    configuration: configuration
+                )
+                layer.add(movement, forKey: "danmaku.sync.scroll")
+            }
+
+        case .top, .bottom:
+            let y: CGFloat
+            if mode == .top {
+                y = contentFrame.minY + laneHeight * (CGFloat(lane) + 0.5)
+            } else {
+                y = contentFrame.maxY - laneHeight * (CGFloat(lane) + 0.5)
+            }
+            layer.position = CGPoint(x: contentFrame.midX, y: y)
+        }
+        CATransaction.commit()
+    }
+
     private func configureAnimation(
         _ animation: CAAnimation,
         beginTime: Double,
@@ -811,13 +1022,21 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
     // MARK: Recycling
 
     private func recycleExpiredLayers(at now: Double) {
-        let expired = activeEntries.filter { $0.endTime + Self.recycleGrace <= now }
-        guard !expired.isEmpty else { return }
-        activeEntries.removeAll { entry in
-            expired.contains(where: { $0.layer === entry.layer })
+        guard !activeEntries.isEmpty else { return }
+        var writeIndex = 0
+        for readIndex in activeEntries.indices {
+            let entry = activeEntries[readIndex]
+            if entry.endTime + Self.recycleGrace <= now {
+                recycleLayer(entry.layer)
+            } else {
+                if writeIndex != readIndex {
+                    activeEntries[writeIndex] = entry
+                }
+                writeIndex += 1
+            }
         }
-        for entry in expired {
-            recycleLayer(entry.layer)
+        if writeIndex < activeEntries.count {
+            activeEntries.removeSubrange(writeIndex...)
         }
     }
 
@@ -826,6 +1045,7 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             recycleLayer(entry.layer)
         }
         activeEntries.removeAll()
+        lastRemappedParameters = nil
         // 全量回收后泳道占用账本必须清零：若保留 freeAt，已回收子弹会以幽灵
         // 占位挡住重物化（resync 后画面清空），参数变化重建分配器则会放新弹幕
         // 叠上仍在飞的旧弹幕。重放按时间序确定性还原泳道。
@@ -852,28 +1072,87 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        synchronizedLayer?.frame = bounds
-        containerLayer?.frame = bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        guard abs(lastLayoutSize.width - bounds.width) > 0.5
-                || abs(lastLayoutSize.height - bounds.height) > 0.5 else {
-            return
+        UIView.performWithoutAnimation {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            synchronizedLayer?.frame = bounds
+            containerLayer?.frame = bounds
+            CATransaction.commit()
+            guard bounds.width > 0, bounds.height > 0 else { return }
+            guard abs(lastLayoutSize.width - bounds.width) > 0.5
+                    || abs(lastLayoutSize.height - bounds.height) > 0.5 else {
+                return
+            }
+            lastLayoutSize = bounds.size
+            layoutParameters = configuration.map { resolveLayoutParameters(for: $0) }
+            layoutResynchronizationWork?.cancel()
+            layoutResynchronizationWork = nil
+            relayoutActiveEntriesForGeometryChange()
         }
-        lastLayoutSize = bounds.size
-        layoutParameters = configuration.map { resolveLayoutParameters(for: $0) }
-        scheduleLayoutResynchronization()
     }
 
-    private func scheduleLayoutResynchronization() {
-        guard isRenderingActive else { return }
-        layoutResynchronizationWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.layoutResynchronizationWork = nil
-            self.resynchronizePresentation()
+    private func relayoutActiveEntriesForGeometryChange(at explicitTime: Double? = nil) {
+        guard isRenderingActive, synchronizedLayer != nil,
+              bounds.width > 0, bounds.height > 0,
+              let configuration else {
+            if let parameters = layoutParameters {
+                rebuildAllocatorIfNeeded(parameters: parameters)
+            }
+            return
         }
-        layoutResynchronizationWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+        let parameters = resolveLayoutParameters(for: configuration)
+        layoutParameters = parameters
+        if lastRemappedParameters == parameters {
+            return
+        }
+        let now = explicitTime ?? resolvedPlaybackTime()
+        lastObservedPlaybackTime = now
+        recycleExpiredLayers(at: now)
+
+        if activeEntries.isEmpty {
+            rebuildAllocatorIfNeeded(parameters: parameters)
+            lastRemappedParameters = parameters
+        } else if lastRemappedParameters != parameters {
+            var nextAllocator = DanmakuSyncLaneAllocator(
+                laneCount: max(1, parameters.scrollLaneCount)
+            )
+            let canvasWidth = max(viewportWidth, 1)
+            for index in activeEntries.indices {
+                let entry = activeEntries[index]
+                let duration = max(0.001, entry.endTime - entry.startTime)
+                let laneCount = entry.mode == .scroll
+                    ? max(1, parameters.scrollLaneCount)
+                    : max(1, parameters.staticLaneCount)
+                let remappedLane = entry.lane < laneCount ? entry.lane : (entry.lane % laneCount)
+                activeEntries[index].lane = remappedLane
+                remapAnimations(
+                    on: entry.layer,
+                    bulletSize: entry.size,
+                    mode: entry.mode,
+                    lane: remappedLane,
+                    parameters: parameters,
+                    configuration: configuration,
+                    startTime: entry.startTime,
+                    duration: duration
+                )
+                switch entry.mode {
+                case .scroll:
+                    let bitmapWidth = max(entry.size.width, 1)
+                    let reusableAt = entry.startTime
+                        + duration * Double(bitmapWidth / (canvasWidth + bitmapWidth))
+                    nextAllocator.markScrollingLane(remappedLane, reusableAt: reusableAt)
+                case .top:
+                    nextAllocator.markTopLane(remappedLane, freeAt: entry.endTime)
+                case .bottom:
+                    nextAllocator.markBottomLane(remappedLane, freeAt: entry.endTime)
+                }
+            }
+            laneAllocator = nextAllocator
+            lastRemappedParameters = parameters
+        }
+
+        positionCursor(at: now)
+        scheduleItems(through: now + Self.schedulingLookAhead, currentTime: now)
     }
 
     // MARK: Layout parameters
@@ -944,31 +1223,278 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
 
     // MARK: Text bitmaps
 
+    private func cacheKey(
+        for item: DanmakuItem,
+        viewportWidth: CGFloat,
+        settings: DanmakuSettings
+    ) -> String {
+        let widthBucket = viewportWidth > 640 ? 1 : 0
+        var base = "\(item.text)|\(item.color)|\(Int(item.fontSize))|\(item.mode)|\(widthBucket)|\(settings.danmakuKit.fontWeight)|\(settings.danmakuKit.fontScale)"
+        if item.colorful != 0 {
+            base += "|c\(item.colorful)"
+        }
+        if !item.inlineEmotes.isEmpty {
+            let emoteDigest = item.inlineEmotes
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value.url)" }
+                .joined(separator: ",")
+            base += "|\(emoteDigest)"
+        }
+        return base
+    }
+
+    private func referencedEmoteURLs(for item: DanmakuItem) -> [URL] {
+        guard !item.inlineEmotes.isEmpty else { return [] }
+        var urls: [URL] = []
+        var seen = Set<URL>()
+        for (token, emote) in item.inlineEmotes {
+            guard !token.isEmpty,
+                  item.text.contains(token),
+                  let urlString = emote.displayURL,
+                  let url = URL(string: urlString),
+                  seen.insert(url).inserted
+            else { continue }
+            urls.append(url)
+        }
+        return urls
+    }
+
+    private func emoteSnapshots(for urls: [URL]) -> (snapshots: [URL: DanmakuEmoteBitmap], missingURLs: [URL]) {
+        var snapshots: [URL: DanmakuEmoteBitmap] = [:]
+        var missingURLs: [URL] = []
+        for url in urls {
+            if let image = cachedEmoteImageProvider(url),
+               let cgImage = image.cgImage {
+                snapshots[url] = DanmakuEmoteBitmap(cgImage: cgImage, scale: image.scale)
+            } else {
+                missingURLs.append(url)
+            }
+        }
+        return (snapshots, missingURLs)
+    }
+
     private func cachedText(
         for item: DanmakuItem,
         configuration: DanmakuOverlayConfiguration
     ) -> DanmakuSyncCachedText {
         let settings = configuration.settings.normalized
-        let key = "\(item.text)|\(item.color)|\(Int(item.fontSize))|\(item.mode)|\(settings.danmakuKit.fontWeight)|\(settings.danmakuKit.fontScale)" as NSString
-        if let cached = textCache.object(forKey: key) {
-            return cached
+        let width = max(viewportWidth, 1)
+        let key = cacheKey(for: item, viewportWidth: width, settings: settings)
+        let nsKey = key as NSString
+
+        if let cached = textCache.object(forKey: nsKey) {
+            if cached.missingEmoteURLs.isEmpty {
+                return cached
+            }
+            let anyNewlyAvailable = cached.missingEmoteURLs.contains { cachedEmoteImageProvider($0) != nil }
+            if !anyNewlyAvailable {
+                requestEmoteImages(Array(cached.missingEmoteURLs))
+                return cached
+            }
+            textCache.removeObject(forKey: nsKey)
         }
-        let cached = makeTextBitmap(for: item, configuration: configuration)
-        textCache.setObject(cached, forKey: key, cost: cached.image.bytesPerRow * cached.image.height)
-        return cached
+
+        debugSynchronousTextRasterizationCount += 1
+        let emoteURLs = referencedEmoteURLs(for: item)
+        let snapshots = emoteSnapshots(for: emoteURLs).snapshots
+        let built = Self.buildTextGlyph(
+            item: item,
+            viewportWidth: width,
+            fontWeight: settings.danmakuKit.fontWeight,
+            fontScale: settings.danmakuKit.fontScale,
+            scale: resolvedDisplayScale,
+            cachedEmotes: snapshots,
+            placeholderProvider: { BiliEmoteImageStore.shared.placeholderImage(size: $0) }
+        )
+        let result = built.cached
+        textCache.setObject(result, forKey: nsKey, cost: result.image.bytesPerRow * result.image.height)
+        if !built.missingImageURLs.isEmpty {
+            for url in built.missingImageURLs {
+                incompleteCacheKeysByURL[url, default: []].insert(key)
+            }
+            requestEmoteImages(built.missingImageURLs)
+        }
+        return result
     }
 
-    private func makeTextBitmap(
-        for item: DanmakuItem,
+    private func prewarmUpcomingTextCache(
+        after startHorizon: Double,
+        through endHorizon: Double,
         configuration: DanmakuOverlayConfiguration
-    ) -> DanmakuSyncCachedText {
+    ) {
+        guard endHorizon > startHorizon, !sortedItems.isEmpty else { return }
         let settings = configuration.settings.normalized
-        let viewportWidth = max(viewportWidth, 1)
+        let width = max(viewportWidth, 1)
+        let scale = resolvedDisplayScale
+        let nowClock = ContinuousClock.now
+        var index = lowerBound(of: startHorizon)
+        var jobs: [DanmakuPrewarmRawJob] = []
+        var emoteURLsToPrefetch: [URL] = []
+        var seenPrefetchURLs = Set<URL>()
+        var seenKeys = Set<String>()
+
+        while index < sortedItems.count,
+              sortedItems[index].time <= endHorizon,
+              jobs.count < Self.maximumPrewarmItemsPerPass {
+            let item = sortedItems[index]
+            index += 1
+            guard DanmakuRenderPolicy.supports(item, settings: settings) else { continue }
+            let key = cacheKey(for: item, viewportWidth: width, settings: settings)
+            guard seenKeys.insert(key).inserted else { continue }
+            guard textCache.object(forKey: key as NSString) == nil else { continue }
+
+            let emoteURLs = referencedEmoteURLs(for: item)
+            let lookup = emoteSnapshots(for: emoteURLs)
+            if !lookup.missingURLs.isEmpty {
+                var shouldDeferPlaceholderPrewarm = false
+                for url in lookup.missingURLs {
+                    let isCoolingDown = failedEmoteCooldownByURL[url].map { $0 > nowClock } ?? false
+                    if !isCoolingDown {
+                        shouldDeferPlaceholderPrewarm = true
+                        if seenPrefetchURLs.insert(url).inserted {
+                            emoteURLsToPrefetch.append(url)
+                        }
+                    }
+                }
+                if shouldDeferPlaceholderPrewarm {
+                    continue
+                }
+            }
+
+            jobs.append(DanmakuPrewarmRawJob(
+                key: key,
+                item: item,
+                viewportWidth: width,
+                fontWeight: settings.danmakuKit.fontWeight,
+                fontScale: settings.danmakuKit.fontScale,
+                scale: scale,
+                emotes: lookup.snapshots
+            ))
+        }
+
+        if !emoteURLsToPrefetch.isEmpty {
+            requestEmoteImages(emoteURLsToPrefetch)
+        }
+        guard !jobs.isEmpty else { return }
+        prewarmTask?.cancel()
+        let cache = textCache
+        prewarmTask = Task.detached(priority: .utility) { [weak self] in
+            var rasterizedCount = 0
+            for job in jobs {
+                if Task.isCancelled { return }
+                let nsKey = job.key as NSString
+                if cache.object(forKey: nsKey) != nil { continue }
+                let built = Self.buildTextGlyph(
+                    item: job.item,
+                    viewportWidth: job.viewportWidth,
+                    fontWeight: job.fontWeight,
+                    fontScale: job.fontScale,
+                    scale: job.scale,
+                    cachedEmotes: job.emotes
+                )
+                cache.setObject(
+                    built.cached,
+                    forKey: nsKey,
+                    cost: built.cached.image.bytesPerRow * built.cached.image.height
+                )
+                rasterizedCount += 1
+            }
+            if rasterizedCount > 0, !Task.isCancelled {
+                await MainActor.run { [weak self] in
+                    self?.debugBackgroundPrewarmRasterizationCount += rasterizedCount
+                }
+            }
+        }
+    }
+
+    private func requestEmoteImages(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let now = ContinuousClock.now
+        for url in urls {
+            guard activeEmoteLoadTasks[url] == nil else { continue }
+            if let retryAfter = failedEmoteCooldownByURL[url], retryAfter > now {
+                continue
+            }
+            if cachedEmoteImageProvider(url) != nil {
+                continue
+            }
+            let loader = loadEmoteImageHandler
+            activeEmoteLoadTasks[url] = Task { [weak self] in
+                let loaded = await loader(url)
+                await MainActor.run { [weak self] in
+                    self?.handleEmoteImageLoaded(for: url, image: loaded)
+                }
+            }
+        }
+    }
+
+    private func handleEmoteImageLoaded(for url: URL, image: UIImage?) {
+        activeEmoteLoadTasks[url] = nil
+        let dependentKeys = incompleteCacheKeysByURL.removeValue(forKey: url) ?? []
+        guard image != nil else {
+            failedEmoteCooldownByURL[url] = ContinuousClock.now + Self.emoteRetryCooldown
+            return
+        }
+        failedEmoteCooldownByURL.removeValue(forKey: url)
+
+        for key in dependentKeys {
+            textCache.removeObject(forKey: key as NSString)
+        }
+
+        if let configuration, !activeEntries.isEmpty {
+            var didBeginTransaction = false
+            for index in activeEntries.indices {
+                guard activeEntries[index].missingEmoteURLs.contains(url) else { continue }
+                let updated = cachedText(for: activeEntries[index].item, configuration: configuration)
+                activeEntries[index].missingEmoteURLs = updated.missingEmoteURLs
+                if !didBeginTransaction {
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    didBeginTransaction = true
+                }
+                activeEntries[index].layer.configure(
+                    image: updated.image,
+                    size: updated.size,
+                    contentsScale: resolvedDisplayScale
+                )
+            }
+            if didBeginTransaction {
+                CATransaction.commit()
+            }
+        }
+
+        if isRenderingActive, let configuration {
+            let now = lastObservedPlaybackTime ?? resolvedPlaybackTime()
+            prewarmUpcomingTextCache(
+                after: now,
+                through: now + Self.prewarmLookAhead,
+                configuration: configuration
+            )
+        }
+    }
+
+    private func cancelEmoteLoads() {
+        for task in activeEmoteLoadTasks.values {
+            task.cancel()
+        }
+        activeEmoteLoadTasks.removeAll()
+    }
+
+    private nonisolated static func buildTextGlyph(
+        item: DanmakuItem,
+        viewportWidth: CGFloat,
+        fontWeight: DanmakuFontWeightOption,
+        fontScale: Double,
+        scale: CGFloat,
+        cachedEmotes: [URL: DanmakuEmoteBitmap],
+        placeholderProvider: ((CGFloat) -> UIImage)? = nil
+    ) -> (cached: DanmakuSyncCachedText, missingImageURLs: [URL]) {
+        let resolvedWidth = max(viewportWidth, 1)
         let font = DanmakuRenderPolicy.font(
             for: item,
-            viewportWidth: viewportWidth,
-            scale: settings.danmakuKit.fontScale,
-            weight: settings.danmakuKit.fontWeight
+            viewportWidth: resolvedWidth,
+            scale: fontScale,
+            weight: fontWeight
         )
         let color = UIColor(
             red: CGFloat((item.color >> 16) & 0xFF) / 255,
@@ -980,12 +1506,14 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
         textShadow.shadowColor = UIColor.black.withAlphaComponent(0.86)
         textShadow.shadowOffset = CGSize(width: 0, height: 1)
         textShadow.shadowBlurRadius = 1.4
-        let rendered = DanmakuKitTextCellModel.render(
+        let rendered = DanmakuEmoteAttributedTextRenderer.render(
             item.text,
             emotes: item.inlineEmotes,
             font: font,
             color: color,
-            shadow: textShadow
+            shadow: textShadow,
+            cachedImageForURL: { cachedEmotes[$0]?.uiImage },
+            placeholderImageForSize: placeholderProvider
         )
         let textSize = rendered.attributedText.boundingRect(
             with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
@@ -1000,24 +1528,68 @@ final class DanmakuSynchronizedLayerView: UIView, DanmakuOverlayRendering {
             width: min(size.width, 4096),
             height: min(size.height, 512)
         )
+        let cgImage = rasterizeTextGlyph(
+            attributedText: rendered.attributedText,
+            size: clampedSize,
+            scale: scale,
+            isVIPGradientColorful: item.isVIPGradientColorful
+        )
+        let cached = DanmakuSyncCachedText(
+            image: cgImage,
+            size: clampedSize,
+            missingEmoteURLs: Set(rendered.missingImageURLs)
+        )
+        return (cached, rendered.missingImageURLs)
+    }
+
+    private nonisolated static func rasterizeTextGlyph(
+        attributedText: NSAttributedString,
+        size clampedSize: CGSize,
+        scale: CGFloat,
+        isVIPGradientColorful: Bool
+    ) -> CGImage {
         let format = UIGraphicsImageRendererFormat()
         format.opaque = false
-        format.scale = window?.windowScene?.screen.scale ?? UIScreen.main.scale
+        format.scale = scale
         let renderer = UIGraphicsImageRenderer(size: clampedSize, format: format)
-        let image = renderer.image { _ in
-            rendered.attributedText.draw(
-                in: CGRect(origin: .zero, size: clampedSize)
+        let rect = CGRect(origin: .zero, size: clampedSize)
+        let image = renderer.image { context in
+            attributedText.draw(in: rect)
+            guard isVIPGradientColorful else { return }
+            let cgContext = context.cgContext
+            let unshadowed = NSMutableAttributedString(attributedString: attributedText)
+            unshadowed.removeAttribute(.shadow, range: NSRange(location: 0, length: unshadowed.length))
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let gradientColors: [CGColor] = [
+                UIColor(red: 1.0, green: 0.42, blue: 0.62, alpha: 1.0).cgColor,
+                UIColor(red: 1.0, green: 0.60, blue: 0.38, alpha: 1.0).cgColor,
+                UIColor(red: 1.0, green: 0.82, blue: 0.40, alpha: 1.0).cgColor,
+            ]
+            guard let gradient = CGGradient(
+                colorsSpace: colorSpace,
+                colors: gradientColors as CFArray,
+                locations: [0.0, 0.52, 1.0]
+            ) else { return }
+
+            cgContext.saveGState()
+            cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
+            unshadowed.draw(in: rect)
+            cgContext.setBlendMode(.sourceAtop)
+            cgContext.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 0, y: clampedSize.height * 0.5),
+                end: CGPoint(x: clampedSize.width, y: clampedSize.height * 0.5),
+                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
             )
+            cgContext.endTransparencyLayer()
+            cgContext.restoreGState()
         }
-        guard let cgImage = image.cgImage else {
-            return DanmakuSyncCachedText(
-                image: UIGraphicsImageRenderer(size: .init(width: 1, height: 1)).image { _ in
-                    UIColor.clear.setFill()
-                    UIBezierPath(rect: CGRect(x: 0, y: 0, width: 1, height: 1)).fill()
-                }.cgImage ?? UIImage().cgImage!,
-                size: CGSize(width: 1, height: 1)
-            )
+        if let cgImage = image.cgImage {
+            return cgImage
         }
-        return DanmakuSyncCachedText(image: cgImage, size: clampedSize)
+        return UIGraphicsImageRenderer(size: .init(width: 1, height: 1)).image { _ in
+            UIColor.clear.setFill()
+            UIBezierPath(rect: CGRect(x: 0, y: 0, width: 1, height: 1)).fill()
+        }.cgImage!
     }
 }

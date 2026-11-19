@@ -4,6 +4,9 @@ import UIKit
 enum CommentInteractionSettings {
     // Keep the persisted key so the user's existing switch choice survives the gesture change.
     static let longPressActionsEnabledKey = "cc.bili.commentTapActionsEnabled.v1"
+    nonisolated static let limitsSheetMaxHeightKey = "cc.bili.commentSheetLimitsMaxHeight.v1"
+    nonisolated static let defaultLimitsSheetMaxHeight = true
+    nonisolated static let limitedSheetDetentFraction: CGFloat = 0.7
 }
 
 @MainActor

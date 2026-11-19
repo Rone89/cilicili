@@ -6,7 +6,7 @@ struct BiliPlayerSurfaceGestureLayerHost<Content: View>: View {
     let speedBoostActions: BiliPlayerSpeedBoostActions
     let viewModel: PlayerStateViewModel
     let allowsDoubleTapPlaybackToggle: Bool
-    @ObservedObject var seekPreviewModel: PlayerSeekPreviewModel
+    let seekPreviewModel: PlayerSeekPreviewModel
     let seekPreviewAPI: BiliAPIClient?
     let seekPreviewContext: PlayerSeekPreviewContext?
     let holdCurrentFrameForSeek: () -> Void
@@ -45,9 +45,9 @@ struct BiliPlayerSurfaceGestureLayerHost<Content: View>: View {
                 )
                 gestureActions.horizontalSeekStart(progress)
             },
-            onHorizontalSeekChanged: { progress in
+            onHorizontalSeekChanged: { progress, horizontalVelocity in
                 seekPreviewModel.updateScrub(progress: progress, duration: resolvedDuration)
-                gestureActions.horizontalSeekChanged(progress)
+                gestureActions.horizontalSeekChanged(progress, horizontalVelocity: horizontalVelocity)
             },
             onHorizontalSeekEnded: { progress in
                 seekPreviewModel.endScrub()

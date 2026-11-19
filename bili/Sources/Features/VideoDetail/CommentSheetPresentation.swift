@@ -27,28 +27,74 @@ extension EnvironmentValues {
     }
 }
 
+enum CommentSheetPresentationPolicy {
+    static func shouldLimitHeight(
+        limitsMaxHeight: Bool,
+        verticalSizeClass: UserInterfaceSizeClass?
+    ) -> Bool {
+        limitsMaxHeight && verticalSizeClass != .compact
+    }
+
+    static func detents(
+        limitsMaxHeight: Bool,
+        verticalSizeClass: UserInterfaceSizeClass?
+    ) -> Set<PresentationDetent> {
+        if shouldLimitHeight(limitsMaxHeight: limitsMaxHeight, verticalSizeClass: verticalSizeClass) {
+            return [.fraction(CommentInteractionSettings.limitedSheetDetentFraction)]
+        }
+        return [.medium, .large]
+    }
+}
+
 private struct CommentSheetPresentation: ViewModifier {
     @Environment(\.colorScheme) private var inheritedColorScheme
     @Environment(\.appContentColorScheme) private var appContentColorScheme
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @AppStorage(CommentInteractionSettings.limitsSheetMaxHeightKey)
+    private var limitsSheetMaxHeight = CommentInteractionSettings.defaultLimitsSheetMaxHeight
     @State private var selectedDetent: PresentationDetent = .medium
     let onDismiss: () -> Void
     let onRefresh: () -> Void
 
     func body(content: Content) -> some View {
         let contentColorScheme = appContentColorScheme ?? inheritedColorScheme
+        let shouldLimitHeight = CommentSheetPresentationPolicy.shouldLimitHeight(
+            limitsMaxHeight: limitsSheetMaxHeight,
+            verticalSizeClass: verticalSizeClass
+        )
         content
             .environment(\.colorScheme, contentColorScheme)
             // The video host can request dark status-bar contrast while its
             // content stays light. Keep this presentation's UIKit background
             // and its SwiftUI comment text on the same appearance.
             .preferredColorScheme(contentColorScheme)
-            .presentationDetents([.medium, .large], selection: $selectedDetent)
-            .presentationContentInteraction(.resizes)
+            .commentSheetHeightDetents(
+                limitsHeight: shouldLimitHeight,
+                selectedDetent: $selectedDetent
+            )
             .presentationDragIndicator(.visible)
             .environment(
                 \.commentSheetToolbarConfiguration,
                 CommentSheetToolbarConfiguration(onDismiss: onDismiss, onRefresh: onRefresh)
             )
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func commentSheetHeightDetents(
+        limitsHeight: Bool,
+        selectedDetent: Binding<PresentationDetent>
+    ) -> some View {
+        if limitsHeight {
+            self
+                .presentationDetents([.fraction(CommentInteractionSettings.limitedSheetDetentFraction)])
+                .presentationContentInteraction(.scrolls)
+        } else {
+            self
+                .presentationDetents([.medium, .large], selection: selectedDetent)
+                .presentationContentInteraction(.resizes)
+        }
     }
 }
 

@@ -575,6 +575,15 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.videoDetail.moreControlsSwiftUISheetExperimentEnabled.v1",
             "cc.bili.playback.nativePlayerProgressSliderExperimentEnabled.v1",
             "cc.bili.playback.iosNativePlaybackControlsExperimentEnabled.v1",
+            NativePlaybackControlsExperiment.storageKey,
+            NativePlaybackControlsExperiment.primaryDefaultMigrationKey,
+            NativePlaybackControlsExperiment.overlayModeStorageKey,
+            NativePlaybackControlsExperiment.customOverlayDefaultMigrationKey,
+            NativePlaybackControlsExperiment.speedsStorageKey,
+            NativePlaybackControlsExperiment.showsPlaybackControlsStorageKey,
+            NativePlaybackControlsExperiment.allowsPictureInPicturePlaybackStorageKey,
+            "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1",
+            "cc.bili.playback.danmakuSynchronizedLayerRenderer.v1",
             "cc.bili.display.unifiedVideoCoverBorderExperimentEnabled.v1",
             "cc.bili.display.thumbnailLongPressPreviewExperimentEnabled.v1",
             "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1",
@@ -1377,12 +1386,166 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             .compactMap { $0 as? UITapGestureRecognizer }
             .first { $0.numberOfTapsRequired == 2 }
         let panGesture = gestureRecognizers.first { $0 is UIPanGestureRecognizer }
+        let longPressGesture =
+            gestureRecognizers
+            .compactMap { $0 as? UILongPressGestureRecognizer }
+            .first
 
         XCTAssertNotNil(doubleTapGesture)
         XCTAssertNotNil(panGesture)
+        XCTAssertNotNil(longPressGesture)
         XCTAssertFalse(doubleTapGesture?.cancelsTouchesInView ?? true)
-        XCTAssertFalse(panGesture?.cancelsTouchesInView ?? true)
+        XCTAssertFalse(doubleTapGesture?.delaysTouchesBegan ?? true)
+        XCTAssertTrue(panGesture?.cancelsTouchesInView ?? false)
+        XCTAssertFalse(panGesture?.delaysTouchesBegan ?? true)
+        XCTAssertTrue(longPressGesture?.cancelsTouchesInView ?? false)
+        XCTAssertFalse(longPressGesture?.delaysTouchesBegan ?? true)
+        XCTAssertTrue(longPressGesture?.delaysTouchesEnded ?? false)
+        XCTAssertEqual(longPressGesture?.minimumPressDuration ?? 0, 0.28, accuracy: 0.001)
         XCTAssertTrue(surface.nativePlayerViewController.contentOverlayView?.isUserInteractionEnabled == true)
+
+        surface.setShowsSystemPlaybackControls(false)
+        let recognizersWhenControlsHidden =
+            surface.nativePlayerViewController.contentOverlayView?
+            .subviews
+            .flatMap { $0.gestureRecognizers ?? [] }
+            ?? []
+        XCTAssertTrue(recognizersWhenControlsHidden.contains { $0 is UIPanGestureRecognizer })
+        XCTAssertTrue(
+            recognizersWhenControlsHidden.contains {
+                ($0 as? UITapGestureRecognizer)?.numberOfTapsRequired == 2
+            }
+        )
+        XCTAssertTrue(
+            recognizersWhenControlsHidden.contains {
+                ($0 as? UILongPressGestureRecognizer)?.minimumPressDuration == 0.28
+            }
+        )
+        XCTAssertTrue(surface.nativePlayerViewController.contentOverlayView?.isUserInteractionEnabled == true)
+    }
+
+    @MainActor
+    func testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely() async throws {
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        engine.usesNativePlaybackControls = true
+        let player = PlayerStateViewModel(
+            videoURL: nil,
+            audioURL: nil,
+            title: "原生控件长按二倍速测试",
+            referer: "https://www.bilibili.com",
+            engine: engine
+        )
+        let surface = VideoSurfaceContainerView()
+        let hostVC = UIViewController()
+        hostVC.view.frame = CGRect(x: 0, y: 0, width: 390, height: 220)
+        surface.frame = hostVC.view.bounds
+        hostVC.view.addSubview(surface)
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let previousWindow = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = .light
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 220)
+        window.rootViewController = hostVC
+        window.makeKeyAndVisible()
+        defer {
+            surface.detachPlayerSurface()
+            player.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+
+        surface.setPlayerViewModel(player, prefersNativePlaybackControls: true)
+        surface.setShowsSystemPlaybackControls(true)
+        player.attachSurface(surface, prefersNativePlaybackControls: true)
+        engine.onPlaybackStateChange?(.playing)
+        hostVC.view.layoutIfNeeded()
+
+        let controller = surface.debugNativeSurfaceGestureController
+        XCTAssertEqual(controller.debugLongPressGesture.minimumPressDuration, 0.28, accuracy: 0.001)
+        XCTAssertEqual(controller.debugHostingViewController.overrideUserInterfaceStyle, .dark)
+        XCTAssertEqual(player.playbackRate, .x10)
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .idle)
+        XCTAssertFalse(controller.debugIsSpeedBoostIndicatorVisible)
+
+        let bounds = CGRect(x: 0, y: 0, width: 390, height: 220)
+        XCTAssertFalse(
+            controller.debugShouldBeginLongPress(
+                at: CGPoint(x: 12, y: 110),
+                in: bounds,
+                showsPlaybackControls: true
+            )
+        )
+        XCTAssertFalse(
+            controller.debugShouldBeginLongPress(
+                at: CGPoint(x: 378, y: 110),
+                in: bounds,
+                showsPlaybackControls: true
+            )
+        )
+        XCTAssertFalse(
+            controller.debugShouldBeginLongPress(
+                at: CGPoint(x: 195, y: 185),
+                in: bounds,
+                showsPlaybackControls: true
+            )
+        )
+        XCTAssertTrue(
+            controller.debugShouldBeginLongPress(
+                at: CGPoint(x: 195, y: 185),
+                in: bounds,
+                showsPlaybackControls: false
+            )
+        )
+        XCTAssertTrue(
+            controller.debugShouldBeginLongPress(
+                at: CGPoint(x: 195, y: 110),
+                in: bounds,
+                showsPlaybackControls: true
+            )
+        )
+
+        // Active pan/seek must prevent long-press speed boost from starting.
+        controller.debugSimulatePanActive(isSeeking: true)
+        XCTAssertFalse(
+            controller.debugShouldBeginLongPress(
+                at: CGPoint(x: 195, y: 110),
+                in: bounds,
+                showsPlaybackControls: true
+            )
+        )
+        controller.debugTriggerLongPress(state: .began)
+        XCTAssertEqual(player.playbackRate, .x10)
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .idle)
+        controller.debugSimulatePanActive(isSeeking: false)
+
+        // Begin long-press -> temporary 2.0x boost & top capsule HUD visible, pan blocked.
+        controller.debugTriggerLongPress(state: .began)
+        XCTAssertEqual(player.playbackRate, .x20)
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .boosting)
+        XCTAssertEqual(controller.debugSpeedBoostDisplayedRate, .x20)
+        XCTAssertTrue(controller.debugIsSpeedBoostIndicatorVisible)
+        XCTAssertFalse(controller.gestureRecognizerShouldBegin(controller.debugPanGesture))
+
+        // End long-press -> restores 1.0x immediately and transitions restoring -> idle.
+        controller.debugTriggerLongPress(state: .ended)
+        XCTAssertEqual(player.playbackRate, .x10)
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .restoring)
+        XCTAssertEqual(controller.debugSpeedBoostDisplayedRate, .x10)
+        try await Task.sleep(for: .milliseconds(220))
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .idle)
+        XCTAssertFalse(controller.debugIsSpeedBoostIndicatorVisible)
+
+        // Safety fallback: detaching while boosting must restore non-2.0x rate (e.g. 1.5x).
+        player.setPlaybackRate(.x15)
+        controller.debugTriggerLongPress(state: .began)
+        XCTAssertEqual(player.playbackRate, .x20)
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .boosting)
+        surface.detachPlayerSurface()
+        XCTAssertEqual(player.playbackRate, .x15)
+        XCTAssertNotEqual(controller.debugSpeedBoostPhase, .boosting)
     }
 
     @MainActor
@@ -1600,6 +1763,94 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         throw NSError(domain: "SeekDeadlineTest", code: 1)
     }
 
+    @MainActor
+    func testSeekResumeUsesNonDestructiveSurfaceRecoveryWithoutRebind() async throws {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        engine.usesNativePlaybackControls = true
+        let player = PlayerStateViewModel(videoURL: nil, audioURL: nil,
+            title: "Seek resume without rebind", referer: "https://www.bilibili.com", engine: engine)
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: true)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+        defer { player.stop(); coordinator.stopActivePlayback() }
+        engine.snapshotTime = 30
+        engine.renderedVideoTime = 30
+        player.beginUserScrubInteraction()
+        player.seekAfterSliderCommit(to: 0.5)
+        try await waitForSeekDeadlineCondition { engine.playCallCount > 0 }
+        XCTAssertGreaterThan(engine.recoverSurfaceForSeekResumeCallCount, 0)
+        XCTAssertEqual(engine.recoverSurfaceCallCount, 0)
+        XCTAssertFalse(player.isUserSeeking)
+        XCTAssertFalse(player.isBuffering)
+        XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, false)
+    }
+
+    @MainActor
+    func testNativeSurfaceWatchdogDoesNotReseekWhenPlaybackAdvancesPastTargetWindow() async throws {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        engine.usesNativePlaybackControls = true
+        let metricsID = UUID().uuidString
+        let player = PlayerStateViewModel(videoURL: nil, audioURL: nil,
+            title: "Native surface watchdog progression", referer: "https://www.bilibili.com",
+            durationHint: 600, metricsID: metricsID, engine: engine)
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: true)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+        engine.onPlaybackStateChange?(.playing)
+        defer { player.stop(); coordinator.stopActivePlayback() }
+
+        engine.snapshotTime = 12
+        player.beginUserScrubInteraction()
+        player.seekAfterSliderCommit(to: 0.5)
+        try await waitForSeekDeadlineCondition { engine.playCallCount > 0 }
+        // Simulate real 1.2s timer tick beyond the old +/-0.5s reveal window
+        // without a UIKit surface snapshot image on AVPlayerViewController.
+        engine.surfaceSnapshotImage = nil
+        engine.renderedVideoTime = nil
+        engine.snapshotTime = 301.2
+        engine.onPlaybackStateChange?(.playing)
+        try await waitForSeekDeadlineCondition {
+            PlayerPerformanceStore.shared.session(for: metricsID)?.seekRecoveryMessage?.contains("recovered=true") == true
+        }
+        XCTAssertEqual(engine.seekCallCount, 0)
+        XCTAssertEqual(engine.recoverSurfaceCallCount, 0)
+    }
+
+    @MainActor
+    func testLiveScrubPreviewDispatchesBufferedKeyframesAndCancelsOnCommit() async throws {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        engine.usesNativePlaybackControls = true
+        engine.bufferedTimeCheckHandler = { $0 < 30 }
+        let player = PlayerStateViewModel(videoURL: nil, audioURL: nil,
+            title: "Live keyframe scrub", referer: "https://www.bilibili.com", engine: engine)
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: true)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+        engine.onPlaybackStateChange?(.playing)
+        defer { player.stop(); coordinator.stopActivePlayback() }
+
+        player.beginUserScrubInteraction()
+        player.updateLiveScrubPreview(toProgress: 0.25, horizontalVelocity: 120)
+        XCTAssertEqual(engine.liveScrubPreviewProgresses, [0.25])
+
+        player.updateLiveScrubPreview(toProgress: 0.85, horizontalVelocity: 320)
+        player.seekAfterSliderCommit(to: 0.85)
+        try await Task.sleep(nanoseconds: 140_000_000)
+        XCTAssertEqual(engine.liveScrubPreviewProgresses, [0.25])
+    }
+
     private func makeUserDefaults() -> UserDefaults {
         let suiteName = "cc.bili.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -1655,6 +1906,9 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
     private(set) var backgroundPauseCallCount = 0
     private(set) var playCallCount = 0
     private(set) var recoverSurfaceCallCount = 0
+    private(set) var recoverSurfaceForSeekResumeCallCount = 0
+    private(set) var liveScrubPreviewProgresses: [Double] = []
+    var bufferedTimeCheckHandler: ((TimeInterval) -> Bool)?
     private(set) var videoOutputRefreshCallCount = 0
     private(set) var pausedPlaybackWarmCallCount = 0
     private(set) var playerItemRecoveryCallCount = 0
@@ -1676,6 +1930,21 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
 
     func recoverSurface() {
         recoverSurfaceCallCount += 1
+    }
+
+    func recoverSurfaceForSeekResume() {
+        recoverSurfaceForSeekResumeCallCount += 1
+    }
+
+    func scrubLivePreview(toProgress progress: Double, duration _: TimeInterval?) {
+        liveScrubPreviewProgresses.append(progress)
+    }
+
+    func isTimeBuffered(_ time: TimeInterval) -> Bool {
+        if let bufferedTimeCheckHandler {
+            return bufferedTimeCheckHandler(time)
+        }
+        return snapshotBufferedRanges.contains { time >= $0.start && time <= $0.end }
     }
 
     func refreshVideoOutputForPlaybackRecovery() -> Bool {

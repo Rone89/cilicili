@@ -23,7 +23,6 @@ struct UploaderView: View {
     var body: some View {
         content
             .nativeBottomScrollEdgeBlurVisibility(isHidden: false)
-            .toolbar(.hidden, for: .tabBar)
     }
 
     private var content: some View {

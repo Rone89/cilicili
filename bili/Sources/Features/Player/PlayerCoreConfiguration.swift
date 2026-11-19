@@ -271,92 +271,6 @@ enum PlaybackAudioURLPolicy {
     }
 }
 
-nonisolated enum DolbyVisionRenderingPolicy: String, CaseIterable, Identifiable, Codable, Sendable {
-    case compatibleHLG
-    case metadataPassthrough
-    case appleNativeP8HLS
-    case protectedHLG
-    /// Deprecated: Bilibili Profile 8.4 fMP4 streams fail AVPlayer startup when
-    /// we advertise them as native `dvh1` HLS tracks.
-    case fullEffect
-    case supplementalHLS
-
-    nonisolated static let storageKey = "cc.bili.playback.dolbyVisionRenderingPolicy.v1"
-    nonisolated static let defaultValue: DolbyVisionRenderingPolicy = .appleNativeP8HLS
-    nonisolated static let allCases: [DolbyVisionRenderingPolicy] = [
-        .compatibleHLG,
-        .appleNativeP8HLS
-    ]
-
-    nonisolated var id: String { rawValue }
-
-    nonisolated var playablePolicy: DolbyVisionRenderingPolicy {
-        switch self {
-        case .compatibleHLG, .appleNativeP8HLS:
-            return self
-        case .metadataPassthrough, .protectedHLG, .fullEffect, .supplementalHLS:
-            return .compatibleHLG
-        }
-    }
-
-    nonisolated var hlsBridgePolicy: DolbyVisionRenderingPolicy {
-        switch playablePolicy {
-        case .appleNativeP8HLS:
-            return .compatibleHLG
-        case .compatibleHLG:
-            return .compatibleHLG
-        case .metadataPassthrough, .protectedHLG, .fullEffect, .supplementalHLS:
-            return .compatibleHLG
-        }
-    }
-
-    nonisolated var title: String {
-        switch self {
-        case .compatibleHLG:
-            return "兼容基层防过曝"
-        case .metadataPassthrough:
-            return "已停用：杜比元数据直通"
-        case .appleNativeP8HLS:
-            return "原生 HDR 视频层（实验）"
-        case .protectedHLG:
-            return "已停用：杜比标识 + 过曝保护"
-        case .fullEffect:
-            return "已停用：原生杜比主轨"
-        case .supplementalHLS:
-            return "已停用：完整杜比视界实验"
-        }
-    }
-
-    nonisolated var detail: String {
-        switch self {
-        case .compatibleHLG:
-            return "AVPlayer 只播放 Dolby Vision 的兼容基层，避免 B 站 Profile 8.4 触发过曝。"
-        case .metadataPassthrough:
-            return "该路线即使按色彩盒声明 HLG，AVPlayer 仍会因 B 站 Profile 8.4 元数据过曝，已自动迁移到兼容基层。"
-        case .appleNativeP8HLS:
-            return "底层 HLS 仍使用兼容基层，另挂一个静音 AVPlayerLayer 直连原始杜比/HDR 视频流，模拟 PiliPlus 的 iOS 原生显示链路。"
-        case .protectedHLG:
-            return "该路线仍可能让 AVPlayer 套用错误杜比映射，已自动迁移到兼容基层。"
-        case .fullEffect:
-            return "该路线会让 B 站 Profile 8.4 流不可播放，已自动迁移到兼容基层。"
-        case .supplementalHLS:
-            return "该路线会保留 Dolby Vision 补充标识并可能过曝，已自动迁移到兼容基层。"
-        }
-    }
-
-    nonisolated static func stored(in userDefaults: UserDefaults = .standard) -> DolbyVisionRenderingPolicy {
-        guard let rawValue = userDefaults.string(forKey: storageKey),
-              let policy = DolbyVisionRenderingPolicy(rawValue: rawValue)
-        else { return defaultValue }
-        let playablePolicy = policy.playablePolicy
-        if playablePolicy != policy {
-            userDefaults.set(defaultValue.rawValue, forKey: storageKey)
-            return defaultValue
-        }
-        return playablePolicy
-    }
-}
-
 extension DASHStream {
     nonisolated init(
         id: Int?,
@@ -408,7 +322,6 @@ final class PlayerSettings: ObservableObject {
 
     @Published private(set) var videoCodecPreference: VideoCodecPreference
     @Published private(set) var forceHardwareDecodeEnabled: Bool
-    @Published private(set) var dolbyVisionRenderingPolicy: DolbyVisionRenderingPolicy
 
     private let userDefaults: UserDefaults
 
@@ -416,7 +329,6 @@ final class PlayerSettings: ObservableObject {
         self.userDefaults = userDefaults
         self.videoCodecPreference = VideoCodecPreference.stored(in: userDefaults)
         self.forceHardwareDecodeEnabled = PlaybackHardwareDecodePolicy.stored(in: userDefaults)
-        self.dolbyVisionRenderingPolicy = DolbyVisionRenderingPolicy.stored(in: userDefaults)
     }
 
     func setVideoCodecPreference(_ preference: VideoCodecPreference) {
@@ -436,17 +348,8 @@ final class PlayerSettings: ObservableObject {
         userDefaults.set(isEnabled, forKey: PlaybackHardwareDecodePolicy.storageKey)
     }
 
-    func setDolbyVisionRenderingPolicy(_ policy: DolbyVisionRenderingPolicy) {
-        guard dolbyVisionRenderingPolicy != policy
-            || DolbyVisionRenderingPolicy.stored(in: userDefaults) != policy
-        else { return }
-        dolbyVisionRenderingPolicy = policy
-        userDefaults.set(policy.rawValue, forKey: DolbyVisionRenderingPolicy.storageKey)
-    }
-
     func reload() {
         videoCodecPreference = VideoCodecPreference.stored(in: userDefaults)
         forceHardwareDecodeEnabled = PlaybackHardwareDecodePolicy.stored(in: userDefaults)
-        dolbyVisionRenderingPolicy = DolbyVisionRenderingPolicy.stored(in: userDefaults)
     }
 }

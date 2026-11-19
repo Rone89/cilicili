@@ -23,7 +23,8 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
             }
         }
         let host = DirectUIKitPlayerSurfaceHostView(viewModel: player,
-            isPictureInPictureEnabled: false)
+            isPictureInPictureEnabled: false,
+            prefersNativePlaybackSurface: false)
         let parent = UIViewController()
         parent.loadViewIfNeeded()
         let previousWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -159,7 +160,7 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
             for size in [CGSize(width: 402, height: 226), CGSize(width: 874, height: 402), CGSize(width: 402, height: 54)] {
                 host.frame.size = size
                 host.refreshLayoutImmediately()
-                XCTAssertTrue(parent.children.last === overlay)
+                XCTAssertTrue(parent.children.contains { $0 === overlay })
                 XCTAssertEqual(overlay.view.frame, host.bounds)
             }
             host.tearDown()
@@ -423,11 +424,6 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
         let detail = try makeDetail(dependencies: dependencies)
         let runtime = VideoDetailRuntimeSettingsStore()
         runtime.bind(dependencies.libraryStore)
-        let previousMetalPref = dependencies.libraryStore.metalDanmakuRendererExperimentEnabled
-        dependencies.libraryStore.setMetalDanmakuRendererExperimentEnabled(false)
-        defer {
-            dependencies.libraryStore.setMetalDanmakuRendererExperimentEnabled(previousMetalPref)
-        }
 
         let player = makePlayer()
         let coordinator = PlaybackRotationCoordinator()
@@ -486,13 +482,6 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
                    let contentFrame = syncView.debugContentFrame,
                    contentFrame.height > 1 {
                     let converted = syncView.convert(contentFrame, to: window)
-                    if converted.minY >= nineSixteenMinY, converted.maxY <= nineSixteenMaxY {
-                        danmakuContentFrameInWindow = converted
-                    }
-                } else if let kitView = danmakuHost.subviews.first as? DanmakuKitOverlayView,
-                          let innerCanvas = kitView.subviews.first,
-                          innerCanvas.frame.height > 1 {
-                    let converted = innerCanvas.convert(innerCanvas.bounds, to: window)
                     if converted.minY >= nineSixteenMinY, converted.maxY <= nineSixteenMaxY {
                         danmakuContentFrameInWindow = converted
                     }

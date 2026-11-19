@@ -92,34 +92,6 @@ struct MineDeveloperDiagnosticsView: View {
 
     private var experimentsSection: some View {
         Section("实验开关") {
-            Toggle(isOn: Binding(
-                get: { libraryStore.metalDanmakuRendererExperimentEnabled },
-                set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("Metal 弹幕渲染实验", systemImage: "sparkles.tv")
-                    Text("用 GPU 批量绘制普通文字弹幕。关闭后使用 DanmakuKit；图片表情暂以文字显示。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.experiments.metalDanmaku")
-
-            Toggle(isOn: Binding(
-                get: { libraryStore.danmakuSynchronizedLayerRendererEnabled },
-                set: { libraryStore.setDanmakuSynchronizedLayerRendererEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("弹幕同步层渲染（省电）", systemImage: "clock.badge.checkmark")
-                    Text("弹幕动画直接挂 AVSynchronizedLayer 媒体时间轴，暂停/拖动/倍速由系统驱动，主线程不再逐帧绘制。优先于 Metal 实验；直播与不支持的场景自动回退。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.experiments.danmakuSynchronizedLayer")
-
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },

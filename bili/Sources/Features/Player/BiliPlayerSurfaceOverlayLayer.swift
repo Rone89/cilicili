@@ -4,8 +4,8 @@ struct BiliPlayerSurfaceOverlayLayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var networkUnavailable = false
     let state: BiliPlayerSurfaceChromeState
-    @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
-    @ObservedObject var seekPreviewModel: PlayerSeekPreviewModel
+    let speedBoostModel: PlayerSpeedBoostModel
+    let seekPreviewModel: PlayerSeekPreviewModel
 
     var body: some View {
         ZStack {
@@ -69,23 +69,14 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                 .zIndex(6)
             }
 
-            if speedBoostModel.isIndicatorVisible {
-                PlayerSpeedBoostIndicator(
-                    phase: speedBoostModel.phase,
-                    displayedRate: speedBoostModel.displayedRate
-                )
-                    .padding(.top, topAccessoryPadding)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                    .zIndex(6)
-            }
+            PlayerSpeedBoostOverlayHost(
+                speedBoostModel: speedBoostModel,
+                topAccessoryPadding: topAccessoryPadding
+            )
+            .zIndex(6)
 
-            if let presentation = seekPreviewModel.presentation {
-                PlayerSeekPreviewOverlay(presentation: presentation)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                    .zIndex(6)
-            }
+            PlayerSeekPreviewOverlayHost(seekPreviewModel: seekPreviewModel)
+                .zIndex(6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
@@ -107,6 +98,35 @@ struct BiliPlayerSurfaceOverlayLayer: View {
         }
         #endif
         networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
+    }
+}
+
+private struct PlayerSpeedBoostOverlayHost: View {
+    @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
+    let topAccessoryPadding: CGFloat
+
+    var body: some View {
+        if speedBoostModel.isIndicatorVisible {
+            PlayerSpeedBoostIndicator(
+                phase: speedBoostModel.phase,
+                displayedRate: speedBoostModel.displayedRate
+            )
+            .padding(.top, topAccessoryPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
+    }
+}
+
+private struct PlayerSeekPreviewOverlayHost: View {
+    @ObservedObject var seekPreviewModel: PlayerSeekPreviewModel
+
+    var body: some View {
+        if let presentation = seekPreviewModel.presentation {
+            PlayerSeekPreviewOverlay(presentation: presentation)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
     }
 }
 

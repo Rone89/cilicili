@@ -34,10 +34,6 @@ extension MinePlaybackSettingsView {
                     )
                 }
                 MinePlaybackPreferenceChip(
-                    title: libraryStore.dolbyVisionRenderingPolicy.title,
-                    systemImage: "sparkles.tv"
-                )
-                MinePlaybackPreferenceChip(
                     title: BiliPlaybackRate(rawValue: libraryStore.defaultPlaybackRate)?.title ?? "\(libraryStore.defaultPlaybackRate)x",
                     systemImage: "speedometer"
                 )

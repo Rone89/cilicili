@@ -26,7 +26,6 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
                 cellularPreferredVideoQualityPicker
                 videoCodecPreferenceLink
                 forceHardwareDecodeToggle
-                dolbyVisionRenderingPolicyPicker
                 defaultPlaybackRatePicker
                 subtitlePreferencePicker
             } header: {
@@ -202,20 +201,6 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
         )) {
             MineSettingsLabel("硬解优先", systemImage: "cpu")
         }
-    }
-
-    private var dolbyVisionRenderingPolicyPicker: some View {
-        Picker(selection: Binding(
-            get: { libraryStore.dolbyVisionRenderingPolicy },
-            set: { libraryStore.setDolbyVisionRenderingPolicy($0) }
-        )) {
-            ForEach(DolbyVisionRenderingPolicy.allCases) { policy in
-                Text(policy.title).tag(policy)
-            }
-        } label: {
-            MineSettingsLabel("杜比视界渲染", systemImage: "sparkles.tv")
-        }
-        .pickerStyle(.menu)
     }
 
     private var playbackStreamSourcePicker: some View {

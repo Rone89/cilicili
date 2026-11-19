@@ -155,8 +155,7 @@ struct MineSettingsSection: View {
         var parts = [
             libraryStore.playbackAutoOptimizationMode.title,
             libraryStore.videoDetailAutoplayEnabled ? "详情自动播放" : "详情手动播放",
-            libraryStore.videoCodecPreference.title,
-            libraryStore.dolbyVisionRenderingPolicy.title
+            libraryStore.videoCodecPreference.title
         ]
         if libraryStore.forceHardwareDecodeEnabled {
             parts.append("硬解优先")

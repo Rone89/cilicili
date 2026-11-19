@@ -84,7 +84,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
         isLayoutTransitioning: Bool = false,
         playbackClock: PlayerPlaybackClock? = nil,
         onPlaybackTime: ((TimeInterval, Bool) -> Void)? = nil,
-        rendererPreference: DanmakuRendererPreference = .danmakuKit,
+        rendererPreference: DanmakuRendererPreference = .metal,
         syncPlayer: AVPlayer? = nil,
         logicalCanvasSize: CGSize? = nil,
         videoAspectRatio: CGFloat? = nil

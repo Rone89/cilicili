@@ -29,14 +29,15 @@ struct BiliPlayerSurfaceGestureActions {
 
     func horizontalSeekStart(_ progress: Double) {
         guard !viewModel.isTerminated else { return }
-        visibilityActions.markInteraction(keepsVisible: true)
+        visibilityActions.playbackControlsVisibility.hide(animated: false)
         prepareUserSeekWarmup(progress, true)
         viewModel.beginUserScrubInteraction(source: .surfaceGesture)
     }
 
-    func horizontalSeekChanged(_ progress: Double) {
+    func horizontalSeekChanged(_ progress: Double, horizontalVelocity: CGFloat = 0) {
         guard !viewModel.isTerminated else { return }
         prepareUserSeekWarmup(progress, false)
+        viewModel.updateLiveScrubPreview(toProgress: progress, horizontalVelocity: horizontalVelocity)
     }
 
     func horizontalSeekEnded(_ progress: Double) {
@@ -50,13 +51,11 @@ struct BiliPlayerSurfaceGestureActions {
         viewModel.seekAfterSliderCommit(to: progress)
         viewModel.playbackClock.clearSeekPreview()
         resetPreparedScrubProgress()
-        visibilityActions.markInteraction()
     }
 
     func horizontalSeekCancelled() {
         viewModel.cancelUserScrubInteraction()
         viewModel.playbackClock.clearSeekPreview()
         resetPreparedScrubProgress()
-        visibilityActions.markInteraction()
     }
 }

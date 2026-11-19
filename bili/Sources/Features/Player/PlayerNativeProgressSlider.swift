@@ -20,9 +20,9 @@ struct PlayerNativeProgressSlider: View {
     @State private var scrubChangeTask: Task<Void, Never>?
     @State private var pendingScrubChangeProgress: Double?
     @State private var hasDeliveredScrubStart = false
-    private let scrubChangeReportDelta = 0.004
-    private let scrubStartFeedbackDelayNanoseconds: UInt64 = 20_000_000
-    private let scrubChangeFeedbackDelayNanoseconds: UInt64 = 8_000_000
+    private let scrubChangeReportDelta = 0.001
+    private let scrubStartFeedbackDelayNanoseconds: UInt64 = 0
+    private let scrubChangeFeedbackDelayNanoseconds: UInt64 = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -172,16 +172,9 @@ struct PlayerNativeProgressSlider: View {
 
     private func scheduleScrubStart(at progress: Double) {
         cancelPendingScrubStart()
-        scrubStartTask = Task { @MainActor in
-            // Give SwiftUI one display frame to reveal the thumb before player work begins.
-            try? await Task.sleep(nanoseconds: scrubStartFeedbackDelayNanoseconds)
-            guard !Task.isCancelled, scrubbingState.isEditing else { return }
-            onScrubStart(progress)
-            guard !Task.isCancelled, scrubbingState.isEditing else { return }
-            hasDeliveredScrubStart = true
-            scrubStartTask = nil
-            scheduleScrubChanged(scrubbingState.editingProgress)
-        }
+        guard scrubbingState.isEditing else { return }
+        onScrubStart(progress)
+        hasDeliveredScrubStart = true
     }
 
     private func finishScrub(at progress: Double) {
@@ -211,19 +204,8 @@ struct PlayerNativeProgressSlider: View {
             at: progress,
             minimumDelta: scrubChangeReportDelta
         ) else { return }
-        pendingScrubChangeProgress = progress
-        guard scrubChangeTask == nil else { return }
-        scrubChangeTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: scrubChangeFeedbackDelayNanoseconds)
-            guard
-                !Task.isCancelled,
-                scrubbingState.isEditing,
-                let progress = pendingScrubChangeProgress
-            else { return }
-            pendingScrubChangeProgress = nil
-            scrubChangeTask = nil
-            onScrubChanged(progress)
-        }
+        cancelPendingScrubChange()
+        onScrubChanged(progress)
     }
 
     private func cancelPendingScrubChange() {

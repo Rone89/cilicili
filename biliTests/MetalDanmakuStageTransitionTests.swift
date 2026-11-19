@@ -222,12 +222,6 @@ final class MetalDanmakuStageTransitionTests: XCTestCase {
             videoAspectRatio: 9.0 / 16.0
         )
 
-        let kitView = DanmakuKitOverlayView(frame: bounds)
-        kitView.apply(configuration: config)
-        let innerDanmakuView = try XCTUnwrap(kitView.subviews.first)
-        XCTAssertEqual(innerDanmakuView.frame.minY, nineSixteenInset + 8, accuracy: 0.5)
-        XCTAssertEqual(innerDanmakuView.frame.maxY, bounds.height - nineSixteenInset - 84, accuracy: 0.5)
-
         let syncView = DanmakuSynchronizedLayerView(frame: bounds)
         syncView.apply(configuration: config)
         XCTAssertEqual(syncView.debugContentFrameHeight, nineSixteenHeight - 8 - 84, accuracy: 0.5)

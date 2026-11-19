@@ -21,7 +21,7 @@ nonisolated struct DanmakuSegmentParseContext: Sendable {
     let segmentIndex: Int
     let maxItems: Int
 
-    init(cid: Int, segmentIndex: Int, maxItems: Int = 2_200) {
+    init(cid: Int, segmentIndex: Int, maxItems: Int = 6_000) {
         self.cid = cid
         self.segmentIndex = segmentIndex
         self.maxItems = maxItems

@@ -45,6 +45,7 @@ Carthage/Build/
 *.pem
 *.key
 *.p8
+Signing/password.txt
 *.xcconfig.local
 Local.xcconfig
 Config/Signing.local.xcconfig

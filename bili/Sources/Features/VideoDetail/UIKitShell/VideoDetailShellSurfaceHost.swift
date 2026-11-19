@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Combine
 import SwiftUI
 import UIKit
@@ -16,6 +17,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         @Published var retainsChromeDuringBareSurfaceTransition = false
         @Published var isCollapsedChromeActive = false
         @Published var playbackControlsHideRequestGeneration = 0
+        @Published var playbackControlsRevealRequestGeneration = 0
         @Published var playerViewModel: PlayerStateViewModel
         @Published var videoAspectRatio: CGFloat = 16.0 / 9.0
         @Published var danmakuCanvasSize: CGSize?
@@ -39,6 +41,11 @@ final class VideoDetailShellSurfaceHost: UIView {
         func requestPlaybackControlsHideForRotation() {
             playbackControlsHideRequestGeneration &+= 1
         }
+#if DEBUG
+        func requestPlaybackControlsRevealForTesting() {
+            playbackControlsRevealRequestGeneration &+= 1
+        }
+#endif
     }
 
     private let state: State
@@ -47,11 +54,34 @@ final class VideoDetailShellSurfaceHost: UIView {
     private let experimentState: VideoDetailPerformanceExperimentState
     private let libraryStore: LibraryStore
     private let rotationCoordinator: PlaybackRotationCoordinator
+    private let onShowMoreControls: (@escaping () -> Void) -> Void
+    private let onRequestFullscreen: () -> Void
+    private let onExitFullscreen: () -> Void
+    private let onToggleDanmaku: () -> Void
+    private let onShowDanmakuSettings: () -> Void
     private let surfaceHostView: DirectUIKitPlayerSurfaceHostView
     private let playbackTransitionImageView = UIImageView()
+    private var nativeOptionsButton: UIButton?
+    private var nativeQualityButton: UIButton?
+    private var nativeOptionsContainerView: UIView?
+    private var nativeControlsGlassGroup: NativeControlsGlassGroup?
+    private var nativeOptionsBottomConstraint: NSLayoutConstraint?
+    private var nativeOptionsTrailingConstraint: NSLayoutConstraint?
+    private var nativeInlineExitFullscreenButton: UIButton?
+    private var nativeInlineFullscreenButtonShowsExitIcon: Bool?
+    private var nativeInlineExitCenterXConstraint: NSLayoutConstraint?
+    private var nativeInlineExitCenterYConstraint: NSLayoutConstraint?
+    private weak var suppressedNativeFullscreenButton: UIView?
+    private var lastSyncedNativeControlsAlpha: CGFloat = 0
+    private var lastSyncedNativeControlsInteractive = false
+    private var nativeControlsVisibilitySynchronizer: NativeControlsVisibilitySynchronizer?
     private var playbackTransitionIsVideoFrame = true
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
-    private let overlayHostingController: UIHostingController<PlayerOverlayHostRoot>
+    private let overlayHostingController: UIHostingController<AnyView>
+    /// 全屏迁移还原用：弹幕/字幕宿主在详情页层级里的原始父控制器。
+    private var overlayOriginalParent: UIViewController?
+    private var didInstallNativeSystemControlsAccessories = false
+    private var nativeFullScreenPresentationCancellable: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
     private var rotationChromePrewarmGeneration = 0
     private var isRotationChromePrewarming = false
@@ -98,10 +128,23 @@ final class VideoDetailShellSurfaceHost: UIView {
             dependencies.libraryStore.pictureInPictureEnabled
         )
         self.rotationCoordinator = rotationCoordinator
+        self.onShowMoreControls = onShowMoreControls
+        self.onRequestFullscreen = onRequestFullscreen
+        self.onExitFullscreen = onExitFullscreen
+        self.onToggleDanmaku = onToggleDanmaku
+        self.onShowDanmakuSettings = onShowDanmakuSettings
+        let usesNativeSurface = dependencies.libraryStore.usesNativePlaybackSurface
+        let usesSystemControlsUI = dependencies.libraryStore.usesSystemNativePlaybackControlsUI
+        let usesCustomOverlay = dependencies.libraryStore.usesCustomPlaybackControlsOverlay
         self.surfaceHostView = DirectUIKitPlayerSurfaceHostView(
             viewModel: playerViewModel,
             isPictureInPictureEnabled: dependencies.libraryStore.allowsPictureInPictureController
-                && !playerViewModel.isAudioOnlyPlayback
+                && !playerViewModel.isAudioOnlyPlayback,
+            prefersNativePlaybackSurface: usesNativeSurface,
+            showsNativePlaybackControls: usesSystemControlsUI,
+            showsNativePlaybackSpeeds: true,
+            enablesNativeSurfaceGestures: usesNativeSurface && !usesCustomOverlay,
+            nativeAllowsPictureInPicturePlayback: nil
         )
         let overlayRoot = PlayerOverlayHostRoot(
             detailViewModel: detailViewModel,
@@ -119,19 +162,19 @@ final class VideoDetailShellSurfaceHost: UIView {
             onToggleDanmaku: onToggleDanmaku,
             onShowDanmakuSettings: onShowDanmakuSettings
         )
-        self.overlayHostingController = UIHostingController(rootView: overlayRoot)
+        self.overlayHostingController = UIHostingController(rootView: AnyView(overlayRoot))
         super.init(frame: .zero)
 
         backgroundColor = .black
         overlayHostingController.view.backgroundColor = .clear
         overlayHostingController.view.isOpaque = false
-        overlayHostingController.view.isUserInteractionEnabled = true
+        overlayHostingController.view.isUserInteractionEnabled = usesCustomOverlay
         if #available(iOS 16.4, *) {
             overlayHostingController.safeAreaRegions = []
         }
         let hostedSurfaceView = surfaceHostView
         hostedSurfaceView.translatesAutoresizingMaskIntoConstraints = false
-        hostedSurfaceView.isUserInteractionEnabled = false
+        hostedSurfaceView.isUserInteractionEnabled = !usesCustomOverlay
         playbackTransitionImageView.translatesAutoresizingMaskIntoConstraints = false
         playbackTransitionImageView.backgroundColor = .black
         playbackTransitionImageView.clipsToBounds = true
@@ -181,6 +224,7 @@ final class VideoDetailShellSurfaceHost: UIView {
                         && !self.state.playerViewModel.isAudioOnlyPlayback,
                     allowsAutomaticInline: isPictureInPictureEnabled
                 )
+                self.applyNativePlaybackControlsSettings()
             }
         }
         .store(in: &cancellables)
@@ -207,6 +251,1077 @@ final class VideoDetailShellSurfaceHost: UIView {
             }
             .store(in: &cancellables)
 
+        bindNativeFullScreenPresentation(for: state.playerViewModel)
+        if usesSystemControlsUI {
+            installNativeSystemControlsAccessoriesIfNeeded()
+        }
+    }
+
+    private func bindNativeFullScreenPresentation(for playerViewModel: PlayerStateViewModel) {
+        nativeFullScreenPresentationCancellable = playerViewModel.$isNativeFullScreenPresented
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isFullScreen in
+                self?.syncNativeFullScreenOverlays(isFullScreen: isFullScreen)
+            }
+    }
+
+    private func installNativeSystemControlsAccessoriesIfNeeded() {
+        guard !didInstallNativeSystemControlsAccessories, !isTornDown else { return }
+        didInstallNativeSystemControlsAccessories = true
+
+        let group = Self.makeNativeControlsGlassGroup()
+        self.nativeControlsGlassGroup = group
+        self.nativeOptionsContainerView = group.containerView
+        self.nativeQualityButton = group.qualityButton
+        self.nativeOptionsButton = group.optionsButton
+        group.containerView.isHidden = !libraryStore.usesSystemNativePlaybackControlsUI
+        attachNativeControlsContainer(group.containerView, to: self)
+
+        let refreshMenus: @MainActor () -> Void = { [weak self] in
+            guard let self, !self.isTornDown,
+                  let optionsButton = self.nativeOptionsButton,
+                  let qualityButton = self.nativeQualityButton,
+                  let detailViewModel = self.detailViewModel else { return }
+            Self.updateNativeQualityButton(
+                qualityButton,
+                qualityStore: detailViewModel.playbackRenderStore.qualityControlStore,
+                detailViewModel: detailViewModel,
+                isFullScreen: self.nativeControlsGlassGroup?.isFullScreen ?? false
+            )
+            optionsButton.menu = Self.makeNativeOptionsMenu(
+                detailViewModel: detailViewModel,
+                onToggleDanmaku: self.onToggleDanmaku,
+                onShowDanmakuSettings: self.onShowDanmakuSettings,
+                onShowMoreControls: self.onShowMoreControls
+            )
+        }
+        refreshMenus()
+
+        if let detailViewModel {
+            detailViewModel.playbackRenderStore.qualityControlStore.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { _ in refreshMenus() }
+                .store(in: &cancellables)
+
+            detailViewModel.subtitleRenderStore.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { _ in refreshMenus() }
+                .store(in: &cancellables)
+
+            detailViewModel.danmakuRenderStore.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { _ in refreshMenus() }
+                .store(in: &cancellables)
+        }
+
+        let inlineExitButton = Self.makeNativeInlineExitFullscreenButton { [weak self] in
+            self?.handleNativeInlineFullscreenButtonTap()
+        }
+        self.nativeInlineExitFullscreenButton = inlineExitButton
+        attachNativeInlineExitFullscreenButton(inlineExitButton, to: self)
+
+        startNativeControlsVisibilitySync()
+
+        Publishers.CombineLatest3(
+            rotationCoordinator.$phase,
+            rotationCoordinator.$isLandscape,
+            rotationCoordinator.$isPortraitFullscreen
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _, _, _ in
+            guard let self, !self.isTornDown else { return }
+            self.syncNativeInlineExitFullscreenButton(
+                controlsAlpha: self.lastSyncedNativeControlsAlpha,
+                isInteractive: self.lastSyncedNativeControlsInteractive
+            )
+            self.nativeControlsVisibilitySynchronizer?.rebind(force: false)
+        }
+        .store(in: &cancellables)
+    }
+
+    private func syncNativeFullScreenOverlays(isFullScreen: Bool) {
+        guard !isTornDown else { return }
+        print("[NativeFullscreen] syncOverlays isFullScreen=\(isFullScreen)")
+        let playerVC = surfaceHostView.nativePlayerViewController
+        let overlayView = overlayHostingController.view!
+        let overlayParent: UIView = isFullScreen ? (playerVC.contentOverlayView ?? self) : self
+        let isOverlayInsidePlayer = overlayParent === playerVC.contentOverlayView
+
+        // AVKit 系统全屏通过独立的 `AVFullScreenViewController` 接管 `contentOverlayView`
+        // （`-[AVFullScreenViewController attachContentView]`），若 `overlayView` 移入
+        // `contentOverlayView` 时 `overlayHostingController.parent` 仍指向详情页或 `playerVC`，
+        // UIKit 层级检查会直接抛出 `UIViewControllerHierarchyInconsistency` 崩溃。
+        // 因此进入 `contentOverlayView` 前先解除 parent 绑定，退回内嵌宿主后再恢复 `overlayOriginalParent`。
+        if isOverlayInsidePlayer, overlayHostingController.parent != nil {
+            overlayHostingController.willMove(toParent: nil)
+            overlayHostingController.removeFromParent()
+        }
+        if overlayView.superview !== overlayParent {
+            overlayView.removeFromSuperview()
+            overlayParent.addSubview(overlayView)
+            overlayView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                overlayView.leadingAnchor.constraint(equalTo: overlayParent.leadingAnchor),
+                overlayView.trailingAnchor.constraint(equalTo: overlayParent.trailingAnchor),
+                overlayView.topAnchor.constraint(equalTo: overlayParent.topAnchor),
+                overlayView.bottomAnchor.constraint(equalTo: overlayParent.bottomAnchor),
+            ])
+        }
+        if !isOverlayInsidePlayer, overlayHostingController.parent !== overlayOriginalParent {
+            if overlayHostingController.parent != nil {
+                overlayHostingController.willMove(toParent: nil)
+                overlayHostingController.removeFromParent()
+            }
+            if let overlayOriginalParent {
+                overlayOriginalParent.addChild(overlayHostingController)
+                overlayHostingController.didMove(toParent: overlayOriginalParent)
+            }
+        }
+        if var group = nativeControlsGlassGroup {
+            if group.isFullScreen != isFullScreen {
+                group.applyMetrics(isFullScreen: isFullScreen)
+                nativeControlsGlassGroup = group
+                if let detailViewModel {
+                    Self.updateNativeQualityButton(
+                        group.qualityButton,
+                        qualityStore: detailViewModel.playbackRenderStore.qualityControlStore,
+                        detailViewModel: detailViewModel,
+                        isFullScreen: isFullScreen
+                    )
+                }
+            }
+            let container = group.containerView
+            if container.superview !== overlayParent {
+                attachNativeControlsContainer(container, to: overlayParent)
+            } else {
+                overlayParent.bringSubviewToFront(container)
+            }
+        }
+        updateNativeOptionsButtonPosition(for: playerVC)
+        nativeControlsVisibilitySynchronizer?.rebind()
+    }
+
+    private func attachNativeControlsContainer(_ container: UIView, to parentView: UIView) {
+        if container.superview !== parentView {
+            container.removeFromSuperview()
+            parentView.addSubview(container)
+        }
+        parentView.bringSubviewToFront(container)
+        let trailingConstraint = container.trailingAnchor.constraint(equalTo: parentView.trailingAnchor, constant: -8)
+        let bottomConstraint = container.bottomAnchor.constraint(equalTo: parentView.bottomAnchor, constant: -51)
+        NSLayoutConstraint.activate([
+            trailingConstraint,
+            bottomConstraint,
+        ])
+        nativeOptionsTrailingConstraint = trailingConstraint
+        nativeOptionsBottomConstraint = bottomConstraint
+    }
+
+    private func attachNativeInlineExitFullscreenButton(_ button: UIButton, to parentView: UIView) {
+        if button.superview !== parentView {
+            button.removeFromSuperview()
+            parentView.addSubview(button)
+        }
+        parentView.bringSubviewToFront(button)
+        let centerX = button.centerXAnchor.constraint(equalTo: parentView.leadingAnchor, constant: 28)
+        let centerY = button.centerYAnchor.constraint(equalTo: parentView.topAnchor, constant: 27.5)
+        NSLayoutConstraint.activate([
+            centerX,
+            centerY,
+            button.widthAnchor.constraint(equalToConstant: 40),
+            button.heightAnchor.constraint(equalToConstant: 38),
+        ])
+        nativeInlineExitCenterXConstraint = centerX
+        nativeInlineExitCenterYConstraint = centerY
+    }
+
+    private var isInlineFullscreenActive: Bool {
+        guard !state.playerViewModel.isNativeFullScreenPresented else { return false }
+        return rotationCoordinator.layoutLandscape
+            || rotationCoordinator.isLandscape
+            || rotationCoordinator.isPortraitFullscreen
+    }
+
+    private var shouldOverrideInlineFullscreenButton: Bool {
+        libraryStore.usesSystemNativePlaybackControlsUI
+            && !state.playerViewModel.isNativeFullScreenPresented
+    }
+
+    private func handleNativeInlineFullscreenButtonTap() {
+        guard !isTornDown else { return }
+        if isInlineFullscreenActive {
+            onExitFullscreen()
+        } else {
+            onRequestFullscreen()
+        }
+    }
+
+    private func updateNativeInlineFullscreenButtonAppearance(
+        _ button: UIButton,
+        showsExitIcon: Bool
+    ) {
+        guard nativeInlineFullscreenButtonShowsExitIcon != showsExitIcon else { return }
+        nativeInlineFullscreenButtonShowsExitIcon = showsExitIcon
+        var config = button.configuration ?? UIButton.Configuration.plain()
+        config.baseForegroundColor = .white
+        config.image = UIImage(
+            systemName: showsExitIcon
+                ? "arrow.down.right.and.arrow.up.left"
+                : "arrow.up.left.and.arrow.down.right",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        )
+        button.configuration = config
+        button.accessibilityLabel = showsExitIcon ? "退出全屏" : "全屏"
+    }
+
+    private func restoreSuppressedNativeFullscreenButtonIfNeeded() {
+        guard let button = suppressedNativeFullscreenButton else { return }
+        if button.alpha == 0 {
+            button.alpha = 1
+        }
+        if !button.isUserInteractionEnabled {
+            button.isUserInteractionEnabled = true
+        }
+        suppressedNativeFullscreenButton = nil
+    }
+
+    private func syncNativeInlineExitFullscreenButton(
+        controlsAlpha: CGFloat,
+        isInteractive: Bool
+    ) {
+        lastSyncedNativeControlsAlpha = controlsAlpha
+        lastSyncedNativeControlsInteractive = isInteractive
+        guard let exitButton = nativeInlineExitFullscreenButton else { return }
+
+        guard shouldOverrideInlineFullscreenButton else {
+            restoreSuppressedNativeFullscreenButtonIfNeeded()
+            if !exitButton.isHidden { exitButton.isHidden = true }
+            if exitButton.alpha != 0 { exitButton.alpha = 0 }
+            if exitButton.isUserInteractionEnabled { exitButton.isUserInteractionEnabled = false }
+            return
+        }
+
+        let playerVC = surfaceHostView.nativePlayerViewController
+        let nativeFSButton = Self.findNativeFullscreenButton(in: playerVC)
+        if suppressedNativeFullscreenButton !== nativeFSButton {
+            restoreSuppressedNativeFullscreenButtonIfNeeded()
+            suppressedNativeFullscreenButton = nativeFSButton
+        }
+        let nativeButtonVisibleInLayout: Bool
+        if let nativeFSButton {
+            let enclosingDisplayModeHidden = Self.isEnclosingDisplayModeHidden(for: nativeFSButton, stopAt: playerVC.viewIfLoaded)
+            nativeButtonVisibleInLayout = !nativeFSButton.isHidden
+                && !enclosingDisplayModeHidden
+                && nativeFSButton.bounds.width >= 8
+                && nativeFSButton.bounds.height >= 8
+            if nativeFSButton.alpha != 0 {
+                nativeFSButton.alpha = 0
+            }
+            if nativeFSButton.isUserInteractionEnabled {
+                nativeFSButton.isUserInteractionEnabled = false
+            }
+        } else {
+            nativeButtonVisibleInLayout = false
+        }
+
+        let showsExitIcon = isInlineFullscreenActive
+        updateNativeInlineFullscreenButtonAppearance(exitButton, showsExitIcon: showsExitIcon)
+
+        guard nativeButtonVisibleInLayout || showsExitIcon else {
+            if !exitButton.isHidden { exitButton.isHidden = true }
+            if exitButton.alpha != 0 { exitButton.alpha = 0 }
+            if exitButton.isUserInteractionEnabled { exitButton.isUserInteractionEnabled = false }
+            return
+        }
+
+        let targetCenter: CGPoint
+        if let nativeFSButton,
+           nativeFSButton.window != nil,
+           !nativeFSButton.bounds.isEmpty {
+            targetCenter = nativeFSButton.convert(
+                CGPoint(x: nativeFSButton.bounds.midX, y: nativeFSButton.bounds.midY),
+                to: self
+            )
+        } else {
+            targetCenter = CGPoint(
+                x: max(28, safeAreaInsets.left + 28),
+                y: max(27.5, safeAreaInsets.top + 27.5)
+            )
+        }
+        if let cx = nativeInlineExitCenterXConstraint, abs(cx.constant - targetCenter.x) > 0.5 {
+            cx.constant = targetCenter.x
+        }
+        if let cy = nativeInlineExitCenterYConstraint, abs(cy.constant - targetCenter.y) > 0.5 {
+            cy.constant = targetCenter.y
+        }
+
+        if exitButton.isHidden {
+            exitButton.isHidden = false
+        }
+        if exitButton.superview === self {
+            bringSubviewToFront(exitButton)
+        }
+        if abs(exitButton.alpha - controlsAlpha) > 0.001 {
+            exitButton.alpha = controlsAlpha
+        }
+        if exitButton.isUserInteractionEnabled != isInteractive {
+            exitButton.isUserInteractionEnabled = isInteractive
+        }
+    }
+
+    private static func isEnclosingDisplayModeHidden(for view: UIView, stopAt root: UIView?) -> Bool {
+        var cursor: UIView? = view.superview
+        while let current = cursor, current !== root {
+            if current.isHidden || current.bounds.width < 8 || current.bounds.height < 8 {
+                return true
+            }
+            cursor = current.superview
+        }
+        return false
+    }
+
+    private static func findNativeFullscreenButton(in playerViewController: AVPlayerViewController) -> UIView? {
+        guard let rootView = playerViewController.viewIfLoaded else { return nil }
+        let overlay = playerViewController.contentOverlayView
+        var queue: [UIView] = rootView.subviews.filter { $0 !== overlay }
+        while !queue.isEmpty {
+            let view = queue.removeFirst()
+            if view === overlay { continue }
+            if view.accessibilityIdentifier == "Fullscreen Button" {
+                return view
+            }
+            queue.append(contentsOf: view.subviews)
+        }
+        return nil
+    }
+
+    private static func makeNativeInlineExitFullscreenButton(
+        action: @escaping () -> Void
+    ) -> UIButton {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.overrideUserInterfaceStyle = .dark
+        var config = UIButton.Configuration.plain()
+        config.baseForegroundColor = .white
+        config.image = UIImage(
+            systemName: "arrow.down.right.and.arrow.up.left",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        )
+        button.configuration = config
+        button.accessibilityLabel = "退出全屏"
+        button.accessibilityIdentifier = "ui.player.nativeInlineExitFullscreenButton"
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        button.isHidden = true
+        button.alpha = 0
+        button.isUserInteractionEnabled = false
+        return button
+    }
+
+    private func startNativeControlsVisibilitySync() {
+        nativeControlsVisibilitySynchronizer?.invalidate()
+        guard let container = nativeOptionsContainerView else { return }
+        let synchronizer = NativeControlsVisibilitySynchronizer(
+            playerViewController: surfaceHostView.nativePlayerViewController,
+            targetContainer: container,
+            onLayoutSyncNeeded: { [weak self] in
+                guard let self, !self.isTornDown else { return }
+                let vc = self.surfaceHostView.nativePlayerViewController
+                self.updateNativeOptionsButtonPosition(for: vc)
+                self.syncNativeInlineExitFullscreenButton(
+                    controlsAlpha: self.lastSyncedNativeControlsAlpha,
+                    isInteractive: self.lastSyncedNativeControlsInteractive
+                )
+            },
+            onVisibilitySynced: { [weak self] alpha, isInteractive in
+                guard let self, !self.isTornDown else { return }
+                self.syncNativeInlineExitFullscreenButton(
+                    controlsAlpha: alpha,
+                    isInteractive: isInteractive
+                )
+            }
+        )
+        nativeControlsVisibilitySynchronizer = synchronizer
+        synchronizer.start()
+    }
+
+    private func updateNativeOptionsButtonPosition(for playerViewController: AVPlayerViewController) {
+        guard let container = nativeOptionsContainerView,
+              let referenceView = container.superview,
+              let bottomConstraint = nativeOptionsBottomConstraint,
+              let trailingConstraint = nativeOptionsTrailingConstraint else { return }
+        guard referenceView.bounds.height > 80, referenceView.bounds.width > 120 else { return }
+
+        let isFullScreenGroup = nativeControlsGlassGroup?.isFullScreen ?? false
+        let platterHeight: CGFloat = isFullScreenGroup ? 44 : 38
+        let progressVerticalGap: CGFloat = if isFullScreenGroup {
+            10
+        } else {
+            referenceView.bounds.height < 230 ? 6 : 8
+        }
+        let targetTrailing: CGFloat
+        let targetBottom: CGFloat
+        if let progressFrame = Self.nativeBottomProgressBarFrame(in: playerViewController, relativeTo: referenceView) {
+            let rightInset = max(8, min(referenceView.bounds.width - 120, referenceView.bounds.width - progressFrame.maxX))
+            let desiredBottomY = progressFrame.minY - progressVerticalGap
+            let minBottomY = referenceView.safeAreaInsets.top + 54 + platterHeight
+            let clampedBottomY = max(minBottomY, min(referenceView.bounds.height - referenceView.safeAreaInsets.bottom - 8, desiredBottomY))
+            targetTrailing = -rightInset
+            targetBottom = -(referenceView.bounds.height - clampedBottomY)
+        } else {
+            let rightInset = max(8, referenceView.safeAreaInsets.right + 8)
+            let bottomInset = referenceView.safeAreaInsets.bottom + 43 + progressVerticalGap
+            targetTrailing = -rightInset
+            targetBottom = -bottomInset
+        }
+
+        if abs(bottomConstraint.constant - targetBottom) > 1 || abs(trailingConstraint.constant - targetTrailing) > 1 {
+            bottomConstraint.constant = targetBottom
+            trailingConstraint.constant = targetTrailing
+            referenceView.layoutIfNeeded()
+        }
+    }
+
+    private static func nativeBottomProgressBarFrame(
+        in playerViewController: AVPlayerViewController,
+        relativeTo targetView: UIView
+    ) -> CGRect? {
+        guard let rootView = playerViewController.viewIfLoaded,
+              targetView.bounds.height > 80,
+              targetView.bounds.width > 120 else { return nil }
+        let overlay = playerViewController.contentOverlayView
+
+        var transportRoot: UIView?
+        var transportFrame: CGRect?
+        var queue: [UIView] = rootView.subviews.filter { $0 !== overlay }
+        while !queue.isEmpty {
+            let view = queue.removeFirst()
+            if view === overlay { continue }
+            let className = NSStringFromClass(type(of: view))
+            if className.contains("TransportControls"),
+               !view.isHidden, view.window != nil, view.bounds.width > 80 {
+                let frame = view.convert(view.bounds, to: targetView)
+                if frame.maxY > targetView.bounds.height * 0.5, frame.width > 80 {
+                    transportRoot = view
+                    transportFrame = frame
+                    break
+                }
+            }
+            queue.append(contentsOf: view.subviews)
+        }
+
+        let searchRoot = transportRoot ?? rootView
+        var bottomRowFrame: CGRect?
+        var timelineFrame: CGRect?
+        var auxiliaryFrame: CGRect?
+        var sliderFrame: CGRect?
+        var titlebarTopY: CGFloat?
+
+        var transportQueue: [UIView] = [searchRoot]
+        while !transportQueue.isEmpty {
+            let view = transportQueue.removeFirst()
+            if view === overlay { continue }
+            let className = NSStringFromClass(type(of: view))
+            if !view.isHidden, view.alpha > 0.01, view.window != nil, !view.bounds.isEmpty {
+                let frame = view.convert(view.bounds, to: targetView)
+                if frame.minY > targetView.bounds.height * 0.45 {
+                    if className.contains("TimelineView"), frame.width > 60, frame.height >= 20 {
+                        timelineFrame = timelineFrame.map { $0.union(frame) } ?? frame
+                    } else if className.contains("AuxiliaryControlsView"), frame.width >= 20, frame.height >= 20 {
+                        auxiliaryFrame = auxiliaryFrame.map { $0.union(frame) } ?? frame
+                    } else if view.superview === transportRoot,
+                              className.contains("GlassBacked"),
+                              frame.width > 80, frame.height >= 24, frame.height <= 64 {
+                        bottomRowFrame = bottomRowFrame.map { $0.union(frame) } ?? frame
+                    } else if className.contains("Slider"), frame.width > 60, frame.height >= 4 {
+                        sliderFrame = sliderFrame.map { $0.union(frame) } ?? frame
+                    } else if className.contains("TitlebarView"), frame.height >= 10 {
+                        titlebarTopY = min(titlebarTopY ?? frame.minY, frame.minY)
+                    }
+                }
+            }
+            transportQueue.append(contentsOf: view.subviews)
+        }
+
+        var combinedFrame: CGRect?
+        if let bottomRowFrame {
+            combinedFrame = auxiliaryFrame.map { bottomRowFrame.union($0) } ?? bottomRowFrame
+        } else if let timelineFrame {
+            combinedFrame = auxiliaryFrame.map { timelineFrame.union($0) } ?? timelineFrame
+        } else if let sliderFrame {
+            combinedFrame = sliderFrame.insetBy(dx: -11, dy: -15)
+        }
+
+        guard var result = combinedFrame else { return nil }
+        if let transportFrame {
+            let clampedMinX = max(result.minX, transportFrame.minX)
+            let clampedMaxX = min(result.maxX, transportFrame.maxX)
+            if clampedMaxX > clampedMinX {
+                result = CGRect(
+                    x: clampedMinX,
+                    y: result.minY,
+                    width: clampedMaxX - clampedMinX,
+                    height: result.height
+                )
+            }
+        }
+        if let titlebarTopY, titlebarTopY < result.minY {
+            result = result.union(CGRect(x: result.minX, y: titlebarTopY, width: result.width, height: 1))
+        }
+        return result
+    }
+
+    private static func makeNativeControlsGlassGroup() -> NativeControlsGlassGroup {
+        let containerEffect = UIGlassContainerEffect()
+        containerEffect.spacing = 8
+        let containerView = UIVisualEffectView(effect: containerEffect)
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.overrideUserInterfaceStyle = .dark
+        containerView.accessibilityIdentifier = "ui.player.nativeControlsGroup"
+
+        let qualityButton = makeNativeQualityButton()
+        let qualityGlassView = wrapInNativeMediaGlass(qualityButton)
+
+        let optionsButton = makeNativeGlassControl(
+            systemImage: "slider.horizontal.3",
+            accessibilityLabel: "播放设置与清晰度",
+            accessibilityIdentifier: "ui.player.nativeOptionsButton"
+        )
+        optionsButton.showsMenuAsPrimaryAction = true
+        let optionsGlassView = wrapInNativeMediaGlass(optionsButton)
+
+        let stackView = UIStackView(arrangedSubviews: [qualityGlassView, optionsGlassView])
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .horizontal
+        stackView.alignment = .center
+        stackView.spacing = 8
+        containerView.contentView.addSubview(stackView)
+
+        let qualityHeightConstraint = qualityGlassView.heightAnchor.constraint(equalToConstant: 38)
+        let optionsWidthConstraint = optionsGlassView.widthAnchor.constraint(equalToConstant: 38)
+        let optionsHeightConstraint = optionsGlassView.heightAnchor.constraint(equalToConstant: 38)
+
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: containerView.contentView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: containerView.contentView.trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: containerView.contentView.topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: containerView.contentView.bottomAnchor),
+            qualityHeightConstraint,
+            qualityGlassView.widthAnchor.constraint(greaterThanOrEqualToConstant: 56),
+            qualityGlassView.widthAnchor.constraint(lessThanOrEqualToConstant: 108),
+            optionsWidthConstraint,
+            optionsHeightConstraint,
+        ])
+
+        return NativeControlsGlassGroup(
+            containerView: containerView,
+            containerEffect: containerEffect,
+            stackView: stackView,
+            qualityButton: qualityButton,
+            optionsButton: optionsButton,
+            qualityHeightConstraint: qualityHeightConstraint,
+            optionsWidthConstraint: optionsWidthConstraint,
+            optionsHeightConstraint: optionsHeightConstraint
+        )
+    }
+
+    private static func wrapInNativeMediaGlass(_ child: UIView) -> UIVisualEffectView {
+        let glassEffect = UIGlassEffect(style: .regular)
+        glassEffect.isInteractive = true
+        glassEffect.tintColor = UIColor.black.withAlphaComponent(0.26)
+        let glassView = UIVisualEffectView(effect: glassEffect)
+        glassView.translatesAutoresizingMaskIntoConstraints = false
+        glassView.overrideUserInterfaceStyle = .dark
+        glassView.cornerConfiguration = .capsule()
+        child.translatesAutoresizingMaskIntoConstraints = false
+        glassView.contentView.addSubview(child)
+        NSLayoutConstraint.activate([
+            child.leadingAnchor.constraint(equalTo: glassView.contentView.leadingAnchor),
+            child.trailingAnchor.constraint(equalTo: glassView.contentView.trailingAnchor),
+            child.topAnchor.constraint(equalTo: glassView.contentView.topAnchor),
+            child.bottomAnchor.constraint(equalTo: glassView.contentView.bottomAnchor),
+        ])
+        return glassView
+    }
+
+    private static func makeNativeQualityButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.overrideUserInterfaceStyle = .dark
+        button.configuration = makeNativeQualityButtonConfiguration(
+            title: "清晰度",
+            foregroundColor: UIColor.white.withAlphaComponent(0.55),
+            isFullScreen: false
+        )
+        button.showsMenuAsPrimaryAction = true
+        button.isEnabled = false
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.accessibilityIdentifier = "ui.player.nativeQualityButton"
+        button.accessibilityLabel = "清晰度"
+        return button
+    }
+
+    private static func makeNativeQualityButtonConfiguration(
+        title: String,
+        foregroundColor: UIColor,
+        isFullScreen: Bool
+    ) -> UIButton.Configuration {
+        var config = UIButton.Configuration.plain()
+        config.baseForegroundColor = foregroundColor
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: 0,
+            leading: isFullScreen ? 14 : 12,
+            bottom: 0,
+            trailing: isFullScreen ? 14 : 12
+        )
+        config.titleLineBreakMode = .byTruncatingTail
+        var titleAttributes = AttributeContainer()
+        titleAttributes.font = UIFont.monospacedDigitSystemFont(
+            ofSize: isFullScreen ? 14 : 13,
+            weight: .semibold
+        )
+        config.attributedTitle = AttributedString(title, attributes: titleAttributes)
+        return config
+    }
+
+    private static func makeNativeGlassControl(
+        systemImage: String,
+        accessibilityLabel: String,
+        accessibilityIdentifier: String
+    ) -> UIButton {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.overrideUserInterfaceStyle = .dark
+        var config = UIButton.Configuration.plain()
+        config.baseForegroundColor = .white
+        config.image = UIImage(
+            systemName: systemImage,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        )
+        button.configuration = config
+        button.accessibilityLabel = accessibilityLabel
+        button.accessibilityIdentifier = accessibilityIdentifier
+        return button
+    }
+
+    private static func updateNativeQualityButton(
+        _ button: UIButton,
+        qualityStore: VideoDetailQualityControlRenderStore,
+        detailViewModel: VideoDetailViewModel,
+        isFullScreen: Bool
+    ) {
+        let rawTitle = qualityStore.isSwitchingPlayQuality
+            ? qualityStore.qualityAccessoryButtonTitle
+            : qualityStore.qualityInlineButtonTitle
+        let trimmedTitle = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayTitle = trimmedTitle.isEmpty ? "清晰度" : trimmedTitle
+        let foregroundColor: UIColor = if !qualityStore.hasQualityMenu {
+            UIColor.white.withAlphaComponent(0.55)
+        } else if qualityStore.isSwitchingPlayQuality {
+            UIColor.white.withAlphaComponent(0.82)
+        } else {
+            .white
+        }
+        button.configuration = makeNativeQualityButtonConfiguration(
+            title: displayTitle,
+            foregroundColor: foregroundColor,
+            isFullScreen: isFullScreen
+        )
+
+        let actions = makeQualityMenuActions(
+            qualityStore: qualityStore,
+            detailViewModel: detailViewModel,
+            identifierPrefix: "native.quality.button"
+        )
+        button.menu = actions.isEmpty ? nil : UIMenu(title: "清晰度", children: actions)
+        button.isEnabled = !actions.isEmpty
+        button.accessibilityLabel = "清晰度，\(displayTitle)"
+        button.accessibilityValue = qualityStore.qualityAccessoryButtonTitle
+    }
+
+    private struct NativeControlsGlassGroup {
+        let containerView: UIVisualEffectView
+        let containerEffect: UIGlassContainerEffect
+        let stackView: UIStackView
+        let qualityButton: UIButton
+        let optionsButton: UIButton
+        let qualityHeightConstraint: NSLayoutConstraint
+        let optionsWidthConstraint: NSLayoutConstraint
+        let optionsHeightConstraint: NSLayoutConstraint
+        var isFullScreen = false
+
+        mutating func applyMetrics(isFullScreen: Bool) {
+            self.isFullScreen = isFullScreen
+            let platterHeight: CGFloat = isFullScreen ? 44 : 38
+            let spacing: CGFloat = isFullScreen ? 10 : 8
+            containerEffect.spacing = spacing
+            stackView.spacing = spacing
+            qualityHeightConstraint.constant = platterHeight
+            optionsWidthConstraint.constant = platterHeight
+            optionsHeightConstraint.constant = platterHeight
+            var optConfig = optionsButton.configuration ?? UIButton.Configuration.plain()
+            optConfig.image = UIImage(
+                systemName: "slider.horizontal.3",
+                withConfiguration: UIImage.SymbolConfiguration(
+                    pointSize: isFullScreen ? 17 : 15,
+                    weight: .medium
+                )
+            )
+            optionsButton.configuration = optConfig
+        }
+    }
+
+    @MainActor
+    private final class NativeControlsVisibilitySynchronizer: NSObject {
+        private final class DisplayLinkProxy: NSObject {
+            private let onTick: () -> Void
+
+            init(onTick: @escaping () -> Void) {
+                self.onTick = onTick
+            }
+
+            @objc func handleDisplayLink() {
+                MainActor.assumeIsolated {
+                    self.onTick()
+                }
+            }
+        }
+
+        private struct WeakView {
+            weak var view: UIView?
+        }
+
+        private weak var playerViewController: AVPlayerViewController?
+        private weak var targetContainer: UIView?
+        private let onLayoutSyncNeeded: () -> Void
+        private let onVisibilitySynced: ((CGFloat, Bool) -> Void)?
+        private var controlsRoot: WeakView?
+        private var animatedControls: [WeakView] = []
+        private var observations: [NSKeyValueObservation] = []
+        private var displayLink: CADisplayLink?
+        private var isInvalidated = false
+        private var settleFramesRemaining = 0
+
+        init(
+            playerViewController: AVPlayerViewController,
+            targetContainer: UIView,
+            onLayoutSyncNeeded: @escaping () -> Void,
+            onVisibilitySynced: ((CGFloat, Bool) -> Void)? = nil
+        ) {
+            self.playerViewController = playerViewController
+            self.targetContainer = targetContainer
+            self.onLayoutSyncNeeded = onLayoutSyncNeeded
+            self.onVisibilitySynced = onVisibilitySynced
+            super.init()
+        }
+
+        func start() {
+            guard !isInvalidated else { return }
+            if let nativeVC = playerViewController as? NativeFullScreenPlayerViewController {
+                nativeVC.onPlaybackControlsSuppressionChanged = { [weak self] isSuppressed in
+                    guard let self, !self.isInvalidated else { return }
+                    if isSuppressed {
+                        self.syncNow()
+                    } else {
+                        self.rebind(force: true)
+                    }
+                }
+            }
+            ensureDisplayLink()
+            rebind(force: true)
+        }
+
+        func rebind(force: Bool = true) {
+            guard !isInvalidated else { return }
+            let needsRebind = force
+                || controlsRoot?.view?.superview == nil
+                || animatedControls.isEmpty
+                || animatedControls.contains(where: { $0.view?.superview == nil })
+            if needsRebind {
+                attachObservers()
+            }
+            wakeDisplayLink(settleFrames: 3)
+            syncNow()
+        }
+
+        func invalidate() {
+            guard !isInvalidated else { return }
+            isInvalidated = true
+            if let nativeVC = playerViewController as? NativeFullScreenPlayerViewController {
+                nativeVC.onPlaybackControlsSuppressionChanged = nil
+            }
+            observations.forEach { $0.invalidate() }
+            observations.removeAll()
+            controlsRoot = nil
+            animatedControls.removeAll()
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+
+        private func ensureDisplayLink() {
+            guard displayLink == nil else { return }
+            let proxy = DisplayLinkProxy { [weak self] in
+                self?.handleDisplayLinkTick()
+            }
+            let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.handleDisplayLink))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+
+        private func wakeDisplayLink(settleFrames: Int = 2) {
+            guard !isInvalidated else { return }
+            settleFramesRemaining = max(settleFramesRemaining, settleFrames)
+            ensureDisplayLink()
+            displayLink?.isPaused = false
+        }
+
+        private func attachObservers() {
+            observations.forEach { $0.invalidate() }
+            observations.removeAll()
+            controlsRoot = nil
+            animatedControls.removeAll()
+
+            guard let playerViewController,
+                  let rootView = playerViewController.viewIfLoaded else { return }
+            let showsControlsObs = playerViewController.observe(\.showsPlaybackControls, options: [.new]) { [weak self] _, _ in
+                Self.dispatchMainSync { self?.rebind(force: true) }
+            }
+            observations.append(showsControlsObs)
+            let overlay = playerViewController.contentOverlayView
+            var foundRoot: UIView?
+            var foundAnimated: [UIView] = []
+
+            var queue: [UIView] = rootView.subviews.filter { $0 !== overlay }
+            while !queue.isEmpty {
+                let view = queue.removeFirst()
+                if view === overlay { continue }
+                let className = NSStringFromClass(type(of: view))
+                if foundRoot == nil,
+                   className.contains("MobileGlassControls") || className.contains("ChromelessControls") {
+                    foundRoot = view
+                } else if className.contains("DisplayModeControls")
+                    || className.contains("TimelineView")
+                    || className.contains("AuxiliaryControls")
+                    || className.contains("PlaybackControls") {
+                    foundAnimated.append(view)
+                }
+                if view.accessibilityIdentifier == "Fullscreen Button" {
+                    let fsAlphaObs = view.observe(\.alpha, options: [.new]) { [weak self] _, _ in
+                        Self.dispatchMainSync { self?.onLayoutSyncNeeded() }
+                    }
+                    observations.append(fsAlphaObs)
+                }
+                queue.append(contentsOf: view.subviews)
+            }
+
+            if let foundRoot {
+                controlsRoot = WeakView(view: foundRoot)
+                let hiddenObs = foundRoot.observe(\.isHidden, options: [.new]) { [weak self] _, _ in
+                    Self.dispatchMainSync { self?.handleVisibilityPropertyChanged() }
+                }
+                observations.append(hiddenObs)
+            }
+
+            for control in foundAnimated {
+                animatedControls.append(WeakView(view: control))
+                let alphaObs = control.observe(\.alpha, options: [.new]) { [weak self] _, _ in
+                    Self.dispatchMainSync { self?.handleVisibilityPropertyChanged() }
+                }
+                let hiddenObs = control.observe(\.isHidden, options: [.new]) { [weak self] _, _ in
+                    Self.dispatchMainSync { self?.handleVisibilityPropertyChanged() }
+                }
+                observations.append(alphaObs)
+                observations.append(hiddenObs)
+            }
+        }
+
+        private static func dispatchMainSync(_ work: @escaping @MainActor () -> Void) {
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { work() }
+            } else {
+                DispatchQueue.main.async { work() }
+            }
+        }
+
+        private func handleVisibilityPropertyChanged() {
+            wakeDisplayLink(settleFrames: 3)
+            syncNow()
+        }
+
+        private func handleDisplayLinkTick() {
+            rebind(force: false)
+        }
+
+        func syncNow() {
+            guard !isInvalidated, let container = targetContainer else { return }
+            let isSuppressedByGesture = (playerViewController as? NativeFullScreenPlayerViewController)?.isPlaybackControlsSuppressedBySurfaceGesture == true
+            if playerViewController?.showsPlaybackControls == false || isSuppressedByGesture {
+                if container.alpha != 0 { container.alpha = 0 }
+                if container.isUserInteractionEnabled { container.isUserInteractionEnabled = false }
+                onVisibilitySynced?(0, false)
+                displayLink?.isPaused = true
+                return
+            }
+            let activeAnimated = animatedControls.compactMap(\.view)
+            let rootView = controlsRoot?.view
+
+            if rootView == nil && activeAnimated.isEmpty {
+                if container.alpha != 1 { container.alpha = 1 }
+                if !container.isUserInteractionEnabled { container.isUserInteractionEnabled = true }
+                onVisibilitySynced?(1, true)
+                return
+            }
+
+            let rootHidden = rootView?.isHidden ?? false
+            let inWindowControls = activeAnimated.filter { !$0.isHidden && $0.window != nil }
+            let targetVisible = !rootHidden && inWindowControls.contains { $0.alpha > 0.05 }
+            let isAnimating = inWindowControls.contains { !($0.layer.animationKeys()?.isEmpty ?? true) }
+
+            let liveAlpha: CGFloat
+            if rootHidden {
+                liveAlpha = 0
+            } else if isAnimating {
+                let presentationOpacities = inWindowControls.compactMap { control -> CGFloat? in
+                    guard let pres = control.layer.presentation() else { return nil }
+                    return CGFloat(pres.opacity)
+                }
+                liveAlpha = presentationOpacities.max() ?? container.alpha
+            } else {
+                liveAlpha = targetVisible ? 1 : 0
+            }
+
+            let clampedAlpha = max(0, min(1, liveAlpha))
+            if abs(container.alpha - clampedAlpha) > 0.001 {
+                container.alpha = clampedAlpha
+            }
+            let interactive = targetVisible && !rootHidden
+            if container.isUserInteractionEnabled != interactive {
+                container.isUserInteractionEnabled = interactive
+            }
+            onVisibilitySynced?(clampedAlpha, interactive)
+
+            if interactive || isAnimating || clampedAlpha > 0.01 {
+                onLayoutSyncNeeded()
+            }
+
+            let targetOpacity: CGFloat = targetVisible ? 1 : 0
+            if isAnimating || abs(clampedAlpha - targetOpacity) > 0.002 || settleFramesRemaining > 0 {
+                if settleFramesRemaining > 0 {
+                    settleFramesRemaining -= 1
+                }
+                displayLink?.isPaused = false
+            } else {
+                displayLink?.isPaused = true
+            }
+        }
+    }
+
+    private static func makeQualityMenuActions(
+        qualityStore: VideoDetailQualityControlRenderStore,
+        detailViewModel: VideoDetailViewModel,
+        identifierPrefix: String
+    ) -> [UIAction] {
+        qualityStore.qualityMenuItems.map { item in
+            UIAction(
+                title: item.title,
+                image: UIImage(systemName: item.systemImage),
+                identifier: UIAction.Identifier("\(identifierPrefix).\(item.variant.quality)"),
+                attributes: item.isDisabled ? [.disabled] : [],
+                state: item.systemImage == "checkmark" ? .on : .off
+            ) { [weak detailViewModel] _ in
+                detailViewModel?.selectPlayVariant(item.variant)
+            }
+        }
+    }
+
+    private static func makeNativeOptionsMenu(
+        detailViewModel: VideoDetailViewModel,
+        onToggleDanmaku: @escaping () -> Void,
+        onShowDanmakuSettings: @escaping () -> Void,
+        onShowMoreControls: @escaping (@escaping () -> Void) -> Void
+    ) -> UIMenu {
+        var items: [UIMenuElement] = []
+
+        let qualityStore = detailViewModel.playbackRenderStore.qualityControlStore
+        let qualityActions = makeQualityMenuActions(
+            qualityStore: qualityStore,
+            detailViewModel: detailViewModel,
+            identifierPrefix: "native.quality"
+        )
+        if !qualityActions.isEmpty {
+            items.append(
+                UIMenu(
+                    title: "清晰度",
+                    image: UIImage(systemName: "sparkles.tv"),
+                    children: qualityActions
+                )
+            )
+        }
+
+        let subtitleStore = detailViewModel.subtitleRenderStore
+        if !subtitleStore.tracks.isEmpty {
+            var subtitleActions: [UIAction] = subtitleStore.tracks.map { track in
+                UIAction(
+                    title: track.isAI ? "\(track.lanDoc)（AI）" : track.lanDoc,
+                    state: subtitleStore.selectedLan == track.lan ? .on : .off
+                ) { [weak detailViewModel] _ in
+                    Task { @MainActor in
+                        await detailViewModel?.selectSubtitleTrack(lan: track.lan)
+                    }
+                }
+            }
+            subtitleActions.append(
+                UIAction(
+                    title: "关闭字幕",
+                    state: subtitleStore.selectedLan == nil ? .on : .off
+                ) { [weak detailViewModel] _ in
+                    Task { @MainActor in
+                        await detailViewModel?.selectSubtitleTrack(lan: nil)
+                    }
+                }
+            )
+            items.append(
+                UIMenu(
+                    title: "字幕",
+                    image: UIImage(systemName: "captions.bubble"),
+                    children: subtitleActions
+                )
+            )
+        }
+
+        let isDanmakuEnabled = detailViewModel.danmakuRenderStore.isDanmakuEnabled
+        let danmakuMenu = UIMenu(
+            title: "弹幕",
+            image: UIImage(systemName: isDanmakuEnabled ? "captions.bubble.fill" : "captions.bubble"),
+            children: [
+                UIAction(
+                    title: isDanmakuEnabled ? "关闭弹幕" : "开启弹幕",
+                    image: UIImage(systemName: isDanmakuEnabled ? "eye.slash" : "eye")
+                ) { _ in
+                    onToggleDanmaku()
+                },
+                UIAction(
+                    title: "弹幕设置",
+                    image: UIImage(systemName: "slider.horizontal.3")
+                ) { _ in
+                    onShowDanmakuSettings()
+                },
+            ]
+        )
+        items.append(danmakuMenu)
+
+        items.append(
+            UIAction(
+                title: "更多播放设置",
+                image: UIImage(systemName: "gearshape")
+            ) { _ in
+                onShowMoreControls {}
+            }
+        )
+
+        return UIMenu(title: "", children: items)
     }
 
     @available(*, unavailable)
@@ -219,6 +1334,10 @@ final class VideoDetailShellSurfaceHost: UIView {
         super.layoutSubviews()
         if didReconcileFullscreenFrame {
             surfaceHostView.refreshLayoutImmediately()
+        }
+        if nativeOptionsContainerView != nil {
+            updateNativeOptionsButtonPosition(for: surfaceHostView.nativePlayerViewController)
+            nativeControlsVisibilitySynchronizer?.rebind(force: false)
         }
 #if DEBUG
         guard bounds != lastReportedDiagnosticOverlayBounds else { return }
@@ -268,6 +1387,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     func attach(to parent: UIViewController) {
         guard !isTornDown else { return }
         guard overlayHostingController.parent == nil else { return }
+        overlayOriginalParent = parent
         parent.addChild(overlayHostingController)
         overlayHostingController.didMove(toParent: parent)
     }
@@ -289,6 +1409,20 @@ final class VideoDetailShellSurfaceHost: UIView {
     func tearDown() {
         guard !isTornDown else { return }
         isTornDown = true
+        let playerVC = surfaceHostView.nativePlayerViewController
+        if overlayHostingController.parent != nil {
+            overlayHostingController.willMove(toParent: nil)
+            overlayHostingController.removeFromParent()
+        }
+        if playerVC.presentingViewController != nil {
+            playerVC.dismiss(animated: false)
+        }
+        restoreSuppressedNativeFullscreenButtonIfNeeded()
+        nativeInlineExitFullscreenButton?.removeFromSuperview()
+        nativeInlineExitFullscreenButton = nil
+        nativeControlsVisibilitySynchronizer?.invalidate()
+        nativeControlsVisibilitySynchronizer = nil
+        nativeFullScreenPresentationCancellable = nil
         cancelRotationChromePrewarm()
         cancellables.removeAll()
         playbackTransitionImageView.image = nil
@@ -304,6 +1438,12 @@ final class VideoDetailShellSurfaceHost: UIView {
     func requestPlaybackControlsHideForRotation() {
         state.requestPlaybackControlsHideForRotation()
     }
+
+#if DEBUG
+    func revealPlaybackControlsForTesting() {
+        state.requestPlaybackControlsRevealForTesting()
+    }
+#endif
 
     func markRotationChromePrewarmed() {
         isRotationChromePrewarmed = true
@@ -321,8 +1461,9 @@ final class VideoDetailShellSurfaceHost: UIView {
         state.setBareSurfaceTransitionActive(active, retainsChromeTree: retainsChromeTree)
         UIView.performWithoutAnimation {
             overlayHostingController.view.isHidden = false
-            overlayHostingController.view.isUserInteractionEnabled = !active
-            surfaceHostView.isUserInteractionEnabled = false
+            let usesCustomOverlay = libraryStore.usesCustomPlaybackControlsOverlay
+            overlayHostingController.view.isUserInteractionEnabled = !active && usesCustomOverlay
+            surfaceHostView.isUserInteractionEnabled = !active && !usesCustomOverlay
         }
     }
 
@@ -390,6 +1531,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     func setPlayerViewModel(_ playerViewModel: PlayerStateViewModel) {
         guard state.playerViewModel !== playerViewModel else { return }
         state.playerViewModel = playerViewModel
+        bindNativeFullScreenPresentation(for: playerViewModel)
         playerViewModel.setBackgroundPlaybackEnabled(
             libraryStore.backgroundPlaybackEnabled
         )
@@ -399,6 +1541,51 @@ final class VideoDetailShellSurfaceHost: UIView {
                 && !playerViewModel.isAudioOnlyPlayback,
             allowsAutomaticInline: libraryStore.pictureInPictureEnabled
         )
+        applyNativePlaybackControlsSettings()
+    }
+
+    private func applyNativePlaybackControlsSettings() {
+        guard !isTornDown else { return }
+        let usesNativeSurface = libraryStore.usesNativePlaybackSurface
+        let usesSystemControlsUI = libraryStore.usesSystemNativePlaybackControlsUI
+        let usesCustomOverlay = libraryStore.usesCustomPlaybackControlsOverlay
+        let showsSpeeds = true
+        let allowsPiP: Bool? = nil
+        surfaceHostView.setNativePlaybackControlsOptions(
+            prefersNativePlaybackSurface: usesNativeSurface,
+            showsPlaybackControls: usesSystemControlsUI,
+            showsPlaybackSpeeds: showsSpeeds,
+            enablesNativeSurfaceGestures: usesNativeSurface && !usesCustomOverlay,
+            allowsPictureInPicturePlayback: allowsPiP
+        )
+        let bareTransitionActive = state.isBareSurfaceTransitionActive
+        overlayHostingController.view.isUserInteractionEnabled =
+            !bareTransitionActive && usesCustomOverlay
+        surfaceHostView.isUserInteractionEnabled =
+            !bareTransitionActive && !usesCustomOverlay
+
+        if usesSystemControlsUI {
+            installNativeSystemControlsAccessoriesIfNeeded()
+        }
+        if didInstallNativeSystemControlsAccessories {
+            nativeOptionsContainerView?.isHidden = !usesSystemControlsUI
+            if !usesSystemControlsUI {
+                nativeOptionsContainerView?.isUserInteractionEnabled = false
+                syncNativeInlineExitFullscreenButton(controlsAlpha: 0, isInteractive: false)
+            }
+            let playerVC = surfaceHostView.nativePlayerViewController
+            playerVC.viewIfLoaded?.setNeedsLayout()
+            playerVC.viewIfLoaded?.layoutIfNeeded()
+            updateNativeOptionsButtonPosition(for: playerVC)
+            nativeControlsVisibilitySynchronizer?.rebind()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isTornDown else { return }
+                let vc = self.surfaceHostView.nativePlayerViewController
+                vc.viewIfLoaded?.layoutIfNeeded()
+                self.updateNativeOptionsButtonPosition(for: vc)
+                self.nativeControlsVisibilitySynchronizer?.rebind()
+            }
+        }
     }
 
     func setVideoGravity(_ gravity: AVLayerVideoGravity) {
@@ -651,6 +1838,7 @@ private struct PlayerOverlayHostRoot: View {
             retainsChromeDuringBareSurfaceTransition: state.retainsChromeDuringBareSurfaceTransition,
             isCollapsedChromeActive: state.isCollapsedChromeActive,
             playbackControlsHideRequestGeneration: state.playbackControlsHideRequestGeneration,
+            playbackControlsRevealRequestGeneration: state.playbackControlsRevealRequestGeneration,
             videoAspectRatio: state.videoAspectRatio,
             danmakuCanvasSize: state.danmakuCanvasSize,
             onShowMoreControls: onShowMoreControls,
@@ -689,6 +1877,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let retainsChromeDuringBareSurfaceTransition: Bool
     let isCollapsedChromeActive: Bool
     let playbackControlsHideRequestGeneration: Int
+    let playbackControlsRevealRequestGeneration: Int
     let videoAspectRatio: CGFloat
     let danmakuCanvasSize: CGSize?
     let onShowMoreControls: (@escaping () -> Void) -> Void
@@ -704,8 +1893,12 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     @StateObject private var seekTransitionSnapshotModel = PlayerRotationTransitionSnapshotModel()
     @StateObject private var appBackgroundRecoverySnapshotModel = PlayerRotationTransitionSnapshotModel()
     @StateObject private var speedBoostModel = PlayerSpeedBoostModel()
-    @StateObject private var seekPreviewModel = PlayerSeekPreviewModel()
+    @StateObject private var seekPreviewBox = PlayerSeekPreviewModelBox()
     @StateObject private var playbackProgressCoordinator = PlayerPlaybackProgressCoordinator()
+
+    private var seekPreviewModel: PlayerSeekPreviewModel {
+        seekPreviewBox.model
+    }
     @StateObject private var progressReporter = PlayerPlaybackProgressReporter()
     @StateObject private var legacyObservationBridge: VideoDetailPlayerOverlayLegacyObservationBridge
     @State private var lastPreparedScrubProgress = -1.0
@@ -737,6 +1930,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         retainsChromeDuringBareSurfaceTransition: Bool,
         isCollapsedChromeActive: Bool,
         playbackControlsHideRequestGeneration: Int,
+        playbackControlsRevealRequestGeneration: Int = 0,
         videoAspectRatio: CGFloat,
         danmakuCanvasSize: CGSize?,
         onShowMoreControls: @escaping (@escaping () -> Void) -> Void,
@@ -759,6 +1953,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.retainsChromeDuringBareSurfaceTransition = retainsChromeDuringBareSurfaceTransition
         self.isCollapsedChromeActive = isCollapsedChromeActive
         self.playbackControlsHideRequestGeneration = playbackControlsHideRequestGeneration
+        self.playbackControlsRevealRequestGeneration = playbackControlsRevealRequestGeneration
         self.videoAspectRatio = videoAspectRatio
         self.danmakuCanvasSize = danmakuCanvasSize
         self.onShowMoreControls = onShowMoreControls
@@ -1028,6 +2223,24 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             setQualitySelectionPresented(false)
             playbackControlsVisibility.hide(animated: false)
         }
+        .onChange(of: playbackControlsRevealRequestGeneration) { _, _ in
+            playbackControlsVisibility.markInteraction(
+                keepsVisible: true,
+                showsPlaybackControls: keepsChromeMounted,
+                isLayoutTransitioning: isBareSurfaceTransitionActive
+            )
+        }
+        .onChange(of: usesCustomControlsOverlay) { _, usesCustom in
+            if usesCustom {
+                playbackControlsVisibility.showAndSchedule(
+                    showsPlaybackControls: keepsChromeMounted,
+                    isLayoutTransitioning: isBareSurfaceTransitionActive
+                )
+            } else {
+                setQualitySelectionPresented(false)
+                playbackControlsVisibility.hide(animated: false)
+            }
+        }
         .onChange(of: surfaceState.isUserSeeking) { _, isUserSeeking in
             updateSeekTransitionSnapshot(isUserSeeking: isUserSeeking)
         }
@@ -1063,12 +2276,13 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     private var danmakuUsesLandscapePlaybackChrome: Bool {
         // Rotation chrome pre-warm temporarily flips `chromeLandscape` to
         // materialize the controls tree. Danmaku visibility and insets must
-        // follow the stable physical orientation during that pre-warm, or a
-        // portrait setting can clear the overlay before the real rotation.
+        // follow the stable physical orientation during that pre-warm, and
+        // otherwise match the geometric target (`layoutLandscape`) immediately
+        // so `topInset` does not jump from 0 to 8 after rotation finishes.
         if rotationCoordinator.prewarmLandscape != nil {
-            return rotationCoordinator.isLandscape
+            return rotationCoordinator.isLandscape || isPortraitFullscreen
         }
-        return configuration.isFullscreenActive
+        return rotationCoordinator.layoutLandscape || isPortraitFullscreen
     }
 
     private var isAudioOnlyPlayback: Bool {
@@ -1079,8 +2293,13 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         runtimeSettings.allowsPictureInPictureController && !isAudioOnlyPlayback
     }
 
+    private var usesCustomControlsOverlay: Bool {
+        libraryStore.usesCustomPlaybackControlsOverlay
+    }
+
     private var keepsChromeMounted: Bool {
-        !isBareSurfaceTransitionActive || retainsChromeDuringBareSurfaceTransition
+        usesCustomControlsOverlay
+            && (!isBareSurfaceTransitionActive || retainsChromeDuringBareSurfaceTransition)
     }
 
     private var showsCenterPlaybackControl: Bool {
@@ -1514,6 +2733,10 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private func holdCurrentFrameForSeek() {
+        guard !viewModel.usesNativePlaybackSurfaceController else {
+            seekTransitionSnapshotModel.release(immediate: true)
+            return
+        }
         seekTransitionSnapshotModel.hold(
             hasPresentedPlayback: surfaceState.hasPresentedPlayback,
             surfaceLayoutGeneration: viewModel.surfaceLayoutGeneration
@@ -1524,9 +2747,17 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
     private func updateSeekTransitionSnapshot(isUserSeeking: Bool) {
         if isUserSeeking {
-            guard viewModel.shouldHoldSeekSnapshotAtInteractionStart else { return }
+            guard viewModel.shouldHoldSeekSnapshotAtInteractionStart,
+                  !viewModel.usesNativePlaybackSurfaceController
+            else { return }
             holdCurrentFrameForSeek()
         } else {
+            if viewModel.usesNativePlaybackSurfaceController {
+                seekTransitionSnapshotModel.release(immediate: true) {
+                    viewModel.finishUserSeekVisualReveal()
+                }
+                return
+            }
             seekTransitionSnapshotModel.releaseForSeekTransition(
                 isReadyForReveal: {
                     viewModel.isSeekRecoverySnapshotReadyForReveal()
@@ -1998,18 +3229,6 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                 )) {
                     Label("硬解优先", systemImage: "cpu")
                 }
-
-                Picker(selection: Binding(
-                    get: { libraryStore.dolbyVisionRenderingPolicy },
-                    set: { libraryStore.setDolbyVisionRenderingPolicy($0) }
-                )) {
-                    ForEach(DolbyVisionRenderingPolicy.allCases) { policy in
-                        Text(policy.title).tag(policy)
-                    }
-                } label: {
-                    Label("杜比视界渲染", systemImage: "sparkles.tv")
-                }
-                .pickerStyle(.navigationLink)
             }
             .scrollContentBackground(.hidden)
             .listRowBackground(Color.clear)
@@ -3260,8 +4479,7 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
     private var settingsSummary: String {
         let store = detailViewModel.danmakuSettingsRenderStore
         if store.isDanmakuEnabled {
-            let settings = store.danmakuSettings.danmakuKit
-            return "当前使用 \(settings.displayArea.title)，字号 \(Int((settings.fontScale * 100).rounded()))%，不透明度 \(Int((settings.opacity * 100).rounded()))%。"
+            return store.danmakuSettings.danmakuKit.summaryDescription
         }
         return "弹幕已关闭，播放时不会显示滚动评论。"
     }

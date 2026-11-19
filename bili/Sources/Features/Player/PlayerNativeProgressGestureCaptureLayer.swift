@@ -23,6 +23,7 @@ struct PlayerNativeProgressGestureCaptureLayer: View {
                 )
                 .allowsHitTesting(isEnabled)
         }
+        .padding(.vertical, -8)
     }
 
     private func progress(for locationX: CGFloat, width: CGFloat) -> Double {

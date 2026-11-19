@@ -1788,3 +1788,817 @@
 - **分支 / 提交 / Tag**：`main`（`91e27f4`，已推送至 `origin/main`），Tag `v1.1.5`（已推送至 `origin`）。
 - **GitHub Release**：`cilicili 1.1.5`（https://github.com/Rone89/cilicili/releases/tag/v1.1.5）。
 - **未签名 IPA**：`build/release-unsigned-ipa/bili-release-unsigned.ipa`（version `1.1.5` build `203`，SHA-256：`e36207ade208bd6b9d58bd199b7ae2e3547991c676be9bd059f539402c64ade4`），已作为附件上传至 `v1.1.5` Release。
+
+
+### 2026-11-17（局部修改：应用内画中画右滑松手即时并行交接）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift`：`finishPlaybackStopAfterNavigationTransition` 中，非交互返回在转场首帧立即尝试 `handoffToSystemMiniPlayerIfEligible`，交互式右滑返回通过 `transitionCoordinator.notifyWhenInteractionChanges` 在用户松手且未取消（`!context.isCancelled`）的瞬间立即采集播放器实时窗口坐标并触发小窗交接，与剩余退场动画并行启动系统 PiP，避免转场彻底结束、详情页消失后小窗才突兀闪出。若未开启画中画或不可交接，仍保留转场完成后停播的原有逻辑与幂等保护。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）+ `biliTests/NavigationHistoryTests`（11/11）：**22/22 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`b28ca13f7be7b26577ed75c7d21ddca27be8524f3d81ba35834bac395657ad74`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上播放视频时分别测试「右滑返回松手」「右滑一半拉回取消」「点击左上角返回按钮」，确认小窗从松手瞬间平滑飞入角落且取消手势时不误触。
+
+
+### 2026-11-17（局部修改：新增「快进跳转短测（4项）」自动化测试入口）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/PlaybackRecoveryTestRunner.swift`：`start(onlyPauseBoundary:onlySeek:)` 新增 `onlySeek`（`seekOnly` 计划），仅执行 1 轮共 4 项跳转场景（`nearbySeek`、`distantSeek`、`pausedSeek`、`continuousSeek`），约 30 秒内完成并输出可一键复制的完整分段耗时报告。
+  - `bili/Sources/Features/Player/PlaybackRecoveryTestView.swift`：新增「快进跳转短测（4项）」按钮。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Debug-iphoneos` 以开启完整 `RecoveryTraceStore` 毫秒级分段埋点）**：
+  - `Debug-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`a722ee7b5031a52e24a55bc561d4b006a052b59d0afb26f9047a29876cc76976`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待操作**：在「我的 → 设置 → 开发者与诊断」打开「自动恢复测试入口」，进入任意视频的「更多播放设置 → 自动恢复测试」，点击「快进跳转短测（4项）」跑完后一键复制报告发回分析。
+
+
+### 2026-11-17（局部修改：快进加载提速——缩短揭幕等待、精简分片预热与拖动预览）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/HLSBridgeSeekMap.swift`：`warmRanges(around:)` 从预热 2~3 个完整分片精简为只预热 `[initialization]` + 当前目标 1 个分片，避免高码率下与 `AVPlayer` 首片请求抢占带宽。
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：`userSeekRevealSettleDelay` 从 `0.12s` 降至 `0.02s`；`isUserSeeking` 下的状态采样周期从 `0.08s` 提速至 `0.04s`；新增 `previewUserScrubIfNeeded(toProgress:)`，在用户主动拖动进度条期间以 `0.22s` 节流触发非阻塞预览 `seek`。
+  - `bili/Sources/Features/Player/BiliPlayerNativeControlsActionBuilder.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceGestureActions.swift`、`bili/Sources/Features/VideoDetail/VideoDetailPinnedProgressBarActions.swift`：拖动进度变更时同步触发 `previewUserScrubIfNeeded(toProgress:)`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/UserSeekRevealSettlingTests`（19/19）+ `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）：**30/30 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Debug-iphoneos`）**：
+  - `Debug-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`7cc61758fcef4f391eaf95d8eac9e5f88a0d0312c5f43c9b6de81fcea48727cd`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上实际手拖进度条对比快进响应，也可重跑一次「快进跳转短测（4项）」对比 `seekRecovery` 总耗时。
+
+
+### 2026-11-17（局部修改：快进二轮提速——关键帧就近吸附 + 首帧到达即揭幕）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/HLSBridgeSeekMap.swift`：`alignedSeekTime(near:)` 改为按半个分片阈值就近吸附到当前或下一分片起始关键帧，消除落入分片后半段导致的完整段内解码延迟。
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：`userSeekRevealSettleDelay` 设为 `0`，且 `isSeekRecoverySettledForReveal` 中 `requiresAdvancingVideo` 设为 `false`，目标首帧到位后立即撤掉加载遮罩。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/UserSeekRevealSettlingTests`（19/19）+ `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）：**30/30 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Debug-iphoneos`）**：
+  - `Debug-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`d721a6ebac714a3b5f9a275b09f13d3b3260e351f00e8897c6ad0cbd01df9ec2`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上再跑一轮「快进跳转短测（4项）」并手拖体验，确认远距离跳转与 `seekReveal` 耗时是否压低到 300~500ms 区间。
+
+
+### 2026-11-17（局部修改：修复快进音画不同步问题，保留安全提速）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：恢复 `requiresAdvancingVideo` 音画同步揭示保护（确保画面真正起播后再撤掉快照并解除临时静音），移除拖动中的 `previewUserScrubIfNeeded` 频繁 seek，保留 `userSeekRevealSettleDelay = 0.02s` 与 `0.04s` 高频采样。
+  - `bili/Sources/Features/Player/BiliPlayerNativeControlsActionBuilder.swift`、`BiliPlayerSurfaceGestureActions.swift`、`VideoDetailPinnedProgressBarActions.swift`：移除拖动中的 `previewUserScrubIfNeeded` 调用，保留字节预热。
+  - `bili/Sources/Features/Player/HLSBridgeSeekMap.swift`：`alignedSeekTime(near:)` 回正为仅向前对齐当前分片起点（`offset <= min(max(duration * 0.65, 0.8), 3.2)`），避免向后跨分片引起音画边界错位；保持 `warmRanges` 仅预热目标 1 个分片。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/UserSeekRevealSettlingTests`（19/19）+ `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）：**30/30 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`fea1105b32c5d379994cfa3bef314855ec0e83bc3ad95948d1d5ccb3443a7650`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上调节进度条，确认「声音先播、画面卡等 1 秒」的问题已消除，且快进响应保持流畅。
+
+
+### 2026-11-17（局部修改：新增「原生播放器控件（实验）」实验开关）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Utilities/AVPlayerStartupPathOptimizationExperiment.swift` & `bili/Sources/Storage/LibraryStore.swift`：新增 `NativePlaybackControlsExperiment`（`cc.bili.playback.nativePlaybackControlsExperimentEnabled.v1`，默认关闭）及 `nativePlaybackControlsExperimentEnabled` 持久化开关。
+  - `bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift`：在「播放与恢复」分区新增「原生播放器控件（实验）」开关。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/UIKitPlayerSurfaceHostView.swift`、`DirectUIKitPlayerSurfaceHostView.swift`、`bili/Sources/Features/Player/BiliPlayerViewContent.swift`、`VideoSurfaceView.swift`、`AVPlayerHLSBridgeEngine.swift`：开启后自动切换 `VideoSurfaceView` 为 `prefersNativePlaybackControls = true` 与 `showsSystemPlaybackControls = true`，隐藏外层自定义控制栏和冲突手势，保留倍速选项，并将 `player.automaticallyWaitsToMinimizeStalling` 设为 `true`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/UserSeekRevealSettlingTests`（19/19）+ `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）：**30/30 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`9c99611124861b4e659ce61f6b0ce2a63f64c6539050add25524457a2597e101`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在「我的 → 设置 → 开发者与诊断」打开「原生播放器控件（实验）」，进入视频页体验系统 `AVPlayerViewController` 原生进度条拖动与快进响应（关闭开关即恢复自定义控制栏）。
+
+
+### 2026-11-17（局部修改：补齐 VideoDetailShellSurfaceHost 原生控件模式透传）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：当 `NativePlaybackControlsExperiment.stored()` 为 `true` 时，跳过挂载独立的 `BiliPlayerSurfaceGestureLayerHost`、`BiliPlayerNativeControlsHost` 与中央自定义播放按钮（`showsCenterPlaybackControl`），让触摸直接穿透到底层 `AVPlayerViewController` 原生控件。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`a44c78e61c6c4ff4b9d44dfff8cd0b6308a2c377f33b116c0996145c14aacbe5`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上确认开启「原生播放器控件（实验）」后进入视频页，显示的是系统 `AVPlayerViewController` 原生进度条与控件，且拖动快进正常提速。
+
+
+### 2026-11-17（局部修改：修复原生控件模式视频区域触摸穿透）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：在初始化及过渡态同步中，当 `NativePlaybackControlsExperiment.stored()` 为 `true` 时，将 `overlayHostingController.view.isUserInteractionEnabled` 设为 `false`，并将 `surfaceHostView.isUserInteractionEnabled` 设为 `true`，使视频区域的点击和原生进度条拖动直接透传至底层 `AVPlayerViewController`。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`9b962fa478bbb2cc0c198c8927ca925b1aee520e99909a912f017fdf26ce8dbb`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上点按视频区域确认可正常唤醒 `AVPlayerViewController` 原生控件并拖动快进。
+
+
+### 2026-11-17（局部修改：原生控件模式补充左右滑快进退、双击暂停播放与右上角原生设置菜单）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`：放开 `configureNativeSurfaceGestures()` 中的 `NativePlayerSurfaceGestureController` 挂载，恢复原生模式下的左右滑快进快退、上下滑调亮度/音量与双击切换播放/暂停。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/DirectUIKitPlayerSurfaceHostView.swift` & `VideoDetailShellSurfaceHost.swift`：在右上角安全区新增半透明原生 `UIMenu` 胶囊按钮，自动监听清晰度、字幕、弹幕状态更新，提供清晰度切换、CC 字幕选择、弹幕开关/设置及更多播放设置入口（其余视频区域触摸保持完整透传给 `AVPlayerViewController`）。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/UserSeekRevealSettlingTests`（19/19）+ `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）：**30/30 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`5f5b7dd0bbb70d8a6c240f3be6d6a02cc10fc29e6ebfdbecc7e0a3820f52c53c`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上测试「原生播放器控件（实验）」模式：单击唤醒原生控件、左右滑快进快退、双击暂停/播放，以及点击右上角设置图标切换清晰度/字幕/弹幕。
+
+
+### 2026-11-17（局部修改：原生控件设置按钮改为液态玻璃并跟随控制栏显隐）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：右上角原生 `UIMenu` 设置按钮升级为 `UIGlassEffect(style: .clear)`（`isInteractive = true`）圆形液态玻璃容器；新增 `startNativeControlsVisibilitySync()` 监听 `AVPlayerViewController` 内部控制栏的可见性变化，控制按钮随原生控件同步淡入淡出及禁用点击。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`c230cfa8385b79d59b4f3a0e9f5dc732dcf5dffe96234313d408d4242ad5a81c`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上确认右上角设置按钮呈交互式液态玻璃样式，并随系统控制栏自动隐藏与点击唤醒同步淡入淡出。
+
+
+### 2026-11-17（局部修改：原生控件设置按钮对齐系统 `.glass()` 质感与横屏动态避让）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：设置按钮改用 `UIButton.Configuration.glass()` + `overrideUserInterfaceStyle = .dark`（`40x40` 圆形胶囊），与 `AVPlayerViewController` 内部控制按钮液态玻璃效果保持一致；新增 `updateNativeOptionsButtonPosition(for:)` 在横屏下自动识别原生右上角控制按钮位置并左移避让（间距 10pt、垂直中心对齐），避免与原生静音按钮重叠。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`191b00071ce68dd8295c1c99c6f6c42dcb96477f181dd4a2e8446b6479f6e8da`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上测试竖屏和横屏全屏时的右上角设置按钮，确认玻璃质感与系统按钮一致且横屏下不再与右上角静音按钮重叠。
+
+
+### 2026-11-17（局部修改：抵消横屏导航栏残留顶部安全区与强化右上角按钮避让）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`：`applyNativePlayerLayout()` 在开启原生控件实验且处于横屏全屏时，通过 `nativePlayerViewController.additionalSafeAreaInsets.top = -residualTop` 抵消外层 `NavigationBar` 残留的顶部安全区，使系统顶部播放控件贴回屏幕顶部边缘。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：`nativeTopRightControlFrame` 放宽匹配至 `UIControl` 及名称含 `Button` 的内部视图，并为横屏设置保底左移距离（`-64pt`），彻底避开系统右上角静音按钮。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`8bf2b74ca075d9302ae90fdbd9cda04343f6d9be49a94ca6a94e4ff5549f3f7e`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 横屏全屏下确认顶部控制栏已贴近屏幕顶部边缘，且设置按钮位于右上角静音按钮左侧不重叠。
+
+
+### 2026-11-17（局部修改：原生控件实验模式交由 AVPlayerViewController 系统全屏接管）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：新增 `@Published private(set) var isNativeFullScreenPresented = false`；在 `AVPlayerViewControllerDelegate` 的 `willBeginFullScreenPresentationWithAnimationCoordinator` / `willEndFullScreenPresentationWithAnimationCoordinator` 中同步系统全屏状态并联动 `AppOrientationLock.update` 切换与恢复横竖屏。
+  - `bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift`：在开启「原生播放器控件（实验）」时停用外部假全屏旋转接管，非系统全屏态锁定竖屏、仅当 `isNativeFullScreenPresented == true` 时允许 `.allButUpsideDown`，将全屏控制权完全交由 `AVPlayerViewController`。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：订阅 `isNativeFullScreenPresented` 并在系统全屏期间将弹幕/字幕层（`overlayHostingController.view`）及液态玻璃设置按钮（`nativeOptionsContainerView`）动态迁移至 `playerVC.contentOverlayView`，退出全屏时迁回详情页宿主；设置按钮位置基于 `superview` 坐标系并在横屏全屏按 `-76pt`（竖屏 `-18pt`）避让系统右上角按钮。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/UserSeekRevealSettlingTests`（19/19）+ `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）：**30/30 通过**。
+  - `git diff --check`：通过（无空白/冲突标记错误）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`376dc9ceaf38f51a8298e9cbb1f38da126b1d737a5b19e097af2cab2aabccd5f`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上点击系统播放器全屏按钮或横屏进入系统全屏，确认：1）全屏时系统顶/底控件、右上角退出全屏/静音按钮布局贴边完整；2）弹幕、字幕与液态玻璃设置按钮在系统全屏中正常显示且不与右上角按钮重叠；3）退出全屏后能平滑切回竖屏详情页。
+
+
+### 2026-11-17（局部修改：补齐竖屏全屏按钮与重力旋转自动进退系统模态全屏）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift` & `bili/Sources/Features/VideoDetail/UIKitShell/DirectUIKitPlayerSurfaceHostView.swift`：新增 `NativeFullScreenPlayerViewController`（`AVPlayerViewController` 子类，支持 `.allButUpsideDown` 及 `viewDidDisappear` 退出回调）与全屏态拆装方法 `detachNativePlayerViewControllerForFullScreen()` / `reattachNativePlayerViewControllerAfterFullScreen()`，并保护全屏态不被内嵌布局覆写。
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：新增 `onRequestNativeFullScreenPresentation`、`requestNativeFullScreen(_:preferredLandscape:)` 与 `setNativeFullScreenPresented(_:in:preferredLandscape:)`，统一同步方向锁与横屏目标几何更新。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：在竖屏左上角安全区新增同款 `40x40` 液态玻璃全屏按钮（`nativeFullScreenButton`，随系统控件同步淡入淡出，进入全屏后自动隐藏由系统左上角 `✕` 接管），通过标准 `present(..., animated: true)` 模态全屏展示 `NativeFullScreenPlayerViewController`，退出后自动复原内嵌播放器。
+  - `bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift`：在实验模式下监听 `UIDevice.orientationDidChangeNotification`，物理横屏自动触发系统全屏、从横屏转回竖屏自动退出系统全屏，并在模态全屏覆盖期间跳过 `viewWillDisappear` 的后台冻结与方向重置。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/UserSeekRevealSettlingTests`（19/19）+ `biliTests/SystemMiniPlayerCoordinatorTests`（11/11）：**30/30 通过**。
+  - `git diff --check`：通过。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`d8bd07913007977a28a8c6fe1caef46e54a6ce9822d3ec1c73ef6b3ee0d7534a`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请在 `RCe2027` 上测试：1）竖屏左上角液态玻璃全屏按钮点击进入横屏系统全屏；2）物理横竖屏重力旋转自动进退系统全屏；3）全屏下系统控件、弹幕、字幕与设置按钮显示与退出复原是否正常。
+
+
+### 2026-11-17（局部修改：原生控件实验全屏入口改为 AVKit 系统全屏按钮 + 方向租约，对齐 ibili 方案）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **背景**：原生控件实验竖屏无系统自带全屏按钮，根因是 App 层方向锁死竖屏（AVKit 判定无法转横屏则隐藏按钮）；参考 `~/Desktop/ibili-review/Ibili` 的 `PlayerFullscreenOrientationPolicy` 方案改造。
+- **已实现**：
+  - 新增 `bili/Sources/Features/Player/NativeFullscreenOrientationLease.swift`：单播放页简化版方向租约。进入期按视频内容方向锁定目标（横屏视频 → `landscapeRight`，竖屏视频 → `portrait`，未知尺寸按横屏）；全屏期放开自由旋转；退出期回正到进入前方向，收起转场结束后补发方向请求并重试（180ms 间隔 + 2s 超时兜底），到位后恢复详情页自由旋转。监听 `UIWindowScene.effectiveGeometry`（部署目标 26.1 恒可用）纠正转场期方向漂移；`cancel()` 静默路径供详情页离开层级时使用，不误触恢复。
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：`AVPlayerViewControllerDelegate` 的 `willBegin/WillEndFullScreenPresentation` 改为 `MainActor.assumeIsolated` 同步接入租约（避免 presenting 侧 `viewWillDisappear` 竞态误判）；`setNativeFullScreenPresented` 只同步状态标记，方向掩码全权交给租约；删除 `requestNativeFullScreen` 与 `onRequestNativeFullScreenPresentation`（手动 present 路径下线）。
+  - `bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift`：实验模式 `supportedInterfaceOrientations` 放开为 `.allButUpsideDown`（系统全屏按钮得以显示、详情页随设备自由旋转）；`updateOrientationLock` 实验分支在租约空闲时保持放开；`viewWillDisappear` 被其他页面/标签/弹层覆盖时收回竖屏，离开层级时静默取消租约；删除「物理旋转自动进出系统全屏」的重力观察器（整页自由旋转替代，对齐 ibili 体验）。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：删除左上角自建液态玻璃全屏按钮及 `enterNativeFullScreen/exitNativeFullScreen` 手动 present/dismiss 路径，全屏进出完全交给系统按钮与 AVKit 转场；液态玻璃设置按钮与弹幕/字幕层迁移逻辑保留。
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift` & `DirectUIKitPlayerSurfaceHostView.swift`：删除全屏拆装包装方法（AVKit 系统全屏自行接管视图摆位）；`configureNativePlayerViewController` 显式 `entersFullScreenWhenPlaybackBegins = false`、`exitsFullScreenWhenPlaybackEnds = false`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/NativeFullscreenOrientationLeaseTests`（7/7 新增：内容定向、未知尺寸回退、方向掩码、退出回正、取消不触发释放）+ `SystemMiniPlayerCoordinatorTests`（11/11）+ `UserSeekRevealSettlingTests`（19/19）+ `NavigationHistoryTests`（11/11）：**48/48 通过**（`build/logs/native-fullscreen-lease-unit.xcresult`）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - Release 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`b41dbea0a1f23d4c78506f320930a3edf4b977483510dd0f909e03d2d51c3b18`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请开启「原生播放器控件（实验）」后在 `RCe2027` 上确认：1）竖屏播放页系统控件栏出现自带全屏按钮（展开箭头），点击进入系统全屏且横屏视频自动转横屏；2）竖屏视频全屏保持竖屏；3）全屏内自由旋转、点 ✕ 退出后页面回正且不再卡方向；4）详情页直接旋转手机时整页平滑跟随旋转；5）退出播放页后首页等其余页面仍保持竖屏。
+
+
+### 2026-11-18（局部修改：修复原生全屏点击闪退；恢复页面竖屏锁定与重力旋转触发系统视频全屏）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **真机反馈与根因**：
+  - ① 点击系统全屏按钮闪退：上一轮将 `willBegin/WillEndFullScreenPresentation` 回调改为 `MainActor.assumeIsolated` 同步执行，AVKit 全屏回调不保证主线程，非主线程调用即断言崩溃；本轮恢复为 `Task { @MainActor }` 异步派发（与 v1.1.5 已验证模式一致），转场 completion 中的 `context.isCancelled` 保持同步读取后再派发。
+  - ② 系统全屏按钮只对竖屏页竖屏视频出现 / ③ 重力旋转整页旋转：上一轮放开详情页自由旋转所致——页面一旦横置 AVKit 认为已等效横屏而隐藏按钮，且整页旋转并非用户预期的视频全屏。本轮详情页恢复竖屏锁定，改为 App 层（`AppOrientationLock`）在详情页置顶期间放开方向，`supportedInterfaceOrientations` 覆写仍返回 `.portrait`。
+- **已实现**：
+  - `VideoDetailRotationBridgeViewController`：恢复重力旋转观察器——页面置顶时物理旋转至横屏即触发系统视频全屏（`requestNativeFullScreen(true)`），全屏中转回竖屏自动退出；`updateOrientationLock` 实验分支在方向租约空闲时保持 `AppOrientationLock` 为 `allButUpsideDown`（AVKit 显示系统全屏按钮的前提）；被其他页面/标签/弹层覆盖时收回 App 层旋转并锁回竖屏；`viewDidDisappear`/`prepareForDismantle` 静默取消租约。
+  - `VideoDetailShellSurfaceHost`：恢复重力旋转触发的 `enterNativeFullScreen/exitNativeFullScreen` 模态展示路径（detach → present → `onFullScreenDismissed` → reattach），入口回调恢复 `onRequestNativeFullScreenPresentation` 接线；不重建自建全屏按钮，系统全屏按钮路径保持不变。
+  - `PlayerStateViewModel`：恢复 `requestNativeFullScreen(_:)` 单参数入口；`setNativeFullScreenPresented` 保持仅同步状态标记，方向全权由 `NativeFullscreenOrientationLease` 接管（进入期按视频内容定向，退出期回正后恢复 App 层自由旋转）。
+  - `VideoSurfaceView` / `DirectUIKitPlayerSurfaceHostView`：恢复全屏拆装方法与 `NativeFullScreenPlayerViewController.onFullScreenDismissed` 回调。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `biliTests/NativeFullscreenOrientationLeaseTests`（7/7）+ `SystemMiniPlayerCoordinatorTests`（11/11）+ `UserSeekRevealSettlingTests`（19/19）+ `NavigationHistoryTests`（11/11）：**48/48 通过**（`build/logs/native-fullscreen-lease-unit2.xcresult`）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - Release 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`2f2fb1e1a94df898ff481ee28224c71f29ce63387281f7c4d424c280b720a686`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：请开启「原生播放器控件（实验）」后在 `RCe2027` 上确认：1）竖屏播放页点击系统全屏按钮**不再闪退**，横屏视频进全屏自动转横屏；2）重力旋转手机触发的是视频全屏而非整页旋转，转回竖屏自动退出；3）退出全屏后页面回正、方向不卡死；4）退出播放页后首页等其余页面保持竖屏；5）若系统全屏按钮对横屏视频仍不显示，请告知（下一轮恢复横屏视频的备选入口）。
+
+
+### 2026-11-18（局部修改：修复系统全屏闪退与旋转黑屏——弹幕宿主父子关系与方向竞态）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **根因（真机崩溃日志确认）**：拉取设备 `systemCrashLogs` 两份 `bili-*.ips`（2026-11-17/18），栈完全一致：`AVFullScreenViewController attachContentView` → `UIView _addSubview` → `_associatedViewControllerForwardsAppearanceCallbacks:performHierarchyCheck:` 抛层级异常 → SIGABRT。AVKit 系统全屏用私有 `AVFullScreenViewController` 整体搬移播放器视图子树并做 VC 层级一致性检查，而弹幕/字幕宿主 `UIHostingController` 的视图被迁移进 `contentOverlayView` 后其父控制器仍留在详情页层级（或悬挂），检查不通过即崩；重力旋转黑屏为同一异常在转场中被吞后模态卡死。
+- **已实现**：
+  - `VideoDetailShellSurfaceHost.syncNativeFullScreenOverlays`：迁入 `contentOverlayView` 时把弹幕/字幕宿主挂为播放器子控制器（`addChild` + `didMove`），迁出时还原到详情页原始父控制器（`attach(to:)` 记录 `overlayOriginalParent`）；补齐视图位置与父控制器不一致的重入修复分支；`tearDown` 清理父子关系。
+  - `PlayerStateViewModel`：系统全屏 `willBegin` 回调中卸下播放器与详情页的子控制器父子关系（对齐手动 present 已验证语义），`willEnd` 转场完成后经新增 `onNativeFullScreenRestoreInlineSurface` 回调由宿主还原挂载；租约 `beginEntry` 增加 phase 防重入（手动 present 路径已在 detach 前用真实场景建租约，回调里 scene 为空不能覆盖重建）。
+  - `VideoDetailShellSurfaceHost.enterNativeFullScreen`：detach 前捕获 `windowScene` 并先行建立方向租约（否则 detach 后回调取不到 scene，不会转横屏）；`exitNativeFullScreen` 系统按钮路径不再编程强收（AVKit 私有转场，静默保持全屏由系统 ✕ 退出）。
+  - `VideoDetailRotationBridgeViewController`：新增 `isCoveredByNativePlayerFullscreenPresentation`（同步查 `presentedViewController` 链，AVKit 容器类名含 `FullScreen`/手动 present 的播放器本身），`viewWillDisappear`/`viewDidDisappear` 在全屏覆盖期间早退，不再误判"被其他页面覆盖"而锁回竖屏或取消方向租约（`.fullScreen` 模态呈现会触发这两个回调）。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `NativeFullscreenOrientationLeaseTests`（7/7）+ `SystemMiniPlayerCoordinatorTests`（11/11）+ `UserSeekRevealSettlingTests`（19/19）+ `NavigationHistoryTests`（11/11）：**48/48 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - Release 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`0b7ad5d642d3c36f3f96c7d0af40a37fe3238dca912097b15d082cb305b4c583`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：1）竖屏播放页点系统全屏按钮不闪退、横屏视频自动转横屏；2）重力旋转触发视频全屏（非整页旋转），转回竖屏自动退出（手动 present 路径）；3）系统 ✕ 退出后回正、弹幕/字幕/玻璃设置按钮在全屏中正常显示；4）全屏内旋转自由、退出后首页保持竖屏；5）若仍有闪退，用 `xcrun devicectl device copy from --domain-type systemCrashLogs` 再取日志分析。
+
+
+### 2026-11-18（局部修改：以模拟器探针实证修复系统全屏层级检查崩溃）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **根因（本轮实证）**：上一轮修复在 `syncNativeFullScreenOverlays` 中"先 `addChild`、后搬视图"，真机再崩；新崩溃栈落在 `UIViewController _addChildViewController:performHierarchyCheck:` ← 本函数。为拿到精确规则，在模拟器写 5 个临时层级探针（`NativeFullscreenHierarchyProbeTests`，已删除）：
+  - 探针 A（先挂父子、后搬视图）→ 失败：`child view controller <UIHostingController> should have parent view controller <详情页容器> but requested parent is <AVPlayerViewController> (UIViewControllerHierarchyInconsistency)`——UIKit 按子控制器**视图当前位置**推导"应有父级"，与 `parent` 属性无关；
+  - 探针 B（先搬视图进 `contentOverlayView`、后挂父子）→ 通过；
+  - 探针 C（播放器已 `removeFromParent` 的悬空态 + B 顺序）→ 通过；
+  - 探针 D（悬空播放器 + 一致子树整体搬移，等价 `attachContentView` 时刻）→ 通过；
+  - 探针 E（播放器保持挂载 + 一致子树整体搬移）→ 通过。
+- **已实现**：
+  - `VideoDetailShellSurfaceHost.syncNativeFullScreenOverlays` 重写为**先搬视图到目标父控制器子树内、再挂/换父子关系**：进全屏 → 视图入 `contentOverlayView` 后挂为播放器子控制器；退全屏 → 视图回外壳宿主后还原到 `overlayOriginalParent`（`attach(to:)` 时记录）；目标父级为空（未 attach 过）则保持悬空。原三分支重入修复逻辑由统一的"视图先到位 + 父级比对"覆盖。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - `NativeFullscreenOrientationLeaseTests`（7/7）+ `SystemMiniPlayerCoordinatorTests`（11/11）+ `UserSeekRevealSettlingTests`（19/19）+ `NavigationHistoryTests`（11/11）：**48/48 通过**。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - Release 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`76eab8383b4b28fdc6485134a0a74a413e2328e0fec5b8521a3c8939ab5ebc8e`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：1）系统全屏按钮点击不闪退、横屏视频自动转横屏；2）重力旋转进视频全屏不黑屏/不闪退、转回竖屏自动退出；3）系统 ✕ 退出后回正，弹幕/字幕/玻璃设置按钮正常；4）退出播放页后其余页面保持竖屏。若仍有崩溃，`xcrun devicectl device copy from --domain-type systemCrashLogs` 取最新 .ips 继续分析。
+
+
+### 2026-11-18（局部修改：关闭全屏分离视图时的两条自动画中画链路；远程验证方法学记录）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **新发现与修复**：
+  - 重力旋转路径 `enterNativeFullScreen` 分离播放器视图时，存在**两条**自动画中画链路会把应用送后台（真机表现为旋转后"闪退"）：① `AVPlayerViewController.canStartPictureInPictureAutomaticallyFromInline`；② VM 经 `engine.pictureInPictureContentSource()`（playerLayer 内容源）创建的独立 `AVPictureInPictureController` 的同名标志。上一轮只关闭了①，本轮在 `PlayerStateViewModel.suspendAutomaticPictureInPictureForNativeFullScreenPresentation` 中一并关闭②，`restorePictureInPicturePreferenceToNativePlaybackController` 两条都恢复。手动 present 前调用 suspend，`handleNativeFullScreenDismissed` 还原。
+  - 系统按钮路径不分离视图，不触碰 PiP 标志（全屏中按 Home 自动 PiP 为期望行为）。
+- **验证方法学（重要，后续遵循）**：
+  - `xcrun devicectl device orientation set` 远程旋转期间设备会自动锁屏，锁屏产生的黑屏截图与 `appBackgroundStop` 事件会污染观察（本轮已实锤：17:11:30 无指令时刻出现第二次进后台 + 全黑竖屏截图 = 锁屏）。**远程旋转验证不可信，旋转行为判定必须真机手动复测。**
+  - 崩溃日志拉取：`xcrun devicectl device copy from --domain-type systemCrashLogs`（有效）；设备上装有 Ibili/PiliPlus/MiniBili/BiliSail 等竞品 App，进程列表排查时注意名称混淆。
+  - UIKit 层级检查规则已用模拟器探针实证并记录（见上轮），探针方法可复用。
+- **已验证**：模拟器 `NativeFullscreenOrientationLeaseTests` + `SystemMiniPlayerCoordinatorTests` 全部通过；Release 构建 `codesign --verify` 通过，`bili.app/bili` SHA-256：`bdeb516d79555684634537b17f823c723edb6b3b59bbec31bf28698ac6c45d95`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证（需手动复测）**：1）竖屏播放页点系统全屏按钮；2）物理旋转手机进视频全屏、转回竖屏自动退出；3）全屏内 ✕ 退出回正；4）退出播放页其余页面保持竖屏。
+
+
+### 2026-11-18（局部修改：重力旋转弃用模态弹出，改用经典页面旋转机制对齐 ibili 动画）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **设计变更（用户反馈驱动）**：用户指出旋转动画与 ibili 不一致且黑屏未解——此前重力旋转采用"手动 present 系统模态"（从底部推入黑色模态页，视频渲染链路不稳）；本轮改为与经典全屏同源的**页面旋转机制**：整页平滑旋转、视频顺势铺满、沉浸式隐藏工具栏/状态栏（动画与 ibili 同源）。AVKit 系统模态全屏仅保留给系统按钮路径（原生转场），模拟器探针实证的"视图先行 + 子控制器挂载"层级迁移与方向租约继续为其服务。
+- **已实现**：
+  - `VideoDetailRotationBridgeViewController`：重力观察器改为调用经典 `requestFullscreen()/requestExitFullscreen()`（含横屏视频转横屏、竖屏视频保持竖屏沉浸全屏的既有逻辑），AVKit 模态展示期间观察器不介入（由租约自由旋转）；`viewWillTransition` 移除实验早退，恢复经典旋转转场处理；`supportedInterfaceOrientations` 移除实验特判，统一跟随 `AppOrientationLock`（由 rotationCoordinator 按状态维护）；`updateOrientationLock` 实验分支仅保留租约让位判断。
+  - 手动 present 链路全量清理：`VideoDetailShellSurfaceHost`（enterNativeFullScreen/exitNativeFullScreen/handleNativeFullScreenDismissed + 两组回调接线）、`PlayerStateViewModel`（requestNativeFullScreen/onRequestNativeFullScreenPresentation/onNativeFullScreenRestoreInlineSurface/PiP 挂起与恢复方法 + willBegin detach + willEnd 还原回调）、`VideoSurfaceView`/`DirectUIKitPlayerSurfaceHostView`（detach/reattach 包装与 `onFullScreenDismissed`）。
+  - 保留：`pauseForAppBackground` 的全屏期间守卫、AppDelegate 生命周期与观察器诊断日志（本轮继续取证，下轮清理）。
+- **已验证**：模拟器 `NativeFullscreenOrientationLeaseTests`+`SystemMiniPlayerCoordinatorTests`+`UserSeekRevealSettlingTests`+`NavigationHistoryTests` **48/48 通过**；Release 构建 `codesign --verify` 通过，`bili.app/bili` SHA-256：`5b11dd2c4e14d2f92b83444dc8399e96464930bfb8d884031308cc625b86c200`，已安装并拉起，设备模拟方向已复位竖屏。
+- **真机待验证**：1）播放页物理旋转→整页平滑旋转、视频铺满横屏（ibili 式动画）、工具栏/状态栏隐藏；2）转回竖屏自动退出并恢复；3）系统全屏按钮（若显示）点击进入 AVKit 原生全屏、弹幕/字幕/玻璃设置按钮跟随、✕ 退出回正；4）退出播放页其余页面竖屏。
+
+
+### 2026-11-18（局部修改：实验模式补回液态玻璃全屏按钮，接入经典旋转全屏）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **背景**：竖屏锁定下 AVKit 不渲染系统全屏按钮（其固有行为），竖屏缺全屏入口。补回液态玻璃全屏按钮（左上角、展开箭头图标），但接入**经典旋转全屏机制**（与重力旋转同源：横屏视频转横屏铺满、竖屏视频竖屏沉浸全屏），不再走此前不稳的系统模态手动 present。
+- **已实现**（`VideoDetailShellSurfaceHost`）：存储 `onRequestFullscreen/onExitFullscreen` 回调；实验分支创建玻璃全屏按钮（左上角 40×40），点击按 `rotationCoordinator.isLandscape/isPortraitFullscreen` 状态切换进入/退出；随原生控制栏可见性淡入淡出（`areNativePlayerControlsVisible` 同步任务）；AVKit 系统模态全屏展示期间隐藏（避免双入口）。
+- **已验证**：模拟器四套回归 **48/48 通过**；Release 构建 `codesign --verify` 通过，`bili.app/bili` SHA-256：`bc7bf0cfd202d8680a9d37626f4c55a1e92dbdfeb7a65ce0d0f46a6c855cc064`，已安装并拉起，设备方向复位竖屏。
+- **真机待验证**：1）竖屏播放页左上角玻璃全屏按钮出现且点击进入全屏（横屏视频转横屏铺满/竖屏视频竖屏沉浸）、动画与重力旋转一致；2）全屏中再点按钮或转回竖屏退出；3）物理旋转→整页平滑旋转视频铺满（上轮机制）；4）系统全屏按钮（横屏视频时若出现）进入 AVKit 原生全屏正常；5）按钮随控制栏显隐、不与弹幕设置按钮重叠。
+
+
+### 2026-11-18（局部修改：实验模式恢复自由旋转以显示系统全屏按钮，移除玻璃按钮与重力观察器）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送）
+- **设计变更（用户明确只要系统自带全屏按钮）**：竖屏锁定下 AVKit 不渲染系统全屏按钮是其固有行为；本轮恢复详情页置顶时的自由旋转（`updateOrientationLock` 实验分支在租约空闲时 `AppOrientationLock.update(.allButUpsideDown)`）——此前真机实测（本轮 Build 3 阶段）该状态下竖屏视频的系统全屏按钮会出现。页面旋转由经典旋转机制处理（`viewWillTransition` 全量处理，视频铺满 + 沉浸式 chrome，与 ibili 同源观感），AVKit 模态全屏转场期间方向仍由租约持有。
+- **已实现**：移除重力方向观察器（start/stop/handle + 属性 + 生命周期挂钩）——自由旋转 + 经典机制接管，模态全屏内旋转由租约自由处理；移除液态玻璃全屏按钮（属性/创建/可见性同步/隐藏逻辑）；保留 `pauseForAppBackground` 全屏守卫与诊断日志。
+- **已验证**：模拟器四套回归 **48/48 通过**；Release 构建 `codesign --verify` 通过，`bili.app/bili` SHA-256：`197ce95697012855d441c77f46d4c01f8cefe54fa27fe1496709d8334e88abd1`，已安装并拉起，设备方向复位竖屏。
+- **真机待验证**：1）竖屏播放页系统控件栏出现自带全屏按钮（至少竖屏视频；横屏视频按 AVKit 规则可能仍隐藏——横屏时旋转手机即等效全屏）；2）点击系统按钮进入 AVKit 原生全屏，弹幕/字幕/玻璃设置按钮跟随，✕ 退出回正；3）物理旋转整页平滑旋转、视频铺满、转回恢复；4）退出播放页其余页面竖屏。
+- **已知取舍**：横屏视频的系统按钮按 AVKit 规则可能不显示（旋转即等效全屏）；若用户要求横屏视频也要按钮，再单独评估。
+
+
+### 2026-11-18（局部修改：抵消透明导航栏残留安全区，恢复竖屏 16:9 原生全屏按钮与设置按钮避让）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送；保留工作区所有既有本地改动）
+- **根因定位（模拟器实际控件树与安全区矩阵实测）**：
+  - 首页／搜索／我的／直播／动态分支推入 `VideoDetailView` 时均启用 `usesTransparentNavigationBar = true`（`.toolbarVisibility(.visible, for: .navigationBar)`）。`UINavigationController` 向 pushed `NavigationStackHostingController` 注入约 `54pt` 导航栏高度的顶部安全区（`116pt = window 62pt + navBar 54pt`）。
+  - `VideoDetailSwiftUIContainerViewController` 已用 `playbackSafeAreaInsets` 把 SwiftUI 玩家窗口摆在 `y = 62pt`，但未剥离 `NavigationStackHostingController` 的残留 `54pt` UIKit 安全区（且 UIKit 不允许子级用负 `additionalSafeAreaInsets` 扣减父视图安全区），导致内嵌 `AVPlayerViewController` 继承 `safeAreaInsets.top = 54pt`。在竖屏 16:9 播放器（`248pt` 高）内，扣除 `54pt` 后剩余高度不足以容纳顶部＋中部＋底部三排玻璃控件，AVKit 将 `AVMobileGlassDisplayModeControlsView`（含 `Fullscreen Button` 与 AirPlay）及 `AVMobileGlassVolumeControlsView`（静音）折叠隐藏为 `0×0`（而竖屏视频因高达 `621pt` 才侥幸可见，此前误以为是 AVKit 对横屏视频的规则）。
+  - 同时发现：`VideoDetailShellSurfaceHost.updateNativeOptionsButtonPosition` 原按播放器自身 `bounds.width > bounds.height` 判断横屏（竖屏 16:9 播放框 `440×248` 恒为真），且 `nativeTopRightControlFrame` 未识别 `AVMobileGlassVolumeControlsView`；另外 `PlayerStateViewModel` 在全屏租约 `onRelease` 回调中仍残留将 `AppOrientationLock` 设为 `.portrait` 的旧代码。
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift`：新增 `viewWillAppear`（提前置 `isViewActive` 并同步 `updateOrientationLock()`）、`viewSafeAreaInsetsDidChange` 与 `reconcileTransparentNavigationBarSafeAreaIfNeeded()`（仅对 `usesTransparentNavigationBar` 下的 pushed `NavigationStackHostingController` 以 `additionalSafeAreaInsets.top = -max(0, baseTop - windowTop)` 精确抵消 `54pt` 残留安全区，模态全屏覆盖期间跳过）。
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`：补充 `safeAreaInsetsDidChange()` 同步触发 `applyNativePlayerLayout()`，并将 `desiredTopInset` 统一设为 `-residualTop`（取消仅限横屏的限制，作为直连父控制器场景兜底）。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：`updateNativeOptionsButtonPosition` 改为依据 `referenceView.window?.bounds` 判定横竖屏，`nativeTopRightControlFrame` 放开到竖屏并匹配 `VolumeControls` 视图，将竖屏设置按钮移至原生静音按钮左侧（`top: safeAreaInsets.top + 8, trailing: -56` 或动态左移 `10pt`）避免重叠。
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：全屏租约 `onRelease` 改回 `AppOrientationLock.update(to: .allButUpsideDown, in: scene)`，保证退出原生全屏后详情页自由旋转与系统全屏按钮持续有效。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：新增 `testPortraitNativeControlsExposeFullscreenButtonUnderTransparentNavigationBar`，在真实 `TabView` + `NavigationStack` + `VideoDetailView`（`usesTransparentNavigationBar = true`）下实测 `vc.safeAreaInsets.top == 0`、`Fullscreen Button` 非隐藏且尺寸非零、设置按钮与系统静音按钮无交叉且 `AppOrientationLock == .allButUpsideDown`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - 6 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`NavigationHistoryTests`、`PlaybackDetailSharedLayoutTests`、`VideoDetailSurfaceHostTests`）：**107/107 通过**（0 失败、0 跳过，证据 `build/logs/native-fullscreen-controls-fix.xcresult`）；未重跑全量 1200+ 单元或 UI 测试集。
+  - `git diff --check`：通过。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`d72a190175e707dd67893cd3d8435c6b02f04cad09c91e4fd8820f6701ddcc5d`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：1）开启「原生播放器控件（实验）」从首页打开普通 16:9 横屏视频，轻触播放器确认竖屏左上角出现系统自带全屏按钮与 AirPlay、右上角出现系统静音按钮且设置按钮在静音左侧不重叠；2）点击系统全屏按钮进入 AVKit 原生全屏并自动转横屏，弹幕/字幕/设置按钮正常随行；3）点全屏退出按钮（`✕`）回正竖屏，确认页面方向恢复、再次点开控制栏仍能正常显示全屏按钮；4）物理旋转与退出播放页后其余页面保持竖屏。
+
+
+### 2026-11-18（局部修改：实验模式设置与新增清晰度按钮移至进度条上方右对齐，匹配原生液态玻璃容器）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送；保留工作区所有既有本地改动）
+- **目标**：开启「原生播放器控件（实验）」时，1）将设置按钮移至原生进度条上方并与进度条右对齐，液态玻璃容器效果贴近 AVKit 原生控制栏质感；2）在设置按钮左侧新增清晰度按钮，参考非实验版 `VideoDetailInlineQualityMenuControl` 的交互与状态显示，同样采用贴近原生控件的液态玻璃容器效果。
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：
+    - 新增 `makeNativeControlsGlassGroup()` 与 `wrapInNativeClearGlass(_:)`，使用 `UIVisualEffectView(effect: UIGlassContainerEffect())`（`spacing = 8`、`overrideUserInterfaceStyle = .dark`、`accessibilityIdentifier = "ui.player.nativeControlsGroup"`）作为共享液态玻璃容器，内部横向排列左侧清晰度按钮与右侧设置按钮；双按钮外层统一包裹交互式清澈 `UIGlassEffect(style: .clear)`（`isInteractive = true`、`tintColor = UIColor.black.withAlphaComponent(0.16)`、`cornerConfiguration = .capsule()`），高 `38pt` 与 AVKit 原生玻璃控件一致。
+    - 在设置按钮（`ui.player.nativeOptionsButton`，`38×38`）左侧新增清晰度胶囊按钮（`ui.player.nativeQualityButton`，高 `38pt`、宽 `56...108pt`），由 `updateNativeQualityButton` 响应 `detailViewModel.playbackRenderStore.qualityControlStore` 更新，实时显示当前档位（`qualityInlineButtonTitle`）或切换态文案（`qualityAccessoryButtonTitle`），无可选档位时回退显示 `"清晰度"` 并置灰禁用；通过共用 `makeQualityMenuActions` 构建 `UIMenu`（`showsMenuAsPrimaryAction = true`），竖屏内嵌与全屏态均可就地调用 `detailViewModel.selectPlayVariant`。
+    - 新增 `attachNativeControlsContainer` 与 `nativeBottomProgressBarFrame(in:relativeTo:)`，更新 `updateNativeOptionsButtonPosition` 与 `layoutSubviews()`：从 AVKit `TransportControls` 内识别底部进度条行（`GlassBacked` 行 / `TimelineView` + `AuxiliaryControlsView` 并约束在 `TransportControls` 边界内），将按钮组定位在进度条上方 `8pt`（超矮容器 < `230pt` 时为 `6pt`）且右边缘与进度条右对齐，全屏时随 `syncNativeFullScreenOverlays` 移入 `playerVC.contentOverlayView` 置顶并保持安全区避让，与 `startNativeControlsVisibilitySync` 同步显隐。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：更新并扩展 `testPortraitNativeControlsExposeFullscreenButtonUnderTransparentNavigationBar`，实测校验 `UIGlassContainerEffect`、交互式 `UIGlassEffect`、清晰度位于设置左侧、按钮组严格位于竖屏进度条上方且右对齐无遮挡，以及 `qualityControlStore` 更新（`1080P`、双档 `UIMenu`、`切换中` 状态）时右对齐持续稳定。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - 6 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`NavigationHistoryTests`、`PlaybackDetailSharedLayoutTests`、`VideoDetailSurfaceHostTests`）：**107/107 通过**（0 失败、0 跳过，证据 `build/logs/native-controls-bottom-right.xcresult`）；横屏全屏 `contentOverlayView` 实机交互及全量测试未跑，列为真机待验证。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`d64c9baa236210e66fcfe0c5b6adf08c5e02e215cfcca7d276bbd9a0070b7f32`，已安装并拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：1）开启「原生播放器控件（实验）」进入视频详情页，确认竖屏与原生全屏（含横屏安全区）下清晰度按钮位于设置按钮左侧，两者都在进度条上方且右侧与进度条右对齐，液态玻璃容器视觉贴近原生 AVKit 控件且亮/暗画面均有清晰可读性；2）点击清晰度与设置按钮均正常弹出 `UIMenu` 并触发换档（「切换中」→新档位后仍保持右对齐）及弹幕/字幕/更多设置；3）控制栏隐藏与唤起时按钮组同步淡出淡入，不遮挡中心快进与底部进度条触控。
+
+
+### 2026-11-18（局部修改：对齐原生 AVKit 液态玻璃材质参数，KVO + CADisplayLink 零延时同步显隐）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送；保留工作区所有既有本地改动）
+- **根因定位（模拟器深层图层与逐帧动画采集实测）**：
+  - **材质差距**：实测 iOS 27 `AVPlayerViewController` 激活态下，`AVMobileGlassTimelineView` 与 `AVMobileGlassAuxiliaryControlsView` 的底层材质样式均使用 `.regular`（`style = 0`，`subdued = 1`，搭配深色压暗与细微描边，且 `AVMobileGlassControlsStyleSheet` 在内嵌态高 `38pt` / 间距 `6pt`、全屏态高 `44pt` / 间距 `12pt`、图标线宽适中）；此前按钮组使用的 `UIGlassEffect(style: .clear)` + `0.16` 黑染色会产生明显白色高光双边与放大折射，显得过亮突兀。
+  - **显隐延时**：实测 AVKit 显现动画仅约 `80ms`、淡出隐藏约 `140ms`，且各子控制条（`DisplayModeControls`、`TimelineView`、`AuxiliaryControls`、`PlaybackControls`）的 `alpha` 在第 `0ms` 即切换到目标值，`AVMobileGlassControlsView.isHidden` 则在显示起始置 `false`、隐藏完成才置 `true`。此前 `120ms` `Task.sleep` 轮询检查 `presentation().opacity > 0.05` 并叠加一段 `0.18s` `UIView.animate`，累计滞后 AVKit 约 `200~350ms`。
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：
+    - 将 `wrapInNativeClearGlass` 改为 `wrapInNativeMediaGlass`，采用 `UIGlassEffect(style: .regular)`（`isInteractive = true`、`tintColor = UIColor.black.withAlphaComponent(0.26)`）与 `.medium` 图标字重；新增 `NativeControlsGlassGroup` 结构，根据全屏/内嵌切换自动匹配 `38pt`（间距 `8`、文字 `13pt`、图标 `15pt`）/ `44pt`（间距 `10`、文字 `14pt`、图标 `17pt`）尺寸规范，`updateNativeOptionsButtonPosition` 同步按对应高度与间距（内嵌 `6/8pt`、全屏 `10pt`）避让计算。
+    - 移除 `120ms` 轮询任务与二次延迟动画，新增 `NativeControlsVisibilitySynchronizer`（使用弱引用代理 `DisplayLinkProxy` 避免持有环）：KVO 监听 `AVMobileGlassControlsView.isHidden` 与子控制条的 `alpha`/`isHidden` 在 `0ms` 立即响应（并在淡出首帧即禁用交互），动画期间以 `60~120Hz` `CADisplayLink` 直接逐帧镜像原生控件的 `layer.presentation()?.opacity` 到 `container.alpha`，静止后自动暂停 `CADisplayLink`、`tearDown()` 阶段主动 `invalidate()` 清理。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：更新 `testPortraitNativeControlsExposeFullscreenButtonUnderTransparentNavigationBar`，增加 `UIGlassEffect.tintColor`（`alpha ≈ 0.26`）与内嵌 `38pt` 高度断言，并模拟 AVKit 控制栏显现（`0.08s`）与淡出（`0.14s`）过程校验淡出起始瞬间即关闭交互、淡入/淡出结束后透明度和原生完全收敛。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - 6 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`NavigationHistoryTests`、`PlaybackDetailSharedLayoutTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`VideoDetailSurfaceHostTests`）：**107/107 通过**（0 失败、0 跳过，证据 `build/logs/native-controls-glass-sync.xcresult`）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`8add1980d8bd7b46609e5a8538196f72d2930fd365e51d6a5283d555645a9f97`，已安装 `app.bamboo2779.brussels691` 至真机；因真机当时处于锁屏状态，自动拉起返回 `FBSOpenApplicationErrorDomain error 7 (Locked)`，需解锁后手动点开验证。
+- **真机待验证**：1）解锁 `RCe2027` 打开新装应用并开启「原生播放器控件（实验）」，核对清晰度与设置按钮液态玻璃在亮/暗画面与全屏（44pt）/竖屏（38pt）下与官方控件质感一致；2）点击与自动隐藏/唤起视频控制栏，确认两颗按钮出现/淡出与原生控制栏 0 延时完全同步、无拖影、不滞后。
+
+
+### 2026-11-18（局部修改：隔离播放器深色环境，修复浅色模式下原生视频控件发白）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送；保留工作区所有既有本地改动）
+- **根因定位（真机截图对照 + 模拟器真实 GPU `simctl io screenshot` 隔离实测）**：
+  - 进入详情页时 `RootTabView` 在外层设置 `.preferredColorScheme(.dark)`（使顶部状态栏文字为白色），内层注入 `.environment(\.colorScheme, .light)`（保持下方简介/评论区为浅色白底）。
+  - iOS 27 `AVPlayerViewController` 内部控制栏（`AVMobileGlassControlsView`）由嵌套 SwiftUI `UICoreHostingView` 渲染，会跨层直接读取上层 SwiftUI 的 `\.colorScheme` 环境值（仅设 UIKit `overrideUserInterfaceStyle = .dark` 无法阻断 SwiftUI 环境传递），导致浅色外观下原生进度条与各圆钮按浅色液态玻璃合成而整体泛白、时间戳及 `...` 文字变深灰黑。
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift`、`bili/Sources/Features/Player/BiliPlayerViewContent.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/UIKitPlayerSurfaceHostView.swift`：在播放器表面代表视图上显式注入 `.environment(\.colorScheme, .dark)`，阻断外层 `.light` 环境向 `AVPlayerViewController` 内部 `UICoreHostingView` 渗透，同时不影响下方浅色页面和评论/操作面板。
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/DirectUIKitPlayerSurfaceHostView.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：为 `NativeFullScreenPlayerViewController`（`init` / `viewDidLoad` 及 `view`）、`VideoSurfaceContainerView` 和播放壳宿主同步补齐 `overrideUserInterfaceStyle = .dark`，保障原生全屏模态页同样维持深色液态玻璃样式。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：在回归宿主中复刻 `RootTabView` 的 `.environment(\.colorScheme, .light)` + `.preferredColorScheme(.dark)` 组合，新增断言验证详情页桥接控制器保持 `.light` 而内嵌 `AVPlayerViewController` 及其视图保持 `.dark`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - 真实详情页浅色模式 GPU 帧缓冲实拍（`simctl io screenshot`）验证：原生进度条、白色时间戳、全屏/投屏/暂停圆钮全部恢复深色通透液态玻璃，与 `720P + 设置` 玻璃按钮质感一致，下方页面维持浅色白底。
+  - 6 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`NavigationHistoryTests`、`PlaybackDetailSharedLayoutTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`VideoDetailSurfaceHostTests`）：**107/107 通过**（0 失败、0 跳过，证据 `build/logs/native-controls-dark-fix.xcresult`）；未跑全量测试或 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`fd209dffa868644862e2d5c406a9d5ea6f5e246b7d2db2ca0511869d6bb11ae7`，已安装并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：浅色模式下打开视频详情页，确认原生视频控件（进度条、时间字、静音、全屏与中央播放键）恢复深色通透液态玻璃不再发白，且进入/退出系统全屏与切换深浅色外观均正常。
+
+
+### 2026-11-18（局部修改：设置新增原生控件 `showsPlaybackControls`、`speeds`、`allowsPictureInPicturePlayback` 独立开关）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送；保留工作区所有既有本地改动）
+- **目标**：在设置中为系统 `AVPlayerViewController` 的 `speeds`、`showsPlaybackControls`、`allowsPictureInPicturePlayback` 分别增加独立开关，并支持播放中实时切换生效。
+- **已实现**：
+  - `bili/Sources/Utilities/AVPlayerStartupPathOptimizationExperiment.swift`、`bili/Sources/Storage/LibraryStore.swift`：扩展 `NativePlaybackControlsExperiment` 与 `LibraryStore`，新增 `nativePlaybackControlsShowsPlaybackControls`（默认 `true`）、`nativePlaybackControlsSpeedsEnabled`（默认 `true`）、`nativePlaybackControlsAllowsPictureInPicturePlayback`（未显式设置时回退跟随现有画中画开关，显式操作后独立持久化）及对应 setter。
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`、`bili/Sources/Features/Player/PlayerStateViewModel.swift`、`bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/DirectUIKitPlayerSurfaceHostView.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/UIKitPlayerSurfaceHostView.swift`：为 `NativeFullScreenPlayerViewController` 增加 `nativeAllowsPictureInPicturePlaybackOverride` 并在三处原生控制器重配路径统一遵守，避免引擎/VM 画中画刷新互相覆盖；`VideoSurfaceContainerView` 新增 `setShowsSystemPlaybackSpeeds`（开关控制 `AVPlaybackSpeed.systemDefaultSpeeds` 与 `[]`）及 `setNativeAllowsPictureInPicturePlayback`。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：订阅 `LibraryStore` 三个开关实时推送到播放器并在下帧重算 `720P + 设置` 玻璃按钮组右对齐位置；当 `showsPlaybackControls == false` 时同步隐藏自定义玻璃按钮组并暂停交互；同时在播放器内「更多播放设置」（竖屏列表与横屏侧栏）实验开启态下展示三项开关。
+  - `bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift`、`bili/Sources/Features/Mine/MinePlaybackToolsSection.swift`、`bili/Sources/Features/Mine/MineSearchCatalog.swift`：在「我的 → 开发者与诊断 → 实验开关」与「我的 → 播放设置 → 原生视频控件」两处同步提供三项开关，并补充设置搜索索引关键词。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：新增 `testNativePlaybackControlsSettingsSwitchesLiveUpdatePlayerViewController`，覆盖 `LibraryStore` 持久化重载与详情页在线切换三项开关的实时生效断言。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - 8 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`NavigationHistoryTests`、`PlaybackDetailSharedLayoutTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`VideoDetailSurfaceHostTests`、`MineSearchCatalogTests`）：**175/175 通过**（0 失败、0 跳过，证据 `build/logs/native-controls-switches.xcresult`）；未跑全量单元测试与 UI 测试集。
+  - `git diff --check`：通过。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`139209905e4f0c17ff3019d5d14263cd45b60907407e7ca93e1bd14e2790e842`，已安装（`databaseSequenceNumber: 5928`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：开启「原生播放器控件（实验）」后，在「我的 → 播放设置 / 开发者与诊断」或视频内「设置 → 更多播放设置」分别切换：1）`speeds` 关闭后右下角倍速按钮隐藏且 `720P + 设置` 自动跟随加宽进度条右对齐；2）`allowsPictureInPicturePlayback` 开启/关闭时左上角胶囊内画中画按钮实时出现/消失；3）`showsPlaybackControls` 关闭后隐藏全部控制栏、重新开启后恢复。
+
+
+### 2026-11-18（局部修改：关闭原生 `showsPlaybackControls` 时保留自定义双击与横纵滑动手势）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未推送；保留工作区所有既有本地改动）
+- **目标**：开启「原生播放器控件（实验）」并关闭 `showsPlaybackControls` 时，仅隐藏系统原生控件栏，保留 `NativePlayerSurfaceGestureController` 提供的双击暂停/播放、横向拖动进度、左右纵向调节亮度/音量及顶部胶囊 HUD。
+- **已实现**：
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`：移除 `configureNativeSurfaceGestures()` 中的 `showsSystemPlaybackControls` 前置守卫，只要处于原生播放控制器激活态（`isNativePlaybackControllerEnabled`）即维持挂载自定义表面手势。
+  - `bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift`：在 `attach(to:viewModel:)` 复用已有宿主分支补齐 `containerView.isUserInteractionEnabled = true` 与 `hostingController.view.isUserInteractionEnabled = true`，防止 `showsPlaybackControls` 切换时 `contentOverlayView` 交互被系统复位。
+  - `biliTests/PlayerFormalPlaybackConfigurationTests.swift`、`biliTests/NativeFullscreenOrientationLeaseTests.swift`：补充 `showsPlaybackControls = false` 下双指外单指 `UIPanGestureRecognizer`、双击 `UITapGestureRecognizer` 保持挂载及真实详情页中心点 `hitTest` 命中 `contentOverlayView` 手势层的断言。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，`-parallel-testing-enabled NO`）**：
+  - 3 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`）：**85/85 通过**（0 失败、0 跳过，证据 `build/logs/native-controls-gestures-keep.xcresult`）；未跑全量单元测试与 UI 测试集。
+  - `git diff --check`：通过。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`f07dcfaad98eaf50172a9a6de0e0952bbca8b03da63f8aef7c77b74b188e594d`，已安装（`databaseSequenceNumber: 5936`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：关闭 `showsPlaybackControls` 后进入或继续播放视频，确认系统原生控制栏隐藏的同时，双击播放/暂停、横向滑动调进度、左侧上下滑调亮度、右侧上下滑调音量及顶部胶囊提示均正常可用。
+
+
+### 2026-11-18（方案 1：升级全自写播放控制栏为官方同款深色液态玻璃 + 未开启原生实验时自动收起 3 个子开关）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送；保留工作区所有既有本地改动）
+- **目标**：保持首页卡片与评论区 `biliPlayerClearGlass` 原样不变，将全自写播放控制栏与播放器内浮层升级为官方同款深色液态玻璃（`.regular.tint(.black.opacity(0.26))` + 固定 `.environment(\.colorScheme, .dark)`），并保持 `NativePlaybackControlsExperiment.defaultIsEnabled = false`，未开启原生实验时自动收起 `showsPlaybackControls`、`speeds`、`allowsPictureInPicturePlayback` 3 个子开关。
+- **已实现**：
+  - `bili/Sources/Features/Player/PlayerClearGlassModifiers.swift`：保留 `biliPlayerClearGlass` 与 `BiliPlayerClearGlassModifier` 原样不变；新增 `biliPlayerMediaGlass(interactive:in:isEnabled:)` 与 `BiliPlayerMediaGlassModifier`（iOS 26+ 使用 `.glassEffect(.regular.tint(.black.opacity(0.26)).interactive(interactive), in: shape)`，iOS 26 以下回退 `.background(.ultraThinMaterial, in: shape)`，并固定 `.environment(\.colorScheme, .dark)`）；将 `biliPlayerCompactGlassCircle` 与 `biliPlayerCompactGlassCapsule` 改为调用 `biliPlayerMediaGlass`。
+  - `bili/Sources/Features/Player/PlayerNativeControls.swift`、`bili/Sources/Features/Player/PlayerNativeControlButtonRow.swift`、`bili/Sources/Features/VideoDetail/VideoDetailInlineQualityMenuButton.swift`：为独立/直播宿主 `PlayerNativePlaybackControls` 注入 `.environment(\.colorScheme, .dark)`；将 `PlayerNativeTimeLabel` 与 `VideoDetailInlineQualityMenuControl` 切换为 `biliPlayerMediaGlass`，并在 `VideoDetailQualityMenuUIButton` 设置 `overrideUserInterfaceStyle = .dark`。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：将 `overlayHostingController` 类型改为 `UIHostingController<AnyView>`，初始化时为 `overlayRoot` 注入 `.environment(\.colorScheme, .dark)`（保留横屏更多设置面板自身的 `.environment(\.colorScheme, scheme)` 跟随 App 主题）；将字幕/更多圆钮（`subtitleControlButton`、`moreControlsButton`）及全屏顶部时钟/电量胶囊改为 `biliPlayerMediaGlass`；新增 `#if DEBUG` 的 `revealPlaybackControlsForTesting()`（经 `state.playbackControlsRevealRequestGeneration` 唤起控制栏）。
+  - 播放器浮层、滑块与直播配件：`bili/Sources/Features/Player/PlayerStartupLoadingChrome.swift`、`bili/Sources/Features/Player/PlayerInlineLoadingIndicator.swift`、`bili/Sources/Features/Player/PlayerSpeedBoostIndicator.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceOverlayLayer.swift`、`bili/Sources/Features/Player/PlayerSeekPreviewOverlay.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift`、`bili/Sources/Features/Player/PlayerNativeProgressSlider.swift`（`.standard` 滑块圆点与 `.telegram` `TelegramProgressTrackGlassModifier`）、`bili/Sources/Features/Live/LivePlayerAccessory.swift` 全部切换为 `biliPlayerMediaGlass`。
+  - `bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift`、`bili/Sources/Features/Mine/MinePlaybackToolsSection.swift`：保持 `NativePlaybackControlsExperiment.defaultIsEnabled = false` 不变，仅在 `libraryStore.nativePlaybackControlsExperimentEnabled` 为 `true` 时展开渲染 `showsPlaybackControls`、`speeds`、`allowsPictureInPicturePlayback` 3 个子开关及 `mode == .user` 下的 `nativePlaybackControlsSection`。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：新增 `testCustomMediaGlassControlsKeepDarkEnvironmentUnderLightThemeHost` 与 `testNativePlaybackControlsSubTogglesCollapseWhenExperimentDisabled`，并在 `testPortraitNativeControlsExposeFullscreenButtonUnderTransparentNavigationBar` 与新测试中补充 `waitForPlayURLSettlement(on:)` 稳定异步恢复时序。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 8 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlaybackDetailSharedLayoutTests`、`NavigationHistoryTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`MineSearchCatalogTests`）：**177/177 通过**（0 失败、0 跳过，证据 `build/logs/scheme1-custom-media-glass.xcresult`）；未跑全量单元测试与 UI 测试集。
+  - 真实 GPU RenderServer 截图目视核验（浅色主题宿主 + `NativePlaybackControlsExperiment = false`，已清理临时截图脚本代码）：确认明蓝视频背景上的暂停圆钮、`00:10 / 00:11` 时间胶囊、`1080P` 清晰度胶囊、齿轮/全屏圆钮与 `.telegram` 8pt 进度条底槽均呈现深色通透液态玻璃（未发白），同时详情页下方简介/评论与操作区保持浅色模式；`grep` 确认 `biliPlayerClearGlass` 仅保留于非播放器文件（`VideoCoverBadges.swift`、`HomeFeedLastSeenMarkerCard.swift`、`VideoDetailCommentViewModifiers.swift`）；`git diff --check` 通过（0 警告）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh` 及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`60af26c34263739ab158e2bd11f9f45e7c39f40d0e321836bc6b1ffbbd1f7b0e`，已安装（`databaseSequenceNumber: 5952`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 真机浅色模式下播放视频，目视确认全自写控制栏与浮层 HUD 在明暗画面下均为深色通透液态玻璃，且横屏设置抽屉、首页卡片与评论区胶囊仍跟随 App 浅色主题。
+  - 在「我的 -> 播放与设置」及开发者诊断页核验未开启「原生播放器控件（实验）」时 3 个子开关默认收起、开启后展开。
+
+
+### 2026-11-18（切回主用原生播放控件 + 原生手势长按 2.0x 倍速与顶部深色玻璃胶囊提示）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送；保留工作区所有既有本地改动与 `biliPlayerMediaGlass` 深色玻璃修饰符）
+- **目标**：将系统 `AVPlayerViewController` 原生播放控件提升为主用默认（`defaultIsEnabled = true` 并对既有写入过 `false` 的设备执行一次性迁移），保持进度条上方右对齐「清晰度 + 设置」两颗深色玻璃按钮布局不变；在设置页常驻「使用原生播放控件」主开关并控制 3 个子开关收折；在 `NativePlayerSurfaceGestureController` 补齐长按 `2.0x` 倍速手势与顶部胶囊提示及防误触互斥。
+- **已实现**：
+  - `bili/Sources/Utilities/AVPlayerStartupPathOptimizationExperiment.swift`、`bili/Sources/Storage/LibraryStore.swift`：将 `NativePlaybackControlsExperiment.defaultIsEnabled` 改为 `true`，新增一次性默认迁移键 `primaryDefaultMigrationKey = "cc.bili.playback.nativePlaybackControlsPrimaryDefaultMigration.v2"` 与 `migratePrimaryDefaultIfNeeded(in:)`，在 `LibraryStore.init` 与 `stored(in:)` 中将未迁移过的本机配置一次性迁移为 `true` 并写入标记键；在 `setNativePlaybackControlsExperimentEnabled(_:)` 同步写入迁移标记键，确保迁移后用户手动关闭/开启自由持久化记忆。
+  - `bili/Sources/Features/Mine/MinePlaybackToolsSection.swift`、`bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift`、`bili/Sources/Features/Mine/MineSearchCatalog.swift`：在 `mode == .user` 下常驻渲染 `Section("原生视频控件")`，顶部放置「使用原生播放控件」主开关（`accessibilityIdentifier: "mine.playback.nativePlaybackControls"`），开启时在其下方展开 `showsPlaybackControls`、`speeds`、`allowsPictureInPicturePlayback` 三个子开关、关闭时自动收起 3 个子开关并退回全自写深色液态玻璃控制栏；同步更新开发者与诊断页主用/备选文案与搜索关键词。
+  - `bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift`、`bili/Sources/Features/Player/VideoSurfaceView.swift`：集成 `PlayerSpeedBoostModel` 与 `PlayerSpeedBoostIndicator` 至 `NativePlayerSurfaceGestureHUD`（顶部 `safeArea + 12pt` 居中、`.allowsHitTesting(false)`、`.environment(\.colorScheme, .dark)` 与 `overrideUserInterfaceStyle = .dark` 保持深色玻璃）；挂载 `UILongPressGestureRecognizer`（`minimumPressDuration = 0.28`、`allowableMovement = 24`、`cancelsTouchesInView = false`），在 `gestureRecognizerShouldBegin(_:)` 避开左右 24pt/安全区边缘与 `showsPlaybackControls == true` 时底部 52pt 原生进度条热区，并与 `panGesture`（`.seeking`/`.adjusting`）双向互斥；在 `detach()`、`cancelActiveInteraction()`、切换 `viewModel` 及 `willResignActiveNotification` 时自动兜底恢复原倍速。
+  - `biliTests/VideoDetailSurfaceHostTests.swift`、`biliTests/NativeFullscreenOrientationLeaseTests.swift`、`biliTests/PlayerFormalPlaybackConfigurationTests.swift`：为明确测试自定义 `AVPlayerLayer` / `ui.player.more` 的用例补充显式关闭原生开关与 `defer` 还原；更新 `testNativePlaybackControlsSubTogglesCollapseWhenExperimentDisabled` 验证默认 `true`、一次性迁移、手动关闭记忆与设置开关收折（`6 -> 3`）；补齐长按 `UILongPressGestureRecognizer` 挂载断言并新增 `testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 8 套定向单元测试（`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlaybackDetailSharedLayoutTests`、`NavigationHistoryTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`MineSearchCatalogTests`）：**178/178 通过**（0 失败、0 跳过，证据 `build/logs/native-primary-speedboost.xcresult`）；未跑全量单元测试与 UI 测试集。
+  - `git diff --check`：通过（0 警告）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh` 及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`c0f928cc4412644c45aac4d168d100a7afa1600716f925c8935fe5eff42f512f`，已安装（`databaseSequenceNumber: 5960`，`installationURL: file:///private/var/containers/Bundle/Application/6BFA3866-CB96-4255-BEEE-1A9F7615C4B5/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 真机覆盖安装后验证迁移自动开启系统原生播放控件，且横竖屏播放时进度条上方仍保持「清晰度 + 设置」两颗深色玻璃按钮；到「我的 -> 播放偏好」确认「使用原生播放控件」默认开启、关闭后可收起 3 个子开关并退回全自写深色玻璃控制栏。
+  - 在原生控件播放视频时，于画面中部及横屏全屏下长按触发顶部深色玻璃 `2.0x` 胶囊并加速至二倍速、松手恢复原倍速；验证长按底部原生进度条不会误触二倍速、拖动进度/亮度音量过程中长按不触发、长按 `2.0x` 期间手指微抖不误触发跳进度。
+
+
+### 2026-11-18（恢复原生播放控件完整链路 + 自定义手势触发时自动隐藏原生控件与触控隔离优化）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送；切回 `main` 并完整还原此前被误执行 `git restore` / `git checkout .` 清空的原生播放控件与深色液态玻璃改动，同时移除冗余临时 `Experimental/` 与半成品 `PlaybackControlsVisibilityArbiter.swift`）
+- **根因复盘与 `Ibili` 对标结论**：
+  - 此前「只显示自绘控件、无系统原生控件」并非架构锁死或沙盒限制，而是中途误执行 `git restore VideoDetailShellSurfaceHost.swift` 与 `git checkout .` 擦除了宿主层的 `NativePlaybackControlsExperiment.stored()` 分流逻辑，且误切旧分支、漏用 `Scripts/build-cache.py` 导致产物目录错位。
+  - 对标本地 `/Users/rayc/Desktop/ibili-review/Ibili`（`PlayerPresentationBridge.swift`）：`Ibili` 直接挂载 `AVPlayerViewController` 并在 `contentOverlayView` 内对自定义手势开启 `cancelsTouchesInView = true`、`delaysTouchesBegan = false`、`delaysTouchesEnded = true` 且对系统手势返回 `shouldRecognizeSimultaneouslyWith = false`，避免自定义手势松手时唤醒或重置 AVKit 原生控制栏。
+- **已实现**：
+  - `bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift`：
+    1. 参考 `Ibili` 触控隔离策略，为 `panGesture` 与 `longPressGesture` 开启 `cancelsTouchesInView = true`、`delaysTouchesBegan = false`（`longPressGesture.delaysTouchesEnded = true`），并在 `gestureRecognizer(_:shouldRecognizeSimultaneouslyWith:)` 中仅保留双击与系统单击共存，阻断拖动/长按与 AVKit 内部单击手势同时识别（普通快速单击因未达拖动/长按阈值仍零延迟直达系统原生控件）。
+    2. 新增 `areNativeControlsCurrentlyVisible(in:)` 实时检测 `AVMobileGlassControlsView` 及子控件可见态：原生控制栏可见时为 `panGesture` 与 `longPressGesture` 统一让出底部 `52pt` 原生进度条热区；原生控制栏淡出隐藏后放开全高滑动与长按区域。
+    3. 在横向调进度（`.seeking`）、纵向调亮度/音量（`.adjusting`）及长按 `2.0x` 倍速（`.boosting`）真正激活瞬间触发 `onCustomGestureSuppressionChanged(true, didGestureHideVisibleNativeControls)`：若系统控件当前可见则立即收起系统原生控制栏与「清晰度 + 设置」玻璃按钮组；若系统控件原本已隐藏则保持隐藏且松手不闪烁误弹；手势结束或中断时自动恢复用户设定的 `showsPlaybackControls` 状态。
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：为 `NativeFullScreenPlayerViewController` 增加 `isPlaybackControlsSuppressedBySurfaceGesture` 与 `onPlaybackControlsSuppressionChanged` 回调，并在 `NativeControlsVisibilitySynchronizer` 补充 `showsPlaybackControls` KVO 监听与重绑逻辑，确保手势开始同帧将自定义玻璃按钮组置为 `alpha = 0` 且禁交互、手势结束后无缝恢复同步。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`、`biliTests/PlayerFormalPlaybackConfigurationTests.swift`：新增 `testCustomSurfaceGesturesHideVisibleNativeControlsAndOptionsGroupDuringInteraction`（实测验证系统控件可见态横滑调进度、已隐藏态横滑不复弹、右侧竖滑调音量、长按 `2.0x` 倍速四类交互），并同步更新触控取消隔离契约断言。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 7 套播放器核心单元测试（`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlaybackDetailSharedLayoutTests`、`NavigationHistoryTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`）：**177/177 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+  - `git diff --check`：通过（0 警告）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh` 及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`3f39524e087252e48498add700ddedcfd22b4ea6c58a36c3b23f534a5ec0a988`，已安装（`databaseSequenceNumber: 6224`，`installationURL: file:///private/var/containers/Bundle/Application/4F2E81F3-8AA5-4530-8802-87293D02651D/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 打开任意视频，确认默认显示 Apple 系统原生播放控制栏 + 右下进度条上方对齐的「清晰度 + 设置」深色液态玻璃按钮，单击画面可正常呼出/收起原生控件。
+  - 在原生控制栏显示态下直接于画面中部左右滑调进度、上下滑调亮度/音量或长按 `2.0x` 倍速，确认系统原生控制栏与「清晰度 + 设置」玻璃按钮立即隐藏，仅展示干净的手势预览胶囊；在原生控制栏隐藏态下左右滑调进度松手后控制栏保持隐藏不误弹；拖动底部原生进度条仍归属系统滑杆不冲突。
+
+
+### 2026-11-18（修复全屏转场控制器层级崩溃 + 重力横屏左上角切换为「退出全屏」按钮并点击回正）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **真机崩溃取证与根因（`RCe2027` 崩溃日志 `bili-2026-11-18-172250.ips`）**：
+  1. **点击全屏按钮闪退根因**：`AVFullScreenViewController` 在 `-[AVFullScreenViewController attachContentView]` 中将 `playerViewController.contentOverlayView` 搬移至独立全屏控制器视图树下，而 `NativePlayerSurfaceGestureController.hostingController`（及 `syncNativeFullScreenOverlays` 中的 `overlayHostingController`）的 `parent` 仍指向内嵌 `NativeFullScreenPlayerViewController`，触发 UIKit `-[UIView(Hierarchy) _associatedViewControllerForwardsAppearanceCallbacks:performHierarchyCheck:isRoot:]` 层级一致性断言 `SIGABRT`。
+  2. **重力横屏左上角仍显示「全屏」图标根因**：物理重力横屏走详情页内嵌铺满机制（`rotationCoordinator.isLandscape == true && !isNativeFullScreenPresented`），`AVPlayerViewController` 自身未进入模态全屏，故系统仍在左上角 `AVMobileGlassDisplayModeControlsView` 玻璃胶囊内渲染进入全屏图标（`Fullscreen Button`）。
+- **已实现**：
+  - `bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：对标 `Ibili` 挂载方式，移除对 `contentOverlayView` 内 `hostingController` 的 `playerViewController.addChild` 绑定；`syncNativeFullScreenOverlays(isFullScreen:)` 在 `overlayView` 迁入 `contentOverlayView` 前先解除 `overlayHostingController.parent`，退回内嵌宿主后再重挂 `overlayOriginalParent`，彻底消除 `AVFullScreenViewController` 转场崩溃。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：新增 `nativeInlineExitFullscreenButton`（`arrow.down.right.and.arrow.up.left` 退出全屏图标、`accessibilityIdentifier: "ui.player.nativeInlineExitFullscreenButton"`），在内嵌重力横屏或竖屏沉浸全屏（`shouldOverrideInlineFullscreenButton == true`）时隐藏原生 `Fullscreen Button` 图标并原位居中叠加至原生 `AVMobileGlassDisplayModeControlsView` 液态玻璃胶囊左半格（右侧 AirPlay 原样保留），随 `NativeControlsVisibilitySynchronizer` 同频淡入淡出及手势隐藏，点击直接调用 `onExitFullscreen()` 平滑回正竖屏并恢复原生全屏按钮。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：新增 `testTappingPortraitNativeFullscreenButtonEntersAVFullScreenViewControllerWithoutHierarchyCrash`（实测点击原生 `Fullscreen Button` 触发 `AVFullScreenViewController` 转场不崩溃）与 `testGravityLandscapeReplacesTopLeftFullscreenButtonWithExitButtonAndRotatesBackToPortrait`（实测横屏原位替换为「退出全屏」按钮并点击平滑切回竖屏）。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 7 套播放器核心单元测试：**179/179 通过**（0 失败、0 跳过）；`git diff --check` 通过（0 警告）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh` 及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`7645d3582bca92c5f656ad73da2d05ca9a71bf7834ab24fdd6b3a1532f8f2b66`，已安装（`databaseSequenceNumber: 6240`，`installationURL: file:///private/var/containers/Bundle/Application/C93D0ECB-AD47-4C68-9E24-09E6FDD7CC57/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 竖屏播放视频时物理横握手机进入横屏全屏，确认左上角原生玻璃胶囊内已变为「退出全屏（↘↖）」按钮，点击后不闪退且平滑回正竖屏；竖屏下点击左上角系统全屏按钮进入 AVKit 原生全屏与点击 `✕` 退出亦无闪退。
+
+
+### 2026-11-18（统一手动点击全屏与重力横屏的液态玻璃效果与自动横屏链路 + 模态全屏深色与方向兜底）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **问题根因**：
+  1. **液态玻璃效果不一致 & 右下角按钮重叠**：此前手动点击竖屏左上角全屏按钮进入的是 AVKit 独立模态 `AVFullScreenViewController`（在 App 浅色主题下继承了 `UIWindow` 的 `.light` 泛白玻璃，且在右下角额外浮出 `[倍速 | 音频 | 字幕]` 胶囊压住 `1080P+`），而重力旋转进入的是详情页内嵌深色横屏（`VideoDetailRotationBridgeViewController`），两条路径控件形态与玻璃质感不一致。
+  2. **手动点全屏未自动横屏**：`AVFullScreenViewController` 模态弹出动画进行中 UIKit 吞掉了首次 `requestGeometryUpdate`，而 `beginFullscreenRotation()` 在动画结束时未像 `Ibili` 那样补发目标方向请求，且 `AppOrientationLock` 未遍历 `presentedViewController` 刷新方向支持。
+- **已实现**：
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：将左上角原位叠加按钮扩展为统一全屏/退出全屏切换按钮（竖屏内嵌态显示 `arrow.up.left.and.arrow.down.right`「全屏」并调用 `onRequestFullscreen()`，横屏或竖屏沉浸态切换为 `arrow.down.right.and.arrow.up.left`「退出全屏」并调用 `onExitFullscreen()`），使手动点击全屏与物理重力旋转走**完全同一套内嵌横屏旋转与深色液态玻璃控件**（16:9 视频点击立即平滑横屏、9:16 竖屏视频进入竖屏沉浸全屏，且右下角 `1080P+` 与设置按钮零重叠）；同时在 `nativeBottomProgressBarFrame` 合并 `AuxiliaryControlsView` 边界以兜底防重叠。
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`、`bili/Sources/Features/Player/NativeFullscreenOrientationLease.swift`、`bili/Sources/App/AppOrientationLock.swift`：对双指捏合等仍可能触发的 `AVFullScreenViewController` 模态路径同步强制 `overrideUserInterfaceStyle = .dark`，在 `beginFullscreenRotation()` 转场完成时对未达目标方向的场景补发 `requestGeometryUpdate`，并在 `AppOrientationLock.requestInterfaceUpdates` 遍历 `presentedViewController` 链刷新方向。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：扩展实测覆盖竖屏点击左上角「全屏」直接旋转进同款横屏、再点「退出全屏」回正竖屏，以及浅色窗口下模态全屏保持 `.dark` 且自动旋转为横屏。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 7 套播放器核心单元测试：**179/179 通过**（0 失败、0 跳过）；`git diff --check` 通过（0 警告）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh` 及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`f5f8034f3ba3e2017e1b07048a170c86c6de657162182df515f5a5f2ebc5e2f1`，已安装（`databaseSequenceNumber: 6248`，`installationURL: file:///private/var/containers/Bundle/Application/1E464F28-2384-4DD6-B344-3F0AC3959AF6/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 竖屏打开 16:9 横屏视频，分别测试「手动点击左上角全屏按钮」与「重力横转手机」，确认两者均平滑旋转进横屏全屏、液态玻璃效果与按钮排布 100% 一致、右下角 `1080P+` 与设置无重叠，点击左上角「退出全屏」或转回竖屏均可正常退出。
+
+
+### 2026-11-18（落地「原生底座 + 自绘控件」模式并设为默认，支持三档模式实时切换）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **方案背景**：Apple 官方 iOS SDK 未开放独立隐藏 `AVPlayerViewController` 原生 AirPlay、音轨、字幕系统胶囊的公开开关；用户选定采用**「原生底座 + 自绘控件」**架构——底层保留官方 `AVPlayerViewController` 画面底座（`showsPlaybackControls = false`，继承控制器级 HDR 动态范围与系统画中画），上层使用 App 自绘深色液态玻璃控制栏与一体手势。
+- **已实现**：
+  - `bili/Sources/Utilities/AVPlayerStartupPathOptimizationExperiment.swift`、`bili/Sources/Storage/LibraryStore.swift`：新增 `NativePlaybackControlsOverlayMode`（`.customOverlay`「原生底座 + 自绘控件」、`.systemControls`「系统原生控制栏」、`.gestureOnly`「纯净手势（无控制栏）」）及一次性迁移标记 `customOverlayDefaultMigrationKey`（升级后首次启动自动将默认模式迁移至「原生底座 + 自绘控件」，后续手动修改正常持久化）。
+  - `bili/Sources/Features/Player/VideoSurfaceView.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/DirectUIKitPlayerSurfaceHostView.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/UIKitPlayerSurfaceHostView.swift`、`bili/Sources/Features/Player/BiliPlayerViewContent.swift`：将 `prefersNativePlaybackControls`（原生画面底座）与 `showsSystemPlaybackControls`、`enablesNativeSurfaceGestures` 解耦；在「原生底座 + 自绘控件」模式下挂载 `AVPlayerViewController(showsPlaybackControls: false)`，自动卸载 `NativePlayerSurfaceGestureController` 避免双手势层竞争，关闭暂停态 Vision OCR 框遮挡，并让画中画直接跟随 App 全局画中画开关。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`、`bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift`、`bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift`：按需懒加载系统控件附加玻璃按钮组（默认「原生底座 + 自绘控件」下零冗余 UIKit 子视图），打通 `PlayerOverlayHostRoot` 自绘深色液态玻璃控制栏、触控路由与 `rotationCoordinator` 横竖屏旋转策略，支持播放中途在三档控件模式及裸 `AVPlayerLayer` 间无损热切换而不重建 `AVPlayer`。
+  - `bili/Sources/Features/Mine/MinePlaybackToolsSection.swift`、`bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift`、`bili/Sources/Features/Mine/MineSearchCatalog.swift`：在「我的 → 播放偏好」「开发者与诊断」及播放器竖屏/横屏「更多播放设置」同步提供「使用原生播放底座」总开关与「控件层模式」三档选择器（仅在切至「系统原生控制栏」时展开 `speeds` 与 `allowsPictureInPicturePlayback` 子开关）。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 新增 `testNativeSurfaceWithCustomControlsModeMountsAVPlayerViewControllerAndInteractiveCustomGlassOverlay`，覆盖旧配置自动迁移、`AVPlayerViewController(showsPlaybackControls: false)` 挂载、自绘深色玻璃控件触控命中、全屏旋转及运行期热切换。
+  - 12 套单元测试（`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`ActivePlaybackCoordinatorTests`、`PlaybackRecoveryBaselineTests`、`PlayerOverlappingSeekTests`、`StartupResumeSeekOwnershipTests`、`PlaybackDetailSharedLayoutTests`、`NavigationHistoryTests`、`SystemMiniPlayerCoordinatorTests`、`UserSeekRevealSettlingTests`、`MineSearchCatalogTests`）**全部通过（0 失败、0 跳过）**；`git diff --check` 通过（0 警告）。未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh` 及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`c462be338bd99cb95fe0b13697452de2bf16fd331f83c91426a3831aa4ff1ac4`，已安装（`databaseSequenceNumber: 6280`，`installationURL: file:///private/var/containers/Bundle/Application/B24ABB6C-503C-40A6-899C-24DF2E5A8596/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 直接打开任意横屏/竖屏视频，确认默认即为「原生底座 + 自绘控件」模式：无系统 AirPlay / Audio / Subtitles 胶囊，显示自绘深色液态玻璃控制栏（播放/暂停、时间胶囊、进度条、弹幕开关、清晰度、设置、全屏按钮），手动点击全屏与重力横屏体验一致，双击/横滑调进度/上下滑亮度音量/长按 `2.0x` 倍速与后台画中画均正常；可在「更多播放设置」或「我的 → 播放偏好」随时切换「控件层模式」。
+
+
+### 2026-11-18（优化「原生底座 + 自绘控件」横滑进度调节速度：零遮罩直通出帧 + 纯 UIKit 120Hz 手势 + 速度自适应倍率）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **问题根因**：
+  1. 自绘控件手势与进度条松手提交时沿用了旧裸 `AVPlayerLayer` 的 `holdCurrentFrameForSeek` 同步截图与 `releaseForSeekTransition` 轮询遮罩（固定 `60ms` hold + `3×16ms` 连续采样等待 + `90ms` 移除延迟，慢网最长死等 `1500ms`），人为遮挡了 `AVPlayerViewController` 硬件已解出的目标帧。
+  2. `BiliPlayerSurfaceGestureLayer` 原先使用 4 组 SwiftUI `simultaneousGesture` 并发竞争，激活首帧丢弃起始位移（`horizontalSeekLastTranslationWidth = dx; return`），且每帧写回多个 `@State` 并在 `horizontalSeekStart` 强制点亮整套底部液态玻璃控制栏、`PlayerSeekPreviewModel` 在 `@MainActor` 同步执行 `preparingForDisplay()` 雪碧图解码并每帧重复广播 `@Published presentation`。
+  3. 长视频全屏宽固定映射为 `90s`，快速拨动时推进跨度偏小。
+- **已实现**：
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`、`bili/Sources/Features/Player/BiliPlayerView.swift`：新增 `usesNativePlaybackSurfaceController`，当底层挂载 `AVPlayerViewController` 时对表面横滑与底部进度条全面跳过同步截屏遮罩与轮询等待，松手零延迟直通出画并即时回调 `finishUserSeekVisualReveal()` 恢复音频。
+  - `bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceGestureActions.swift`：将表面手势切换为纯 UIKit `UIGestureRecognizer` 宿主（保留激活首帧完整位移、消除 120Hz `@State` 丢帧），并在横滑开始时立即收起底部液态玻璃控制栏，避免滑动期间整棵控制栏高频重排；外层保留 `ui.player.surface` 无障碍按钮契约。
+  - `bili/Sources/Features/Player/PlayerHorizontalSeekSensitivity.swift`、`bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift`：新增 `effectiveSecondsPerFullWidth(duration:horizontalVelocity:)`——慢滑微调（`≤ 260 pt/s`）保持 `90s / 屏宽` 帧级精度，快滑拨动（`260～1600 pt/s`）按平滑二次曲线自动提速至最高 `240s～540s / 屏宽`（长视频快拨一屏可跨 4～9 分钟，减速即刻回到精细微调）。
+  - `bili/Sources/Features/Player/PlayerSeekPreviewModel.swift`：将雪碧图裁剪与 `preparingForDisplay()` 位图解码移至 `Task.detached(priority: .userInitiated)` 后台执行，并按整秒与分片去重 `updateScrub` 的 `@Published` 广播。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 7 套寻帧与手势核心单元测试（`PlayerHorizontalSeekSensitivityTests`、`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlayerOverlappingSeekTests`、`UserSeekRevealSettlingTests`、`PlaybackRecoveryBaselineTests`）：**132/132 通过**（0 失败、0 跳过）；`git diff --check` 通过（0 警告）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh` 及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`b51ca099ffa2125581456cb47a6bd7fa289d8d0bec74bced8811108257d40a42`，已安装（`databaseSequenceNumber: 6296`，`installationURL: file:///private/var/containers/Bundle/Application/63D026A4-C21F-4041-A9ED-C32A93931289/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 打开长视频（如 20～30 分钟视频），分别测试「慢速横滑微调」「快速横拨大跨度跳转」与「拖动底部液态玻璃进度条」，确认跟手流畅度、跨度响应及松手瞬间切帧速度已追平（长视频快拨更优于）原生控件模式。
+
+
+### 2026-11-18（根治「原生底座 + 自绘控件」拖动卡顿与重绘开销，对齐系统原生跟手拖动）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **二次真机深因定位（针对 build `6296`「依旧不如只用系统控件」反馈）**：
+  1. **每次 Seek 恢复重建底层绑定**：`PlayerStateViewModel.resumePreparedPlaybackAfterSeek()` 调用 `engine.recoverSurface()` 对 `AVPlayerViewController` 执行 `player = nil; player = player`，在松手出画瞬间触发 AVKit 视图重建。
+  2. **40ms 主线程全帧像素拷贝**：`AVPlayerHLSBridgeEngine.snapshot(durationHint:)` 在拖动高频轮询期间始终传入 `cachesFrameImage: true`，导致每次都在主线程同步执行 `CIContext().createCGImage` 与黑帧采样。
+  3. **拖动过程无关键帧实时出画 + 底部进度条起拖延时**：原生控件拖动会持续按关键帧刷新画面；自绘表面与底部进度条在松手前完全冻结画面，且 `PlayerNativeProgressSlider` 在 `onScrubStart` / `onScrubChanged` 前内置了 `20ms` / `8ms` `Task.sleep`，触控热区也偏窄。
+  4. **整棵自绘控件父视图高频重绘**：`VideoDetailShellSurfaceHost`、`BiliPlayerView`、`LiveRoomSurfaceCoordinatorView`、`BiliPlayerSurfaceOverlayLayer` 与 `BiliPlayerSurfaceGestureLayerHost` 直接 `@StateObject` / `@ObservedObject` 订阅 `PlayerSeekPreviewModel`，拖动每步触发全树 SwiftUI 重算及 `BiliPlayerUIKitSurfaceGestureOverlay.updateUIView`。
+  5. **速度加权曲线门槛过高与轴向夹角过窄**：`260 pt/s` 起步门槛使日常舒适拇指滑动长期卡在 `90s / 屏宽`，且 `dominanceRatio = 3` 延迟了自然弧线横滑入轨。
+- **已实现**：
+  - `bili/Sources/Features/Player/PlayerRenderingEngine.swift`、`bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift`、`bili/Sources/Features/Player/PlayerStateViewModel.swift`：拆分 `recoverSurfaceForSeekResume()`（当 `playerViewController` 已绑定且 `isReadyForDisplay == true` 时跳过销毁重绑），`snapshot(durationHint:)` 在 `playerViewController != nil` 时关闭 `cachesFrameImage`；新增带互斥合并队列的关键帧实时预览 `scrubLivePreview(toProgress:duration:)`（`toleranceBefore/After = .positiveInfinity`，已在缓冲段内 `60ms` 节流即时出帧，未缓冲段按速度 `45ms/100ms` 防抖，并在正式 `seekAfterUserScrub` 提交及换源清理时立刻取消挂起预览）。
+  - `bili/Sources/Features/Player/PlayerSeekPreviewModel.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceOverlayLayer.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayerHost.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`、`bili/Sources/Features/Player/BiliPlayerView.swift`、`bili/Sources/Features/Live/LiveRoomSurfaceCoordinatorView.swift`：新增 `PlayerSeekPreviewModelBox` 并下沉至 `PlayerSpeedBoostOverlayHost`、`PlayerSeekPreviewOverlayHost` 叶子视图订阅，彻底消除拖动期间父容器与 UIKit 手势层重复重绘。
+  - `bili/Sources/Features/Player/PlayerHorizontalSeekSensitivity.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceGestureActions.swift`、`bili/Sources/Features/Player/BiliPlayerNativeControlsActionBuilder.swift`、`bili/Sources/Features/Player/PlayerNativeProgressSlider.swift`、`bili/Sources/Features/Player/PlayerNativeProgressGestureCaptureLayer.swift`：横滑速度加权曲线下探至 `75～650 pt/s`（`0.82` 次幂平滑加速至最高 `360～1500s / 屏宽` 贴近系统大跨度拖动），横滑入轨放宽至 `dominanceRatio = 2.0`，消除滑块 `20ms` / `8ms` 异步延时并扩展竖向触控热区（`padding(.vertical, -8)`）。
+  - `biliTests/PlayerHorizontalSeekSensitivityTests.swift`、`biliTests/PlayerFormalPlaybackConfigurationTests.swift`：更新速度曲线单测断言，并新增 `testSeekResumeUsesNonDestructiveSurfaceRecoveryWithoutRebind` 与 `testLiveScrubPreviewDispatchesBufferedKeyframesAndCancelsOnCommit`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 8 套核心播放器与寻帧恢复单元测试（`PlayerHorizontalSeekSensitivityTests`、`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlayerOverlappingSeekTests`、`UserSeekRevealSettlingTests`、`PlaybackRecoveryBaselineTests`、`DeterministicAVPlayerTransportTests`）：**141/141 通过**（0 失败、0 跳过）；`git diff --check` 通过（0 警告）。未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`82715411679a1c1f8514c7868110852ca9dfb59e32456cd24c812bcde2537f1a`，已安装（`databaseSequenceNumber: 6312`，`installationURL: file:///private/var/containers/Bundle/Application/0B58C3E5-A21C-4CE1-9221-59B9375245FA/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 默认「原生底座 + 自绘控件」模式下实测长/短视频的表面横滑与底部进度条拖动，对比系统原生控件验证实时关键帧跟随、起拖跟手度、拇指滑行跨度及松手无闪烁/无卡顿恢复。
+
+
+### 2026-11-18（提速「松手那一拍」出画出声恢复：关键帧容差提交 + 原生底座零门控直通出声 + 清理拖动期 HTTP 预热抢占）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **用户反馈与精确定位（build `6312` 真机实测「松手那一拍慢：松手后等了好一会儿画面或声音才真正跳过去继续播」）**：
+  1. **松手 `seekAfterUserScrub` 解码全 GOP 阻塞起播**：在 `playerViewController != nil` 时仍固定传入 `interactiveSeekTolerance = 0.35s`，迫使 AVPlayer 在暂停状态下先顺序解码从上一关键帧到目标时间点之间的全部 P/B 帧后才回调 `completion` 触发 `play()`。
+  2. **原生底座无截图遮罩却仍等待揭示门控才解锁声音**：`usesNativePlaybackSurfaceController == true` 时没有全屏静态截图遮盖视频，但松手后仍保持 `isTemporaryAudioSuppressed(true)` 静音与 `isUserSeeking = true / isBuffering = true`，必须等 2 帧 `AVPlayerItemVideoOutput` 推进采样 + `40ms` 定时轮询 + `PlayerSurfaceStateModel` `16ms` 防抖 + SwiftUI `.onChange` 后才调用 `finishUserSeekVisualReveal()` 解除静音。
+  3. **拖动期实时预览触发 `LocalHLSBridge` 并发抢占 + 45ms 合并延时**：`dispatchNextLiveScrubSeek()` 每次触发都调用 `warmSeekTargetIfNeeded(displayTarget)`，且未缓冲区域也在 `45ms/100ms` 后发送 `player.seek` 并迅速被 `cancelPendingSeeks()` 打断重发，直接跟松手瞬间最后一次正式寻帧抢占连接与解码队列；同时 `seekAfterUserScrub(to:)` 前置固定睡眠 `45ms`。
+- **已实现**：
+  - `bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift`：为原生 `AVPlayerViewController` 底座新增 `nativeInteractiveSeekTolerance = 2.0s` 关键帧友好容差（保留非控制器通路 / `DeterministicAVPlayerTransportTests` 的 `0.35s` 精确容差），并移除 `dispatchNextLiveScrubSeek()` 中的 `warmSeekTargetIfNeeded(displayTarget)` 预热抢占。
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：限制 `updateLiveScrubPreview` 仅对 `engine.isTimeBuffered(targetTime) == true` 的已缓冲区间以 `75ms` 节流触发本地关键帧预览（进入未缓冲段立刻取消挂起预览，把带宽和解码完全让给松手最终提交）；在原生底座模式下跳过 `seekAfterUserScrub(to:)` 的 `45ms` 合并等待，抽取 `finishCommittedUserSeek` 在引擎寻帧返回且准备继续播放时立即清除 `isUserSeeking / isBuffering`、清理 `pendingUserSeekRevealTarget` 并同步执行 `engine.setTemporaryAudioSuppressed(false)`，随后立即调用 `resumePlaybackAfterUserSeek()` 使画面与声音同步零等待恢复（后台保留 `beginSeekRecoveryTracking` 兜底）。
+  - `biliTests/PlayerFormalPlaybackConfigurationTests.swift`：扩展 `testSeekResumeUsesNonDestructiveSurfaceRecoveryWithoutRebind`，增加松手恢复时立即解除 `isUserSeeking`、`isBuffering` 与音频抑制的断言。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 8 套核心播放器与寻帧恢复单元测试（`PlayerHorizontalSeekSensitivityTests`、`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlayerOverlappingSeekTests`、`UserSeekRevealSettlingTests`、`PlaybackRecoveryBaselineTests`、`DeterministicAVPlayerTransportTests`）：**141/141 通过**（0 失败、0 跳过）；`git diff --check` 通过（0 警告）。未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`0df518e27116dbb730d8f94ec9cd536c8be3b0053a638d47d5866e0ed5453ecb`，已安装（`databaseSequenceNumber: 6328`，`installationURL: file:///private/var/containers/Bundle/Application/B30920A2-92E8-4391-BA20-16C0B2CFCD16/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 对比系统原生控件验证长/短视频「松手那一拍」：确认无论拖动底部进度条还是画面横滑松手，跳转后画面切换与声音恢复均明显提前、无明显静音空档及顶部「正在缓冲」驻留感。
+
+
+### 2026-11-18（修复寻帧起播 1～2 秒后看门狗误判并跳回起点重放的回归问题）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **用户真机复现与根因（build `6328`「加载速度已变快，但调整进度起播 1-2s 后又回到一开始跳到的进度继续播放」）**：
+  1. **看门狗错把健康续播当成卡顿并回跳 `targetTime`**：build `6328` 立即解除 `isUserSeeking / isBuffering` 后，`desiredPlaybackStateRefreshInterval()` 随之从 `0.04s` 切回 `1.2s`。`1.2s` 首次定期刷新与 `2.8s` `seekRecoveryWatchdogTask` 到来时，播放器其实已经顺畅从 `targetTime` 播放到 `targetTime + 1.2s～2.8s`，但 `recordSeekRecoveryIfNeeded` 与看门狗仍调用 `hasStableSeekRecoveryFrameForReveal`（内部 `isSeekRevealTimeNearTarget` 限定时间只能落在 `[target - 0.5, target + 0.5]` 内！）。因已超前突破 `+0.5s`（且原生 `AVPlayerViewController` 控制器下视图截图与超期后的 `renderedVideoTime` 均为空），判定返回 `false`，直接触发 `retryStalledSeekIfNeeded()` 再次执行 `engine.seek(toTime: targetTime)` 倒退回初始落点重新播放。
+  2. **真实关键帧落点未同步回传**：`AVPlayerHLSBridgeEngine.seekAfterUserScrub` 使用 `nativeInteractiveSeekTolerance = 2.0s` 时，完成后仍返回请求时的 `displayTarget` 而非 `player.currentTime()` 实际落到的关键帧时间，容易造成 `pending.targetTime` 与真实起播点存在至多 2 秒偏差。
+- **已实现**：
+  - `bili/Sources/Features/Player/PlayerStateViewModel.swift`：抽取共享校验函数 `hasVerifiedSeekRecoveryForPlayback(pending:snapshot:currentTime:)` 同时服务 `recordSeekRecoveryIfNeeded` 与 `seekRecoveryWatchdogTask`；在 `usesNativePlaybackSurfaceController == true` 且 `snapshot.isPlaying == true`、`isSeekRecoveryMatch` 成立的情况下，只要播放时间已真实推进超过 `targetTime + 0.15s`（或片尾贴近终点），即直接判定恢复成功并取消 `2.8s` 看门狗，不再被初始揭示窗 `[target - 0.5, target + 0.5]` 误伤回跳，真实停滞/卡死仍继续触发看门狗兜底。
+  - `bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift`：`seekAfterUserScrub(toProgress:duration:)` 在 `playerViewController != nil && finished` 时回传 `player.currentTime()` 转换后的真实落点显示时间（非控制器路径测试桩保持原 `displayTarget`）。
+  - `biliTests/PlayerFormalPlaybackConfigurationTests.swift`：新增 `testNativeSurfaceWatchdogDoesNotReseekWhenPlaybackAdvancesPastTargetWindow` 回归测试，覆盖原生底座下跳过 `±0.5s` 揭示窗到达 `+1.2s` 且无截图/像素时间时的恢复判定与零重寻行为。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 8 套核心播放器与寻帧恢复单元测试（`PlayerHorizontalSeekSensitivityTests`、`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlayerOverlappingSeekTests`、`UserSeekRevealSettlingTests`、`PlaybackRecoveryBaselineTests`、`DeterministicAVPlayerTransportTests`）：**142/142 通过**（0 失败、0 跳过）；`git diff --check` 通过（0 警告）。未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`604b39613e79e3c9b449e014a986be2ef1cb6506faae26921fd642f093116537`，已安装（`databaseSequenceNumber: 6336`，`installationURL: file:///private/var/containers/Bundle/Application/C13EAC86-42AA-40BB-882C-F85DC180508E/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 连续多次快拖底部进度条与横滑调整进度，确认松手快切快响后持续顺畅播放超过 3～10 秒，不再出现 1～2 秒后跳回起点重放的现象。
+
+
+### 2026-11-19（恢复 GitHub 线上版自绘播放器控栏 `.clear` 通透液态玻璃效果）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili/Sources/Features/Player/PlayerClearGlassModifiers.swift`：移除 `biliPlayerMediaGlass` / `BiliPlayerMediaGlassModifier`（`.regular.tint(.black.opacity(0.26))` 与强制 `.environment(\.colorScheme, .dark)`），并将 `biliPlayerCompactGlassCircle` 与 `biliPlayerCompactGlassCapsule` 恢复为与 `origin/main` 一致的 `biliPlayerClearGlass`（iOS 26+ `.glassEffect(.clear.interactive(interactive), in: shape)`，iOS 26 以下 `.ultraThinMaterial`）。
+  - `bili/Sources/Features/Player/PlayerNativeControls.swift`、`bili/Sources/Features/Player/PlayerNativeControlButtonRow.swift`、`bili/Sources/Features/Player/PlayerNativeProgressSlider.swift`、`bili/Sources/Features/Player/PlayerSeekPreviewOverlay.swift`、`bili/Sources/Features/Player/PlayerSpeedBoostIndicator.swift`、`bili/Sources/Features/Player/PlayerStartupLoadingChrome.swift`、`bili/Sources/Features/Player/PlayerInlineLoadingIndicator.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceOverlayLayer.swift`、`bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift`、`bili/Sources/Features/Live/LivePlayerAccessory.swift`、`bili/Sources/Features/VideoDetail/VideoDetailInlineQualityMenuButton.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：全部自绘播放区控栏、进度条、浮层胶囊与直播控件切回 `.biliPlayerClearGlass(...)`，同时移除 `PlayerNativeControls` 与 `VideoDetailShellSurfaceHost.overlayHostingController` 上的强制 `.dark` 外观锁定（保留原生 `showsPlaybackControls = true` 分支附加按钮及全屏 `AVFullScreenViewController` 的暗色处理）。
+  - `biliTests/NativeFullscreenOrientationLeaseTests.swift`：将 `testCustomMediaGlassControlsKeepDarkEnvironmentUnderLightThemeHost` 更新为 `testCustomClearGlassControlsInheritHostAppearanceUnderLightThemeHost`，校验 `overlayHostingController.overrideUserInterfaceStyle == .unspecified`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 8 套核心播放器单元测试（`PlayerHorizontalSeekSensitivityTests`、`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlayerOverlappingSeekTests`、`UserSeekRevealSettlingTests`、`PlaybackRecoveryBaselineTests`、`DeterministicAVPlayerTransportTests`）：**142/142 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`e291dca7544aacd50fa1da4706cfebe7f3d7e415a383eb89ea024ce738aec0c6`，已安装（`databaseSequenceNumber: 6372`，`installationURL: file:///private/var/containers/Bundle/Application/C41F94C6-8ED8-4CA3-B389-EA9E3A327699/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 分别于竖屏与横屏全屏播放视频，确认自绘控制栏、进度条、清晰度与浮层恢复 GitHub `v1.1.5` 线上版的 `.clear` 通透液态玻璃观感。
+
+### 2026-11-19（将「原生底座 + 自绘控件」转正为唯一正式播放方案）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `203` 升级至 `204`（保持 `MARKETING_VERSION = 1.1.5`）。
+  - `bili/Sources/Utilities/AVPlayerStartupPathOptimizationExperiment.swift` & `bili/Sources/Storage/LibraryStore.swift`：将 `usesNativePlaybackSurface` 固定为 `true`、`usesSystemNativePlaybackControlsUI` 固定为 `false`、`usesCustomPlaybackControlsOverlay` 固定为 `true`，简化 `NativePlaybackControlsExperiment` 查询接口；移除 `LibraryStore` 中的 `nativePlaybackControlsExperimentEnabled`、`nativePlaybackControlsOverlayMode`、`nativePlaybackControlsSpeedsEnabled`、`nativePlaybackControlsShowsPlaybackControls`、`nativePlaybackControlsAllowsPictureInPicturePlayback` 属性与 setter，并将对应的 7 个旧 `UserDefaults` 实验键纳入 `retiredExperimentKeys` 在初始化时自动清理。
+  - `bili/Sources/Features/Mine/MinePlaybackToolsSection.swift`、`bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift`、`bili/Sources/Features/Mine/MineSearchCatalog.swift`：移除设置页「原生视频底座与控件」整节、开发者诊断中的「原生播放底座（主用）」「控件层模式」「speeds」「allowsPictureInPicturePlayback」开关及设置搜索中对应已移除项关键词。
+  - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift` & `bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift`：移除竖屏/横屏「更多设置」中的「控件层模式 / speeds / allowsPictureInPicturePlayback」切换菜单及对应的 Combine 订阅，锁定为「原生 `AVPlayerViewController`（`showsPlaybackControls = false`）+ 自绘 `.clear` 液态玻璃控件层」。
+  - `biliTests/VideoDetailSurfaceHostTests.swift`、`biliTests/NativeFullscreenOrientationLeaseTests.swift`、`biliTests/PlayerFormalPlaybackConfigurationTests.swift`：移除依赖已下线开关/模式切换的废弃测试，更新 `testShellKeepsOverlayIdentityAndReleasesProductionHost` 适配原生底座多子控制器结构，并在 `testLibraryStoreRetiresPromotedVideoAndLiveExperimentPreferences` 中覆盖 7 个新退役键的清理断言。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 9 套核心测试套件（`PlayerHorizontalSeekSensitivityTests`、`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests`、`VideoDetailSurfaceHostTests`、`PlayerOverlappingSeekTests`、`UserSeekRevealSettlingTests`、`PlaybackRecoveryBaselineTests`、`DeterministicAVPlayerTransportTests`、`MineSearchCatalogTests`）：**138/138 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (204)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`8c263a9538a7383f9c68141bc599fe5629cb5a08fa2d487cee4d1e7b3596b82b`，已安装（`databaseSequenceNumber: 6388`，`installationURL: file:///private/var/containers/Bundle/Application/E7BCEF61-39FF-40D0-8FF8-B5284A8A8583/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 检查「我的 → 播放设置」「开发者诊断」以及播放器竖屏/横屏「更多设置」中已无底座与控件模式切换项，且首次启动自动沿用「原生底座 + 自绘 `.clear` 液态玻璃控件」。
+
+### 2026-11-19（修复切换清晰度时 `DanmakuSynchronizedLayerView` 跨 `AVPlayer` 移除 `timeObserver` 闪退）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **根因（真机日志 `bili-2026-11-19-011043.ips` 符号化）**：
+  - 切换清晰度更换 `AVPlayer` 实例时，`DanmakuSynchronizedLayerView.attachPlaybackPlayer(_:)` 先覆写了 `playbackPlayer` 为新实例，未先从旧 `AVPlayer` 移除 `timeObserver`；随后 `teardownRendering()` 使用旧 token 调用新 `AVPlayer.removeTimeObserver(_:)`，触发 `SIGABRT`（`-[AVPlayer removeTimeObserver:]` 异常）。
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 升级至 `205`（`1.1.5 (205)`）。
+  - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：新增 `weak var timeObserverPlayer: AVPlayer?` 与 `removeTimeObserverIfNeeded()`，确保永远在真正注册该 token 的 `AVPlayer` 上移除；在 `attachPlaybackPlayer(_:)` 更换播放器前先执行 `teardownRendering()`。
+  - `biliTests/DanmakuSynchronizedLayerTests.swift`：新增 `testSwitchingPlaybackPlayerBeforeDeactivatingRenderingDoesNotThrowOnTimeObserverRemoval` 回归测试。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSynchronizedLayerTests`、`MetalDanmakuStageTransitionTests`、`VideoDetailSurfaceHostTests`：**38/38 通过**（0 失败、0 跳过）。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (205)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`50c5842d028d5c4b12253ad34acfd9784fb48fadb49dd3ceb395f80a3a0fa26e`，已安装（`databaseSequenceNumber: 6396`，`installationURL: file:///private/var/containers/Bundle/Application/FD7DB50D-F3FB-4B92-9137-654A2E601AE1/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 播放视频时连续切换清晰度，确认不再闪退且弹幕同步正常。
+
+### 2026-11-19（弹幕架构收敛为「点播 `DanmakuSynchronizedLayerView` + 直播 `MetalDanmakuView`」，下线 `DanmakuKit` 路由与开关并优化同步层）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 升级至 `206`（`1.1.5 (206)`）。
+  - `bili/Sources/Features/Player/DanmakuRendererHostView.swift`、`bili/Sources/Features/Player/DanmakuOverlayView.swift`、`bili/Sources/Features/VideoDetail/VideoDetailDanmakuOverlay.swift`、`bili/Sources/Features/Mine/DanmakuRendererBenchmarkView.swift`：从 `DanmakuRendererPreference` 移除 `.danmakuKit` 与 `DanmakuKitOverlayView` 旋转兼容分支，默认与无 `AVPlayer` 回退（如直播间）统一为 `.metal`，点播固定走 `.synchronizedLayer`。
+  - `bili/Sources/Storage/LibraryStore.swift`、`bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift`、`bili/Sources/Features/Player/PlaybackDiagnosticsExperiment.swift`、`bili/Sources/Features/Player/PlaybackHitchSelfTest.swift`：移除 `metalDanmakuRendererExperimentEnabled`、`danmakuSynchronizedLayerRendererEnabled`、`forceDanmakuKit` 与诊断页面开关，并将旧 `UserDefaults` 实验键纳入 `retiredExperimentKeys`。
+  - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：
+    1. 新增 `prewarmUpcomingTextCache(after:through:configuration:)`，在 `Task.detached(priority: .utility)` 后台线程预光栅化未来 `2.0s–4.5s` 窗口内最多 24 条未缓存弹幕写入 `textCache`，减轻密集弹幕进场主线程压力；
+    2. `teardownRendering()` 保留 `currentItemObservation`，仅在 `attachPlaybackPlayer(_:)` 更换播放器或 `deinit` 时重建/销毁 KVO；
+    3. 提取 `resolvedDisplayScale`，移除 `UIScreen.main.scale` 过时调用。
+  - `biliTests/DanmakuSynchronizedLayerTests.swift`、`biliTests/DanmakuRendererDiagnosticsTests.swift`、`biliTests/MetalDanmakuIntegrationTests.swift`、`biliTests/MetalDanmakuStageTransitionTests.swift`、`biliTests/VideoDetailSurfaceHostTests.swift`、`biliTests/UploaderSpaceOverviewTests.swift`、`biliTests/PlayerFormalPlaybackConfigurationTests.swift`：移除已下线 `.danmakuKit` 与旧开关测试断言，更新宿主切换测试为 `.synchronizedLayer` ↔ `.metal`，并校验新退役键清理。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSynchronizedLayerTests`、`DanmakuRendererDiagnosticsTests`、`MetalDanmakuIntegrationTests`、`MetalDanmakuStageTransitionTests`、`VideoDetailSurfaceHostTests`、`UploaderSpaceOverviewTests`、`NativeFullscreenOrientationLeaseTests`、`PlayerFormalPlaybackConfigurationTests/testLibraryStoreRetiresPromotedVideoAndLiveExperimentPreferences`：**81/81 通过**（0 失败、0 跳过）。（注：此前完整跑 `PlayerFormalPlaybackConfigurationTests` 时 `testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely` 出现既有 220ms 恢复时序竞态失败，未跑全量与 UI 测试集。）
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (206)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`a5c2357b637b52eb79b0072b7b75184e3b22e15dbf2759b6f187e59a764c4ecb`，已安装（`databaseSequenceNumber: 6424`，`installationURL: file:///private/var/containers/Bundle/Application/E0A4D0BF-5188-49AC-AB74-9FA48CF660E8/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 检查「开发者诊断」中已无弹幕引擎切换开关，并在密集弹幕视频与直播间分别验证同步层与 Metal 弹幕渲染流畅度。
+
+### 2026-11-19（同步层表情缺图异步加载刷新、全后台字形预热与单次线性回收优化）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `206` 升级至 `207`（`1.1.5 (207)`）。
+  - `bili/Sources/Features/Player/DanmakuRenderPolicy.swift` & `bili/Sources/Features/Player/DanmakuKitTextCell.swift`：抽取 `nonisolated` 共享工具 `DanmakuEmoteBitmap` 与 `DanmakuEmoteAttributedTextRenderer`（并将 `DanmakuRenderPolicy.duration`、`scrollDuration`、`font` 标为 `nonisolated`），让 `DanmakuKitTextCellModel.render` 直接委托共享实现以消除重复。
+  - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：
+    1. **内嵌表情预取与缺图缓存刷新**：`DanmakuSyncCachedText` 与 `SyncActiveEntry` 记录 `missingEmoteURLs`，`textCache` key 区分横竖屏宽度档与内嵌表情；遇到缺图时通过 `requestEmoteImages` 触发并发去重下载（含 15s 失败重试冷却），预热窗口命中缺图则先拉取再预光栅化；加载完成后自动清理 `incompleteCacheKeysByURL` 对应的旧占位缓存，并在无隐式动画事务中原地替换正在飞行的 `DanmakuSyncBulletLayer` 位图，同时补跑未来窗口预热；
+    2. **字形准备全流程移至后台线程**：`prewarmUpcomingTextCache` 仅在主线程扫描未来 `2.0s–4.5s` 最多 24 条未缓存弹幕并拍摄轻量 `Sendable` 的 `DanmakuPrewarmRawJob` 快照，将 `UIFont` 计算、富文本/表情拼接、`boundingRect` 测量和 `UIGraphicsImageRenderer` 光栅化全部放入 `Task.detached(priority: .utility)` 统一执行；
+    3. **单次线性回收**：`recycleExpiredLayers(at:)` 由 `filter` + `contains` 二次遍历改为读写双指针原地单次 $O(N)$ 压缩。
+  - `biliTests/DanmakuSynchronizedLayerTests.swift`：新增 `testMissingEmotePrefetchInvalidatesCacheAndRefreshesActiveBulletLayer`、`testBackgroundPrewarmPopulatesUpcomingTextCacheOffMainThread`、`testLinearRecycleExpiredLayersCompactsRemainingEntriesInOrder` 3 项回归测试。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSynchronizedLayerTests`、`DanmakuRendererDiagnosticsTests`、`DanmakuKitUpdateCostTests`、`MetalDanmakuIntegrationTests`、`MetalDanmakuStageTransitionTests`、`VideoDetailSurfaceHostTests`：**65/65 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (207)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`833df070dc1d51183ff46472e27da1c1f4dae52db93abc4d14d2b0d4290a2b60`，已安装（`databaseSequenceNumber: 6432`，`installationURL: file:///private/var/containers/Bundle/Application/29817C16-13B4-4DE3-A8FD-4757C8FCE860/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 播放密集弹幕视频（以及带 `inlineEmotes` 的弹幕场景），确认弹幕进场流畅不卡顿、在飞/后续表情弹幕能自动刷新为清晰表情图，且 `1.1.5 (207)` 版本号显示正常。
+
+### 2026-11-19（新增「同屏弹幕上限」滑块设置并放开跨泳道限速与分段截断）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `207` 升级至 `208`（`1.1.5 (208)`）。
+  - `bili/Sources/Services/DanmakuService.swift` & `bili/Sources/Services/BiliAPIClient+Danmaku.swift`：
+    1. 在 `DanmakuKitRenderSettings` 新增持久化字段 `maxVisibleCount`（范围 `20...200`、拉满 `210` 表示「不限」、默认值 `80`、安全保护上限 `450`），支持向后兼容解码，并抽取共享 `summaryDescription`；
+    2. 将 `DanmakuSegmentProtobufParser` 与 `DanmakuSegmentParseContext` 默认分段解析上限由 `2,200` 放宽至 `6,000` 条。
+  - `bili/Sources/Features/Player/DanmakuRenderPolicy.swift` & `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：
+    1. `DanmakuRenderPolicy.maximumActiveCount` 改用用户配置的 `maxVisibleCount`（替代原硬编码 44/24 上限）；「不限」档忽略轻度自适应/倍速折减，仅在严重温控/低电量/掉帧保护时适度缩放；
+    2. 将 `minimumRollingStartInterval` 由 `0.05s`（20 条/秒）放宽至 `0.01s`（100 条/秒），`maximumPooledLayers` 由 `128` 提升至 `256`，并在 `apply(configuration:)` 中支持调高/调低 `maxVisibleCount` 后立即生效。
+  - `bili/Sources/Features/VideoDetail/VideoDetailDanmakuSettingsSheetContent.swift`、`bili/Sources/Features/VideoDetail/VideoDetailDanmakuSettingsBindings.swift`、`bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`、`bili/Sources/Features/Live/LiveRoomDetailDanmakuViews.swift`：在共享弹幕设置面板（竖屏弹幕页 / 横屏弹幕抽屉 / 直播弹幕设置）新增「同屏上限」滑块（`20–200 条` + `不限`）与重置按钮，并统一复用 `summaryDescription`。
+  - `biliTests/DanmakuSettingsTests.swift` & `biliTests/DanmakuSynchronizedLayerTests.swift`：更新 4 处原 `0.05s` 错峰测试断言为 `0.01s`，新增 `testMaxVisibleCountPersistsClampsAndFormatsUnlimitedTitle`、`testMaximumActiveCountRespectsUserCapAndUnlimitedSetting` 与 `testLiveMaxVisibleCountUpdateScalesBurstAdmissionBeyondLegacyFortyFourCap`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSettingsTests`、`DanmakuSynchronizedLayerTests`、`DanmakuRendererDiagnosticsTests`、`DanmakuKitUpdateCostTests`、`MetalDanmakuIntegrationTests`、`MetalDanmakuStageTransitionTests`、`MetalDanmakuTimelineTests`、`VideoDetailSurfaceHostTests`、`LiveRoomPlaybackLifecycleTests`：**91/91 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (208)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`38930a7317dd7d620f80024e5450a7bd4dae737fb5bf9f9d5d5791c10512b969`，已安装（`databaseSequenceNumber: 6440`，`installationURL: file:///private/var/containers/Bundle/Application/BF088ADF-ACA8-41BA-8C18-E6DC11C9649F/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 播放高能弹幕视频，在竖屏/横屏「弹幕设置」中将「同屏上限」从 `80 条` 调至 `200 条` 或 `不限`（配合「显示区域 100%」），确认密集段弹幕量明显提升、直播弹幕设置同样生效且版本号为 `1.1.5 (208)`。
+
+### 2026-11-19（修复暂停恢复播放弹幕清屏 + 新增大会员渐变彩色弹幕支持）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `208` 升级至 `209`（`1.1.5 (209)`）。
+  - `bili/Sources/Services/DanmakuService.swift`：在 `DanmakuItem` 新增 `colorful: Int` 与 `isVIPGradientColorful`（`colorful == 60_001`），并在 `DanmakuSegmentProtobufParser` 中解析 B 站 Protobuf `field 24 (DmColorfulType)`。
+  - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：
+    1. **暂停恢复免清屏**：将 `AVPlayerItemTimeJumped` 回调改为 `handleTimeJumpNotification()`，结合共享的 `hasDiscontinuousTimeJump(from:to:)`（前进超过 `1.25s` 或回退超过 `0.35s`），过滤 `pause -> play` 及倍速切换发出的无跳变通知与恢复播放时的微小回退抖动，由 `AVSynchronizedLayer` 原地顺延继续；
+    2. **大会员渐变彩色弹幕渲染**：`cacheKey` 区分 `item.colorful`，`rasterizeTextGlyph` 在保留文字阴影的基础上通过透明层 + `.sourceAtop` 混合模式为大会员渐变弹幕绘制粉橙金水平渐变。
+  - `biliTests/DanmakuSynchronizedLayerTests.swift`：新增 `testTimeJumpNotificationWithoutActualSeekDoesNotClearActiveDanmaku` 与 `testProtobufParserDecodesVIPColorfulField24AndRendersNonWhiteGradientBitmap`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSynchronizedLayerTests`、`DanmakuSettingsTests`、`VideoDetailSurfaceHostTests`：**40/40 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (209)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`80a2e8eb62840722829d48a818751add206b6cec8d7cd19f59114fdd703ffb69`，已安装（`databaseSequenceNumber: 6456`，`installationURL: file:///private/var/containers/Bundle/Application/6EA534A6-87B1-491A-8463-39DC40020A4C/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 播放视频时点击暂停再继续，确认屏幕上的弹幕从原位平滑继续滑动、不再清屏重加载；同时在包含大会员渐变弹幕的视频中确认渐变彩色正常显示。
+
+### 2026-11-19（新增「评论弹窗不展开到最大高度」开关，默认开启并锁定 0.7 高度）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `209` 升级至 `210`（`1.1.5 (210)`）。
+  - `bili/Sources/Features/VideoDetail/CommentCopySupport.swift`：在 `CommentInteractionSettings` 中新增 `limitsSheetMaxHeightKey = "cc.bili.commentSheetLimitsMaxHeight.v1"`、`defaultLimitsSheetMaxHeight = true` 与 `limitedSheetDetentFraction: CGFloat = 0.7`。
+  - `bili/Sources/Features/VideoDetail/CommentSheetPresentation.swift`：新增 `CommentSheetPresentationPolicy`（`shouldLimitHeight`、`detents`）与 `commentSheetHeightDetents(limitsHeight:selectedDetent:)`；开启且处于竖屏（`verticalSizeClass != .compact`）时将评论/回复弹窗高度锁定在 `.fraction(0.7)` 并使用 `.presentationContentInteraction(.scrolls)` 防止滚动列表时自动顶满全屏，关闭或横屏紧凑模式保持 `[.medium, .large]` + `.resizes`；评论输入框 `RichCommentComposer` 不受影响。
+  - `bili/Sources/Features/Mine/MineDisplaySettingsSection.swift`：在「显示」设置分区（`长按评论显示操作` 下方）新增 `评论弹窗不展开到最大高度` 开关（`accessibilityIdentifier("mine.display.commentSheetLimitsMaxHeight")`）。
+  - `bili/Sources/Features/Mine/MineSearchCatalog.swift`：在 `interface-settings` 检索项中补充 `"评论弹窗不展开到最大高度"`、`"评论弹窗高度"`、`"长按评论显示操作"` 关键词。
+  - `biliTests/MineSearchCatalogTests.swift`：新增 `testCommentSheetMaxHeightPolicyAndSearchEntry` 单元测试。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `MineSearchCatalogTests`：**3/3 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (210)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`e34850c84a3a1fe50b8c9645f37792a7fbacf8b27e966cf2c13f55abb00ac58d`，已安装（`databaseSequenceNumber: 6476`，`installationURL: file:///private/var/containers/Bundle/Application/464511A6-95B1-4579-9C0D-9663E1E0CEC3/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 竖屏打开视频评论区与二级回复弹窗，确认默认高度锁定在约 70% 且向上滑动评论不会展开遮挡上方视频；在「我的 → 显示」关闭「评论弹窗不展开到最大高度」后确认恢复可展开至最大高度，同时确认「我的」搜索「评论弹窗」可命中界面设置入口。
+
+### 2026-11-19（修复打开详情页/二级页面返回后「滚动时最小化底部栏」失效问题）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `210` 升级至 `211`（`1.1.5 (211)`）。
+  - `bili/Sources/App/NativeBottomBarVisibility.swift`：根因定位为 `NativeRootTabBarTransitionSource` 通过 `UITabBarController.setTabBarHidden(...)` 显隐底部栏时，与详情页自带 SwiftUI `.toolbarVisibility(.hidden, for: .tabBar)`（如 `VideoDetailNativeContentTabView`、`RootMineNavigationDestination`、`AccountPrivateMessageSessionsView`）产生双重所有权冲突，导致从二级页面返回根页面后 `UITabBarController._observingScrollView` 置空且 `_UIScrollAwayInteraction` 从滚动视图脱离（直至切换一次页签才恢复）。现移除 `NativeRootTabBarTransitionSource` 中的 `reconcileSoon` / `reconcile` / `setRootTabBarHidden` 调用，将显隐统一收口为 SwiftUI 原生 `.toolbarVisibility`，仅保留 `rootTabTap` 手势监听（同时补充 `!hidesRootTabBar` 与根控制器深度守卫）。
+  - `bili/Sources/App/RootTabSupport.swift`、`bili/Sources/App/RootMineNavigationHost.swift`、`bili/Sources/Features/Dynamic/DynamicFeedCard.swift`、`bili/Sources/Features/Dynamic/DynamicPGCPreview.swift`、`bili/Sources/Features/Dynamic/DynamicLiveRouteLink.swift`：为所有根 `NavigationStack` 推送目的地（含 `videoDestinations` 全部分支、`RootMineNavigationDestination`、动态详情、动态 PGC/直播条目跳转目的地）统一补充或规范 `.toolbarVisibility(.hidden, for: .tabBar)`。
+  - `bili/Sources/App/UITestFixtures/UITestRootTabScrollFixtureView.swift`、`bili/Sources/App/UITestFixtures/UITestFixtureRootView.swift`、`bili/Sources/App/UITestFixtures/UITestSearchScrollFixtureView.swift`：同步为夹具详情页目的地补充 `.toolbarVisibility(.hidden, for: .tabBar)`。
+  - `biliTests/RootTabBarVisibilityTests.swift` & `biliUITests/RootTabScrollUITests.swift`：新增单页签隐藏/恢复及多级跳转 `TabBar` 显隐单测（2 项），以及 `testMinimizedTabBarContinuesToCollapseAfterDetailPushAndPop`（覆盖首页展开/折叠进出详情、动态与「我的」`Form` 折叠进出详情后的二次滚动最小化）。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - 最新编辑后（Build `211`）：`FormalStartupFeatureTests`（15/15）、`MineSearchCatalogTests`（2/2）、`PlayerFormalPlaybackConfigurationTests` 根标签栏/退役偏好 4 项（4/4）与 `RootTabBarVisibilityTests`（2/2）共 **23/23 通过**（0 失败、0 跳过）。（注：此前连跑完整 `PlayerFormalPlaybackConfigurationTests` 69 项时，与本轮无关的既有 220ms 竞态用例 `testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely` 出现 1 次 `"restoring" != "idle"` 失败。）
+  - 同一代码状态下（Build `211`）UI 回归：`MineTopBarUITests`（**6/6 通过**）、`RootTabScrollUITests/testMinimizedTabBarContinuesToCollapseAfterDetailPushAndPop` 与 `testPushPopKeepsEveryRootOffsetAndHidesTabs`（**2/2 通过**）。
+  - Build `210` 同源码修复状态下额外验证（早于 `210 -> 211` 版本号递增）：`VideoHistoryBackUITests`（5/5 通过）、`VideoDetailFlowUITests/testVideoDetailUsesLayeredPagesAndToolbarPicker`（通过）、`VideoDetailFlowUITests/testVideoDetailToolbarCommentComposerIsAvailableByDefault`（通过），以及真实应用端到端路径验证（首页初始折叠 -> 打开视频详情 -> 返回后再次滑动折叠；「我的」打开观看记录 -> 返回后拖滑折叠）；另观测到既有非本轮问题：`VideoDetailFlowUITests/testVideoDetailExitDuringRotationReturnsToHomeWithoutRebuildingPlayer` 在横竖屏切换后的边缘返回断言失败，以及 `RootTabScrollUITests` 键盘/菜单与 `SearchScrollRetentionUITests` 部分用例在长跑及本地键盘状态下的既有失败，未跑全量测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (211)`）、`remove-empty-frameworks.sh`（清理 `0` 个空框架）及 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`d65ad790db04df333c527b4f853f769cb569630fb8ad297d37eb49bf82e194b2`，已安装（`databaseSequenceNumber: 6544`，`installationURL: file:///private/var/containers/Bundle/Application/89EFA46E-036A-4A6B-9331-C40305586BC1/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 确认开启「滚动时最小化底部栏」后，分别执行「首页 → 进视频详情 → 返回首页继续下滑」以及「我的 → 打开设置/观看记录 → 返回『我的』继续轻滑」，确认 TabBar 均正常最小化；并检查「我的」（约 1310pt）与「直播」等较短列表在未猛滑触底回弹前可正常折叠。
+
+### 2026-11-20（优化横竖屏旋转时 `AVSynchronizedLayer` 弹幕保留在途与坐标重映射）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `211` 升级至 `212`（`1.1.5 (212)`）。
+  - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：
+    1. 为 `DanmakuSyncLaneAllocator` 新增 `markScrollingLane(_:reusableAt:)`、`markTopLane(_:freeAt:)` 与 `markBottomLane(_:freeAt:)`，支持根据重映射后的在途弹幕恢复泳道占用时间。
+    2. 为 `SyncActiveEntry` 记录 `lane` 与 `size`，并将 `configureAnimations` 入参由 `DanmakuSyncCachedText` 简化为 `bulletSize: CGSize` 以便复用。
+    3. 新增 `relayoutActiveEntriesForGeometryChange(at:)`：当 `apply(configuration:)` 仅发生 `SyncLayoutParameters` 变化（如 `topInset`/`bottomInset`/`videoAspectRatio`/画布尺寸变化）或 `layoutSubviews()` / `setLayoutTransitioning(false)` 触发 `scheduleLayoutResynchronization()` 时，不再调用 `recycleAllActiveLayers()` 与 `materializedAheadIds.removeAll()`，而是保留未过期在途弹幕并按新 `contentFrame` / `laneHeight` / 泳道数重算位置与动画（保留原 `startTime`/`duration`），重建泳道占用后继续向前调度。
+  - `biliTests/DanmakuSynchronizedLayerTests.swift`：新增 `testOrientationGeometryChangePreservesInFlightDanmaku` 与 `testLaneAllocatorMarkPreventsCollisionsAfterRemap`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：
+  - `DanmakuSynchronizedLayerTests`：**全套通过**（`TEST SUCCEEDED`，0 失败、0 跳过，包含新增的 2 个用例）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (212)`）与 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`16d9663b2c09c1b9b3f539a5812312b6abe47308df0c6747f84599e0494c280c`，已安装（`databaseSequenceNumber: 6572`，`installationURL: file:///private/var/containers/Bundle/Application/EBD4B69E-0C6C-498F-AF59-41F4397164FE/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 播放点播视频时进行横竖屏旋转，确认屏幕上的弹幕按进度平滑重排并继续滑动、不再清屏重加载。
+
+### 2026-11-20（消除旋转完成弹幕闪烁与视频返回首页/动态底部 Tab 闪现）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `212` 升级至 `213`（`1.1.5 (213)`）。
+  - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：
+    1. 在 `layoutSubviews()` 中用 `CATransaction.setDisableActions(true)` 包裹 `synchronizedLayer?.frame` 与 `containerLayer?.frame` 更新，消除尺寸变化时的隐式 `CALayer` 帧动画。
+    2. 去掉 `scheduleLayoutResynchronization()` 的 `0.08s` 延迟，改为在 `layoutSubviews()` 与 `setLayoutTransitioning(false)` 同步触发 `relayoutActiveEntriesForGeometryChange()`；新增 `lastRemappedParameters` 缓存上次已映射参数，参数未变时早退不再重复重加动画或取消后台预热。
+  - `bili/Sources/Features/VideoDetail/VideoDetailNativeContentTabView.swift` & `bili/Sources/Features/VideoDetail/VideoDetailView.swift`：移除内层 `VideoDetailNativeContentTabView`（位于 `VideoDetailBottomToolbarModifier` 的 `.bottomBar` 下方）重复的 `.toolbarVisibility(.hidden, for: .tabBar)`，统一收口到 `VideoDetailView` 根视图层，避免返回首页/动态时 `.tabBar` 与 `.bottomBar` 偏好合并造成底部 Tab 闪现。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSynchronizedLayerTests`（26/26）+ `RootTabBarVisibilityTests`（2/2）：**28/28 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (213)`）与 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`7af702831f0df729dd45b52d4b565049449212604cc8ea8f8f53e0b12b8baf2a`，已安装（`databaseSequenceNumber: 6588`，`installationURL: file:///private/var/containers/Bundle/Application/123F7937-DD98-4AC5-8A66-861EA98E1E13/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 确认旋转结束时弹幕无闪烁，以及从视频详情页返回首页/动态时底部 Tab 不再闪现。
+
+### 2026-11-20（二次跟进：横屏转竖屏弹幕动画去闪烁 & 二级页返回 TabBar 平滑渐显）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **实测定位与已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `213` 升级至 `214`（`1.1.5 (214)`）。
+  1. **横屏转竖屏弹幕闪烁**：
+     - `bili/Sources/Features/Player/DanmakuRendererHostView.swift`：`layoutRenderer()` 内用 `UIView.performWithoutAnimation` + `CATransaction.setDisableActions(true)` 更新 `renderer.transform` 与 `renderer.frame`，阻断 UIKit 旋转动画块把子渲染视图 `frame` 过渡成中间帧。
+     - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：`installSynchronizedLayerIfNeeded(for:)` 为 `AVSynchronizedLayer` 补充 `nullActions` 禁用 `position`/`bounds`/`frame`/`opacity`/`sublayers`/`masksToBounds` 隐式动画；`layoutSubviews()` 全程包入 `UIView.performWithoutAnimation` + `CATransaction.setDisableActions(true)`；新增 `remapAnimations(...)`，重映射时静态弹幕（`.top`/`.bottom`）仅更新 `layer.position` 不重加 `opacity` 关键帧，滚动弹幕当横向起止坐标未变时不重加 `CABasicAnimation`。
+  2. **二级页返回一级页 TabBar 从无到有闪现**：
+     - 模拟器实测（iOS 27.0）：原生 `TabView` 忽略 `hidesBottomBarWhenPushed`，而 `.toolbarVisibility(.hidden, for: .tabBar)` 会让 `tabBar.isHidden = true, alpha = 0` 维持到 pop 动画完全结束再骤然切回 `false / 1.0`；另实测若在 pop 过程中手动调用 `setTabBarHidden(false, animated: true)` 会导致 `RootTabScrollUITests/testMinimizedTabBarContinuesToCollapseAfterDetailPushAndPop` 失败（滚动最小化脱离）。
+     - `bili/Sources/App/NativeBottomBarVisibility.swift`：不调用 `setTabBarHidden`，改为在 `NativeRootTabBarTransitionSource.Controller` 上通过 `tabBar.observe(\.isHidden, options: [.old, .new])` 监听详情页返回根页后的 `true -> false` 切换，通过 `0.22s` `UIView.animate`（`alpha: 0 -> 1`）做平滑渐显，消除突兀闪现并保留系统滚动最小化观察。
+     - `biliTests/RootTabBarVisibilityTests.swift`：新增 `testDetailPopRevealsTabBarDuringTransitionInsteadOfSnappingAfterCompletion`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSynchronizedLayerTests`（26/26）+ `RootTabBarVisibilityTests`（3/3）：**29/29 通过**（0 失败、0 跳过）。
+  - `RootTabScrollUITests/testMinimizedTabBarContinuesToCollapseAfterDetailPushAndPop`：**1/1 通过**（确认返回后首页/「我的」列表滚动最小化仍正常工作）；未跑全量单元测试与全量 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (214)`）与 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`65853259501b648522fddbd5214ce2e3971a978ad0fdeef8a63177d17decb56a`，已安装（`databaseSequenceNumber: 6596`，`installationURL: file:///private/var/containers/Bundle/Application/2E19BA8A-9924-49BE-BD38-20E3C783CEFA/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 确认横屏转竖屏弹幕无闪烁，以及二级页返回一级页时 TabBar 为平滑渐显、不再突兀闪现，且返回后列表滚动最小化仍正常工作。
+
+### 2026-11-20（三次跟进：同步置零 `TabBar.alpha` 消除 1 帧闪现 & 修复旋转完成后弹幕下移 8pt）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `214` 升级至 `215`（`1.1.5 (215)`）。
+  1. **二级页返回一级页 TabBar 1 帧闪现**：
+     - `bili/Sources/App/NativeBottomBarVisibility.swift`：Build 214 中 `tabBar.observe(\.isHidden)` 回调内通过 `Task { @MainActor }` 异步置 `alpha = 0` 会延迟 1 个 runloop 导致首帧先以 `alpha = 1.0` 提交再切 `0.0 -> 1.0`。现改为在主线程同步 `MainActor.assumeIsolated` 执行 `animateTabBarRevealAfterPopIfNeeded(tabBar:)`，并取消可能过期的 `900ms` 重置窗，直接根据 `!hidesRootTabBar` 与根栈深度 `<= 1` 做 `0.24s` `alpha: 0 -> 1` 渐显。
+  2. **横屏转竖屏完成后竖屏弹幕往下移一点**：
+     - `bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift`：`danmakuUsesLandscapePlaybackChrome` 原读 `configuration.isFullscreenActive`（即延迟切换的 `chromeLandscape`，直到旋转彻底完成才从 `true` 切 `false`），导致 `topInset` 在旋转结束瞬间才从 `0` 跳到 `8`（弹幕下移 `8pt`）。现改为跟随目标几何方向 `rotationCoordinator.layoutLandscape || isPortraitFullscreen`（仅预热阶段保持 `rotationCoordinator.isLandscape || isPortraitFullscreen`）。
+     - `bili/Sources/Features/Player/DanmakuSynchronizedLayerView.swift`：在 `layoutSubviews()` 中 `lastLayoutSize = bounds.size` 之后同步刷新 `layoutParameters = configuration.map { resolveLayoutParameters(for: $0) }`，修复首帧未就绪前（`synchronizedLayer == nil`）尺寸变更时 `layoutParameters` 未更新的问题（`VideoDetailSurfaceHostTests/testPortraitFullscreenConstrainsControlsAndDanmakuToCenteredNineSixteenArea` 捕获）。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `RootTabBarVisibilityTests`（3/3）+ `DanmakuSynchronizedLayerTests`（26/26）+ `VideoDetailSurfaceHostTests`（11/11）：**40/40 通过**（0 失败、0 跳过）；未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (215)`）与 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`cb4880b53f95646e2ac8d93cde5cb5e04a9011b3c4105a8b3cf6faf40fe538ec`，已安装（`databaseSequenceNumber: 6612`，`installationURL: file:///private/var/containers/Bundle/Application/440A2B16-9A19-4208-A1C3-D2A4F8ACA9A9/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027` 确认二级页返回一级页 TabBar 无首帧闪现，以及横屏转竖屏完成后弹幕不再向下移动 8pt。
+
+### 2026-11-20（对比 GitHub `HEAD`：恢复 `NativeBottomBarVisibility` 单一控制并移除二级页 `.toolbarVisibility(.hidden, for: .tabBar)` 双重所有权）
+- **分支 / 基线**：`main`（`6c229b6` + 本地未提交修改，未提交、未推送）
+- **实测定位与已实现**：
+  - `bili.xcodeproj/project.pbxproj`：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `215` 升级至 `216`（`1.1.5 (216)`）。
+  - 对比 GitHub `HEAD`（`6c229b6`）并单测校验 `UITabBarController.value(forKey: "_observingScrollView")` 发现：
+    1. GitHub `HEAD` 之所以不会在返回一级页时闪现 `TabBar`，是因为 `NativeBottomBarVisibility.swift` 的 `reconcileSoon()` 在导航转场开始时即调用 `tabBarController.setTabBarHidden(isDetailPresented || hidesRootTabBar, animated: navigationController.transitionCoordinator != nil)` 随 pop 动画同步滑入，而不是像 SwiftUI `.toolbarVisibility(.hidden, for: .tabBar)` 那样等到 pop 彻底结束后才跳出。
+    2. `HEAD` 此前之所以在进入视频详情/「我的」二级页/UP 主页返回后偶发滚动最小化失效，是因为这几个二级页**同时**声明了 `.toolbarVisibility(.hidden, for: .tabBar)` / `.toolbar(.hidden, for: .tabBar)`，与 `setTabBarHidden` 双重控制冲突导致返回后 `_observingScrollView` 变为 `nil`（`WITH_toolbarVisibility obsAfter=nil`）；而在**不混用** `.toolbarVisibility(.hidden, for: .tabBar)`、仅由 `NativeBottomBarVisibility` 单一调用 `setTabBarHidden` 时，返回后 `_observingScrollView` 100% 保持挂载（`PURE afterPop obs=Optional(<SwiftUI.HostingScrollView>)`）。
+  - `bili/Sources/App/NativeBottomBarVisibility.swift`：恢复 GitHub `HEAD` 的 `reconcileSoon()` / `reconcile(animated:)` / `setRootTabBarHidden(_:animated:)`，移除 KVO `alpha` 补丁。
+  - `bili/Sources/App/RootTabSupport.swift`、`bili/Sources/App/RootMineNavigationHost.swift`、`bili/Sources/Features/VideoDetail/VideoDetailView.swift`、`bili/Sources/Features/VideoDetail/VideoDetailNativeContentTabView.swift`、`bili/Sources/Features/Uploader/UploaderView.swift`、`bili/Sources/Features/Uploader/UploaderSpaceLibraryPage.swift`、`bili/Sources/Features/Uploader/UploaderFavoriteFolderContentPage.swift`、`bili/Sources/Features/Mine/AccountPrivateMessageViews.swift`、`bili/Sources/Features/Dynamic/DynamicFeedCard.swift`、`bili/Sources/Features/Dynamic/DynamicLiveRouteLink.swift`、`bili/Sources/Features/Dynamic/DynamicPGCPreview.swift` 及 `UITest*FixtureView.swift`：移除所有二级页上的 `.toolbarVisibility(.hidden, for: .tabBar)` 与 `.toolbar(.hidden, for: .tabBar)`，将底部栏显隐完全收口至 `NativeBottomBarVisibility`。
+  - `biliTests/RootTabBarVisibilityTests.swift`：更新 `testNestedDetailPushAndPopPreservesTabBarVisibilityLifecycle` 与 `testDetailPopRevealsTabBarDuringTransitionInsteadOfSnappingAfterCompletion`，同时断言返回转场进行中（`80ms`）`isTabBarHidden` 即已恢复为 `false` 且返回完成后 `_observingScrollView != nil`。
+- **已验证（本地模拟器 `iPhone 18 Pro Max` / iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，`-parallel-testing-enabled NO`）**：
+  - `DanmakuSynchronizedLayerTests`（26/26）+ `RootTabBarVisibilityTests`（3/3）+ `VideoDetailSurfaceHostTests`（11/11）：**40/40 通过**（0 失败、0 跳过）。
+  - `RootTabScrollUITests/testMinimizedTabBarContinuesToCollapseAfterDetailPushAndPop`：**1/1 通过**（99.1s，确认首页、动态、「我的」进出二级页后滚动最小化均正常生效）；未跑全量单元测试与全量 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (216)`）与 `codesign --verify --deep --strict` 通过，`bili.app/bili` SHA-256：`a4ff6df791104e9552fa32379a1a154f6fbda9a82b93436b67dda1f5ad2005b8`，已安装（`databaseSequenceNumber: 6620`，`installationURL: file:///private/var/containers/Bundle/Application/9EB6206A-86A5-410A-8C79-60E7B4A08916/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机已验证**：
+  - 用户在 `RCe2027` 确认横竖屏旋转弹幕与二级页返回一级页 `TabBar` 闪现问题均已解决。
+- **长期强约束备注（已同步写入 `AGENTS.md` 与 `NativeBottomBarVisibility.swift`）**：
+  - 根 `TabBar` 在进出二级页时的显隐**必须且只能**由 `NativeBottomBarVisibility.swift`（`setTabBarHidden(isDetailPresented || hidesRootTabBar, animated: animated)`）单一控制；**严禁**在任何被 push 的二级页面上添加 `.toolbarVisibility(.hidden, for: .tabBar)` 或 `.toolbar(.hidden, for: .tabBar)`（混用会导致返回后 `_observingScrollView` 置空、滚动最小化失效；而只用 `.toolbarVisibility` 会导致返回动画结束后 `TabBar` 突兀闪现）。
+
+### 2026-11-20（移除已退役的第三方 DanmakuKit SPM 依赖与旧渲染器文件）
+
+- **当前分支与基线**：`main`（`6c229b6` + 本地未提交改动）
+- **已完成改动**：
+  1. [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：移除已退役的第三方 `DanmakuKit` Swift Package 依赖引用（`XCRemoteSwiftPackageReference`、`XCSwiftPackageProductDependency`、`PBXBuildFile`、`PBXFrameworksBuildPhase`、`packageProductDependencies`、`packageReferences`），并删除 `bili.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`。
+  2. 删除已不再被 `DanmakuRendererHostView` 挂载的旧渲染器文件与对应单测：`bili/Sources/Features/Player/DanmakuKitOverlayView.swift`、`bili/Sources/Features/Player/DanmakuKitTextCell.swift`、`biliTests/DanmakuKitUpdateCostTests.swift`。
+  3. 保留 [DanmakuService.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Services/DanmakuService.swift) 中的本地 `DanmakuKitRenderSettings` 数据结构，确保现有弹幕设置项与持久化数据完全兼容。
+- **已验证（本地模拟器单元测试）**：
+  - `python3 Scripts/build-cache.py run -- xcodebuild test -project bili.xcodeproj -scheme bili -destination 'platform=iOS Simulator,name=iPhone 18 Pro Max,OS=27.0' -parallel-testing-enabled NO -only-testing:biliTests/DanmakuSynchronizedLayerTests -only-testing:biliTests/DanmakuSettingsTests`：`DanmakuSynchronizedLayerTests`（`26/26`）+ `DanmakuSettingsTests`（`5/5`）共 `31/31` 通过（0 失败，0 跳过），`Target 'bili' in project 'bili' (no dependencies)` 确认项目已无外部 SPM 依赖。
+
+### 2026-11-20（移除「杜比视界渲染」开关与双层叠加播放器，保留兼容基层防过曝底层）
+
+- **当前分支与基线**：`main`（`6c229b6` + 本地未提交改动）
+- **已完成改动**：
+  1. **移除用户侧「杜比视界渲染」入口与状态配置**：从 [MinePlaybackPreferenceSection.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MinePlaybackPreferenceSection.swift)、[MinePlaybackPreferenceSummary.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MinePlaybackPreferenceSummary.swift)、[MineSettingsSection.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineSettingsSection.swift)、[MineSearchCatalog.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineSearchCatalog.swift)、[VideoDetailShellSurfaceHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift) 移除 UI 与搜索关键词，并移除 [PlayerCoreConfiguration.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerCoreConfiguration.swift) 中的 `DolbyVisionRenderingPolicy` 与 `LibraryStore` / `PlayerSettings` 对应属性。
+  2. **移除双播放器叠层与单视频本地桥接**：删除 [AVPlayerHLSBridgeEngine.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift) 中的 `NativeDolbyVideoOverlayRenderer`、`LocalHLSVideoOnlyBridge`、`makeVideoOnly`、`renderVideoOnlyPlaylists` 与 450ms 同步循环，并清理 [PlayerRenderingEngine.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerRenderingEngine.swift) 与诊断面板中的 `nativeHDRVideoLayer*` 字段。
+  3. **保留底层兼容防过曝与原生 HDR/EDR 输出**：将 [DolbyVisionCodecConfiguration.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/DolbyVisionCodecConfiguration.swift) 与 `LocalHLSBridge` 收敛为内置兼容基层规范化策略（Profile 8/10 重写样本条目为 `hvc1` 并移除 `dvcC`/`dvvC`/`dvwC`、P8.4 补全 HLG `colr`），主播放器继续对杜比流关闭 `appliesPerFrameHDRDisplayMetadata` 并保持 `AVPlayerViewController` / `AVPlayerLayer` 的 `preferredDisplayDynamicRange = .high` 与 `toneMapMode = .never`；递增 `HLSRenditionCache` 键版本至 `timeline-v23-dv-compatible-base-layer`。
+  4. **更新测试覆盖**：精简并更新 [DolbyVisionCodecConfigurationTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/DolbyVisionCodecConfigurationTests.swift) 与 [HLSBridgeRemoteFailureTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/HLSBridgeRemoteFailureTests.swift#L489-L561)（改为验证 `testRendersDolbyVisionCompatibleBaseLayerPlaylist`）。
+- **已验证（本地模拟器定向单元测试）**：
+  - `python3 Scripts/build-cache.py run -- xcodebuild test -project bili.xcodeproj -scheme bili -destination 'platform=iOS Simulator,name=iPhone 18 Pro Max,OS=27.0' -parallel-testing-enabled NO -only-testing:biliTests/DolbyVisionCodecConfigurationTests -only-testing:biliTests/HLSBridgeRemoteFailureTests -only-testing:biliTests/DashStreamDispatcherTests -only-testing:biliTests/ResourceLoadingServicesTests -only-testing:biliTests/MineSearchCatalogTests -only-testing:biliTests/VideoDetailSurfaceHostTests -only-testing:biliTests/PlayerFormalPlaybackConfigurationTests/testDolbyVisionQualityUsesAutomaticCodecNegotiation -only-testing:biliTests/PlayerFormalPlaybackConfigurationTests/testHDRPlaybackRecoveryWatchdogAllowsSlowerFirstFrame -only-testing:biliTests/PlayerFormalPlaybackConfigurationTests/testPlayerSettingsPersistsForceHardwareDecode -only-testing:biliTests/PlayerFormalPlaybackConfigurationTests/testPlayerSettingsRestoresLegacyAV1CodecPreferenceOnlyWhenSupported -only-testing:biliTests/PlayerFormalPlaybackConfigurationTests/testLibraryStoreRetiresPromotedVideoAndLiveExperimentPreferences`：**84/84 通过**（0 失败、0 跳过：`DolbyVisionCodecConfigurationTests` 19/19、`HLSBridgeRemoteFailureTests` 6/6、`DashStreamDispatcherTests` 9/9、`ResourceLoadingServicesTests` 32/32、`MineSearchCatalogTests` 2/2、`VideoDetailSurfaceHostTests` 11/11、`PlayerFormalPlaybackConfigurationTests` 5/5）。
+  - 注：此前连跑 `PlayerFormalPlaybackConfigurationTests` 全套 69 项时，与本轮无关的 `PlayerStateViewModel` 恢复/寻帧用例曾出现失败，复跑确认 `testSeekDeadlineRechecksFreshSnapshotWithoutPeriodicOrEngineCallbacks` 与 `testUserSeekKeepsAudioSuppressedUntilTargetVideoAdvancesAndUIReveals` 在单独运行下均通过，而 `testPlayerItemRecoveryWithoutFreshFramesFallsBackToMediaRebuild` 仍失败（属于既有工作区状态，非本轮改动引入）。未跑全量单元测试与 UI 测试集。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.5 (217)`，仅命令行临时覆盖 `CODE_SIGN_STYLE=Manual`、`DEVELOPMENT_TEAM=G933USCY46`、`CODE_SIGN_IDENTITY="iPhone Distribution: Nazar Aryan (G933USCY46)"`、`PRODUCT_BUNDLE_IDENTIFIER=app.bamboo2779.brussels691`、`PROVISIONING_PROFILE_SPECIFIER=882865dd-38a8-4ea7-80c7-e1f3072e784b`）与 `codesign --verify --deep --strict` 校验通过，`bili.app/bili` SHA-256：`886eb760d23f9dfdf7a8fa4af9d092540251bd82486344d083df5022a3a90c6b`，已安装至真机（`databaseSequenceNumber: 6628`，`installationURL: file:///private/var/containers/Bundle/Application/F8CAB84D-2BF2-42A0-875B-558E1AF32692/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机已验证**：
+  - 用户在 `RCe2027`（Build `217`）确认运行正常并授权推送至 GitHub `main`。
+- **待办**：
+  - 如有重要里程碑，可择机触发云端全量 CI 回归复核 `PlayerFormalPlaybackConfigurationTests` 全套及 UI 测试集。

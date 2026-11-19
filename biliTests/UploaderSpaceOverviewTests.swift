@@ -124,12 +124,10 @@ final class UploaderSpaceOverviewTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         for oldValue in [false, true] {
             defaults.set(oldValue, forKey: "cc.bili.experimental.personalSpaceEnhancement.v1")
-            defaults.set(true, forKey: "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1")
             defaults.set(false, forKey: "cc.bili.appearance.followsSystemFontSize.v1")
             defaults.set("preserved", forKey: "unrelated.user.data")
             let store = LibraryStore(userDefaults: defaults)
             XCTAssertNil(defaults.object(forKey: "cc.bili.experimental.personalSpaceEnhancement.v1"))
-            XCTAssertTrue(store.metalDanmakuRendererExperimentEnabled)
             XCTAssertFalse(store.followsSystemFontSize)
             XCTAssertEqual(defaults.string(forKey: "unrelated.user.data"), "preserved")
         }

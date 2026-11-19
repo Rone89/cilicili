@@ -86,6 +86,38 @@ struct DanmakuKitSettingsContent: View {
                 .accessibilityLabel("DanmakuKit 弹幕显示区域")
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("同屏上限")
+                    Spacer()
+                    Text(settings.danmakuKit.maxVisibleCountTitle)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    Button("重置") {
+                        updateKitSettings {
+                            $0.maxVisibleCount = DanmakuKitRenderSettings.defaultMaxVisibleCount
+                        }
+                    }
+                    .accessibilityLabel("重置同屏弹幕上限为 \(DanmakuKitRenderSettings.defaultMaxVisibleCount) 条")
+                }
+                Slider(
+                    value: Binding(
+                        get: { Double(settings.danmakuKit.normalizedMaxVisibleCount) },
+                        set: { value in
+                            updateKitSettings {
+                                $0.maxVisibleCount = DanmakuKitRenderSettings.clampedMaxVisibleCount(
+                                    Int(value.rounded())
+                                )
+                            }
+                        }
+                    ),
+                    in: Double(DanmakuKitRenderSettings.minimumVisibleCount)...Double(DanmakuKitRenderSettings.unlimitedVisibleCountValue),
+                    step: 10
+                )
+                .accessibilityIdentifier("ui.danmakuKit.settings.maxVisibleCount")
+                .accessibilityLabel("同屏弹幕上限")
+            }
+
             Toggle("海量弹幕（轨道满时仍显示）", isOn: boolBinding(\.allowsDanmakuOverlap))
             Text(
                 settings.danmakuKit.allowsDanmakuOverlap
@@ -162,7 +194,7 @@ struct DanmakuKitSettingsContent: View {
             )
             .accessibilityIdentifier("ui.danmakuKit.settings.bottomPadding")
 
-            Text("显示区域、密度、字号、字重和不透明度均由 DanmakuKit 弹幕模型渲染；速度自动跟随视频倍速，轨道留白会叠加播放器控件避让区域。")
+            Text("显示区域、同屏上限、字号、字重和不透明度实时生效；将同屏上限拉满即「不限」模式，速度自动跟随视频倍速，轨道留白会叠加播放器控件避让区域。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

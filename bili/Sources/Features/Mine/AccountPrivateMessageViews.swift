@@ -89,7 +89,6 @@ struct AccountPrivateMessageSessionsView: View {
             sessionListOverlay
         }
         .hiddenInlineNavigationTitle()
-        .toolbarVisibility(.hidden, for: .tabBar)
         .nativeTopScrollEdgeEffect()
         .searchable(text: $searchText, prompt: "搜索用户或最近消息")
         .toolbar {
