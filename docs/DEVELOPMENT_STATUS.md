@@ -2599,6 +2599,14 @@
 - **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
   - `Release-iphoneos` 构建（`1.1.5 (217)`，仅命令行临时覆盖 `CODE_SIGN_STYLE=Manual`、`DEVELOPMENT_TEAM=G933USCY46`、`CODE_SIGN_IDENTITY="iPhone Distribution: Nazar Aryan (G933USCY46)"`、`PRODUCT_BUNDLE_IDENTIFIER=app.bamboo2779.brussels691`、`PROVISIONING_PROFILE_SPECIFIER=882865dd-38a8-4ea7-80c7-e1f3072e784b`）与 `codesign --verify --deep --strict` 校验通过，`bili.app/bili` SHA-256：`886eb760d23f9dfdf7a8fa4af9d092540251bd82486344d083df5022a3a90c6b`，已安装至真机（`databaseSequenceNumber: 6628`，`installationURL: file:///private/var/containers/Bundle/Application/F8CAB84D-2BF2-42A0-875B-558E1AF32692/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
 - **真机已验证**：
-  - 用户在 `RCe2027`（Build `217`）确认运行正常并授权推送至 GitHub `main`。
+  - 用户在 `RCe2027`（Build `217`）确认运行正常并授权推送至 GitHub `main`（提交 `8ef7091`）。
 - **待办**：
   - 如有重要里程碑，可择机触发云端全量 CI 回归复核 `PlayerFormalPlaybackConfigurationTests` 全套及 UI 测试集。
+
+### 2026-11-20（发布 `v1.1.6` 版本与未签名 IPA）
+
+- **当前分支、提交与标签**：`main`（`18976de`），标签 `v1.1.6`
+- **发布产物与状态**：
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将 `MARKETING_VERSION` 升级至 `1.1.6`、`CURRENT_PROJECT_VERSION` 递增至 `218`。
+  - 本地未签名构建产物：`build/release-unsigned-ipa/bili-release-unsigned.ipa`（版本 `1.1.6` Build `218`，Bundle ID `cc.bili`，未签名，`23.60 MiB`，SHA-256：`00deb485151cb08c9513f8dc177a484b0d8348f3463bebe45bf0b36c23ecc818`）。
+  - GitHub Release：`https://github.com/Rone89/cilicili/releases/tag/v1.1.6` 已发布，已上传 `bili-release-unsigned.ipa` 与中文更新概述。
