@@ -498,6 +498,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private let streamSource: PlayerStreamSource
     /// 当前播放源的动态范围，供弹幕等叠加层按 HDR/SDR 调整渲染策略。
     var playbackDynamicRange: BiliVideoDynamicRange { streamSource.dynamicRange }
+    var surfaceHostWindowScene: UIWindowScene? { surfaceView?.window?.windowScene }
     private let durationHint: TimeInterval?
     private let resumeTime: TimeInterval
     private let startupResumePolicy: PlayerStartupResumePolicy
@@ -562,11 +563,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var pictureInPicturePossibleObservation: NSKeyValueObservation?
     private var pictureInPictureMiniPlayerStartTimeoutTask: Task<Void, Never>?
     private var pictureInPictureMiniPlayerFailureHandler: (@MainActor () -> Void)?
+    private var isTrackingMiniPlayerPictureInPictureStart = false
+    private var didReceiveMiniPlayerPictureInPictureWillStart = false
+    private var miniPlayerPictureInPictureIssueCount = 0
     private var audioSessionCancellables = Set<AnyCancellable>()
     private var audioInterruptionState = VideoListenAudioInterruptionState()
     private var sponsorBlockSkipReportTasks: [UUID: Task<Void, Never>] = [:]
     private var pictureInPictureController: AVPictureInPictureController?
+    private var configuredPictureInPictureLayerID: ObjectIdentifier?
     private var didConfigurePictureInPicture = false
+    private var lastBackgroundPlaybackNowPlayingSyncAt: CFTimeInterval = 0
     private var sponsorBlockSegments: [SponsorBlockSegment] = []
     private var sponsorBlockSearchIndex = 0
     private var skippedSponsorBlockIDs = Set<String>()
@@ -984,6 +990,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         )
     }
 
+    var shouldContinuePlaybackInBackgroundForLifecycle: Bool {
+        continuesPlaybackInBackground
+    }
+
     func requestNextTrack() {
         guard canRequestNextTrack else { return }
         onNextTrackRequested?()
@@ -1173,8 +1183,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         surfaceReadinessResetTask?.cancel()
         surfaceReadinessResetTask = nil
         let isNewSurface = surfaceView !== view
-        let usesNativePlaybackControls = engine.usesNativePlaybackControls && prefersNativePlaybackControls
-        let shouldAttachDirectSurface = !usesNativePlaybackControls && nativePlaybackController != nil
+        let preservesActiveCustomPictureInPictureLayer =
+            pictureInPictureController?.isPictureInPictureActive == true
+        let usesNativePlaybackControls =
+            engine.usesNativePlaybackControls
+            && prefersNativePlaybackControls
+            && !preservesActiveCustomPictureInPictureLayer
+        let shouldAttachDirectSurface =
+            (!usesNativePlaybackControls && nativePlaybackController != nil)
+            || preservesActiveCustomPictureInPictureLayer
         if isNewSurface || shouldAttachDirectSurface {
             PlayerMetricsLog.diagnostic(
                 "surface attach view=\(ObjectIdentifier(view).hashValue) isNew=\(isNewSurface) preserve=\(preservesReadinessDuringSurfaceHandoff) hasPresented=\(hasPresentedPlayback) ready=\(isPlaybackSurfaceReady) currentReady=\(isCurrentPlaybackSurfaceReadyForDisplay) engineHasMedia=\(engine.hasMedia)"
@@ -1199,15 +1216,19 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             }
         }
         surfaceView = view
+        view.setAutomaticPictureInPictureFromInlineAllowed(allowsAutomaticPictureInPictureFromInline)
         view.setNativePlaybackControllerEnabled(usesNativePlaybackControls)
         if usesNativePlaybackControls {
             let controller = view.nativePlayerViewController
             nativePlaybackController = controller
             controller.delegate = self
             engine.attachNativePlaybackController(controller)
+            releasePictureInPictureController()
             applyPictureInPicturePreferenceToNativePlaybackController()
         } else {
             if let nativePlaybackController {
+                nativePlaybackController.delegate = nil
+                nativePlaybackController.allowsPictureInPicturePlayback = false
                 engine.detachNativePlaybackController(nativePlaybackController)
                 self.nativePlaybackController = nil
             }
@@ -1637,6 +1658,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         playbackContentMode == .audioOnly
             || UIApplication.shared.applicationState == .active
             || isPictureInPictureActive
+            || continuesPlaybackInBackground
     }
 
     private func markSurfaceLayoutRefreshed() {
@@ -1781,8 +1803,20 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isPictureInPictureActive else { return false }
         if continuesPlaybackInBackground {
             // Audio-only playback and opted-in recorded-video playback stay active.
-            // Live video keeps its existing background policy.
-            syncRemotePlaybackControls(forceNowPlayingTimeUpdate: true)
+            // Detach video presentation sinks immediately unless auto-inline PiP will
+            // handle backgrounding, so AVPlayer keeps audio running without stalling.
+            engine.setBackgroundPlaybackEnabled(true)
+            let allowsAutoInlineSystemPictureInPicture = isPictureInPictureEnabled
+                && allowsAutomaticPictureInPictureFromInline
+                && AVPictureInPictureController.isPictureInPictureSupported()
+            if !allowsAutoInlineSystemPictureInPicture {
+                engine.suspendVideoSurfaceForBackgroundPlayback()
+            }
+            let now = CACurrentMediaTime()
+            if now - lastBackgroundPlaybackNowPlayingSyncAt > 0.2 {
+                lastBackgroundPlaybackNowPlayingSyncAt = now
+                syncRemotePlaybackControls(forceNowPlayingTimeUpdate: true)
+            }
             return false
         }
 
@@ -1822,7 +1856,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 .resumeDecision,
                 metricsID: metricsID,
                 title: title,
-                message: "appBackgroundStop mode=manual time=\(String(format: "%.2fs", restoreTime ?? currentTime))"
+                message: "appBackgroundStop mode=manual time=\(String(format: "%.2fs", restoreTime ?? currentTime)) appState=\(UIApplication.shared.applicationState.rawValue)"
             )
             return true
         }
@@ -1850,6 +1884,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         shouldResumePlaybackAfterAppBackground = true
         pause(retainingAppBackgroundResumeIntent: true)
         return true
+    }
+
+    func restoreVideoSurfaceForAppForegroundIfNeeded() {
+        guard !isTerminated else { return }
+        guard continuesPlaybackInBackground else { return }
+        engine.restoreVideoSurfaceAfterBackgroundPlayback()
+        if surfaceView != nil {
+            refreshSurfaceLayout()
+        }
     }
 
     @discardableResult
@@ -2292,8 +2335,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.clearAppBackgroundResumeRecoveryTaskIfCurrent(generation: recoveryGeneration)
                 return
             }
-            if self.hasPlaybackAdvancedAfterStoppedBackgroundResume(from: baselineTime) {
-                self.clearAppBackgroundResumeRecoveryTaskIfCurrent(generation: recoveryGeneration)
+            if self.finishStoppedBackgroundResumeIfAdvanced(from: baselineTime, generation: recoveryGeneration) {
                 return
             }
 
@@ -2324,8 +2366,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.clearAppBackgroundResumeRecoveryTaskIfCurrent(generation: recoveryGeneration)
                 return
             }
-            if self.hasPlaybackAdvancedAfterStoppedBackgroundResume(from: baselineTime) {
-                self.clearAppBackgroundResumeRecoveryTaskIfCurrent(generation: recoveryGeneration)
+            if self.finishStoppedBackgroundResumeIfAdvanced(from: baselineTime, generation: recoveryGeneration) {
                 return
             }
 
@@ -2360,8 +2401,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.clearAppBackgroundResumeRecoveryTaskIfCurrent(generation: recoveryGeneration)
                 return
             }
-            if self.hasPlaybackAdvancedAfterStoppedBackgroundResume(from: restoredTime) {
-                self.clearAppBackgroundResumeRecoveryTaskIfCurrent(generation: recoveryGeneration)
+            if self.finishStoppedBackgroundResumeIfAdvanced(from: restoredTime, generation: recoveryGeneration) {
                 return
             }
             self.startFullAppBackgroundMediaRebuild(
@@ -2370,6 +2410,18 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 recoveryGeneration: recoveryGeneration
             )
         }
+    }
+
+    private func finishStoppedBackgroundResumeIfAdvanced(
+        from baselineTime: TimeInterval,
+        generation: Int
+    ) -> Bool {
+        guard hasPlaybackAdvancedAfterStoppedBackgroundResume(from: baselineTime) else {
+            return false
+        }
+        finishAppBackgroundSurfaceRecoveryReveal()
+        clearAppBackgroundResumeRecoveryTaskIfCurrent(generation: generation)
+        return true
     }
 
     private func hasPlaybackAdvancedAfterStoppedBackgroundResume(from baselineTime: TimeInterval) -> Bool {
@@ -4135,6 +4187,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         allowsAutomaticPictureInPictureFromInline = allowed
         let effectiveAutoInline = isPictureInPictureEnabled && allowed
         pictureInPictureController?.canStartPictureInPictureAutomaticallyFromInline = effectiveAutoInline
+        engine.setAutomaticPictureInPictureFromInlineAllowed(allowed)
+        surfaceView?.setAutomaticPictureInPictureFromInlineAllowed(allowed)
         applyPictureInPicturePreferenceToNativePlaybackController()
     }
 
@@ -4172,64 +4226,144 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
 
         pictureInPictureMiniPlayerFailureHandler = onFailure
-        if controller.isPictureInPicturePossible {
-            controller.startPictureInPicture()
-        } else {
-            pictureInPicturePossibleObservation = controller.observe(
-                \.isPictureInPicturePossible,
-                options: [.initial, .new]
-            ) { [weak self, weak controller] observedController, _ in
-                Task { @MainActor [weak self, weak controller] in
-                    guard let self,
-                          !self.isTerminated,
-                          let controller,
-                          self.pictureInPictureController === controller,
-                          observedController === controller,
-                          controller.isPictureInPicturePossible
-                    else { return }
-                    self.pictureInPicturePossibleObservation?.invalidate()
-                    self.pictureInPicturePossibleObservation = nil
-                    if !controller.isPictureInPictureActive {
-                        controller.startPictureInPicture()
-                    }
-                }
-            }
-        }
+        isTrackingMiniPlayerPictureInPictureStart = true
+        didReceiveMiniPlayerPictureInPictureWillStart = false
+        miniPlayerPictureInPictureIssueCount = 0
+
+        let initialLayerReady = engine.pictureInPictureContentSource()?.playerLayer?.isReadyForDisplay == true
+        let initialHasWindow = surfaceView?.window != nil
+        let initialBounds = "\(surfaceView?.bounds ?? .zero)"
+        PlayerMetricsLog.diagnostic(
+            "pipMiniStart begin possible=\(controller.isPictureInPicturePossible) active=\(controller.isPictureInPictureActive) selfActive=\(isPictureInPictureActive) layerReady=\(initialLayerReady) hasWindow=\(initialHasWindow) bounds=\(initialBounds)"
+        )
 
         let retryGeneration = advancePictureInPictureStartRetryGeneration()
+        let attemptIssueStart: @MainActor (String) -> Void = { [weak self, weak controller] reason in
+            guard let self,
+                  !self.isTerminated,
+                  self.pictureInPictureStartRetryGeneration == retryGeneration,
+                  let activeController = self.pictureInPictureController ?? controller,
+                  !self.didReceiveMiniPlayerPictureInPictureWillStart,
+                  !activeController.isPictureInPictureActive,
+                  !self.isPictureInPictureActive,
+                  activeController.isPictureInPicturePossible
+            else { return }
+            self.miniPlayerPictureInPictureIssueCount += 1
+            let layerReady = self.engine.pictureInPictureContentSource()?.playerLayer?.isReadyForDisplay == true
+            let hasWindow = self.surfaceView?.window != nil
+            PlayerMetricsLog.diagnostic(
+                "pipMiniStart issue=\(reason) attempt=\(self.miniPlayerPictureInPictureIssueCount) layerReady=\(layerReady) possible=\(activeController.isPictureInPicturePossible) hasWindow=\(hasWindow)"
+            )
+            activeController.startPictureInPicture()
+        }
+
         pictureInPictureMiniPlayerStartTimeoutTask = Task { @MainActor [weak self, weak controller] in
-            // If `startPictureInPicture()` was issued mid-pop-transition, AVKit may
-            // ignore the initial frame call; re-attempt once the transition settles.
-            for waitStepNanoseconds in [90_000_000, 180_000_000] as [UInt64] {
-                try? await Task.sleep(nanoseconds: waitStepNanoseconds)
+            // Wait across a RunLoop/CoreAnimation commit so `SystemMiniPlayerStagingView`
+            // and its fresh `AVPlayerLayer` are committed to WindowServer before starting PiP.
+            let settleStartUptime = CACurrentMediaTime()
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            for _ in 0..<12 {
                 guard let self,
                       !Task.isCancelled,
                       !self.isTerminated,
                       self.pictureInPictureStartRetryGeneration == retryGeneration
                 else { return }
-                if controller?.isPictureInPictureActive == true || self.isPictureInPictureActive {
+                if self.didReceiveMiniPlayerPictureInPictureWillStart
+                    || controller?.isPictureInPictureActive == true
+                    || self.isPictureInPictureActive {
                     self.cancelMiniPlayerPictureInPictureStartTracking()
                     return
                 }
-                if let controller, controller.isPictureInPicturePossible {
-                    controller.startPictureInPicture()
+                let activeController = self.pictureInPictureController ?? controller
+                let layerReady = self.engine.pictureInPictureContentSource()?.playerLayer?.isReadyForDisplay == true
+                if activeController?.isPictureInPicturePossible == true, layerReady {
+                    break
                 }
+                try? await Task.sleep(nanoseconds: 16_000_000)
             }
 
-            let remainingNanoseconds = maxWaitNanoseconds > 270_000_000
-                ? maxWaitNanoseconds - 270_000_000
-                : 200_000_000
-            try? await Task.sleep(nanoseconds: remainingNanoseconds)
             guard let self,
                   !Task.isCancelled,
                   !self.isTerminated,
                   self.pictureInPictureStartRetryGeneration == retryGeneration
             else { return }
-            let started = controller?.isPictureInPictureActive == true || self.isPictureInPictureActive
+
+            if self.didReceiveMiniPlayerPictureInPictureWillStart
+                || controller?.isPictureInPictureActive == true
+                || self.isPictureInPictureActive {
+                self.cancelMiniPlayerPictureInPictureStartTracking()
+                return
+            }
+
+            if let activeController = self.pictureInPictureController ?? controller {
+                if activeController.isPictureInPicturePossible {
+                    attemptIssueStart("afterCommit")
+                } else {
+                    self.pictureInPicturePossibleObservation = activeController.observe(
+                        \.isPictureInPicturePossible,
+                        options: [.initial, .new]
+                    ) { [weak self, weak activeController] observedController, _ in
+                        Task { @MainActor [weak self, weak activeController] in
+                            guard let self,
+                                  !self.isTerminated,
+                                  self.pictureInPictureStartRetryGeneration == retryGeneration,
+                                  let activeController,
+                                  (self.pictureInPictureController ?? activeController) === activeController,
+                                  observedController === activeController,
+                                  activeController.isPictureInPicturePossible
+                            else { return }
+                            self.pictureInPicturePossibleObservation?.invalidate()
+                            self.pictureInPicturePossibleObservation = nil
+                            if self.miniPlayerPictureInPictureIssueCount == 0 {
+                                attemptIssueStart("kvo")
+                            }
+                        }
+                    }
+                }
+            }
+
+            try? await Task.sleep(nanoseconds: 320_000_000)
+            guard !Task.isCancelled,
+                  !self.isTerminated,
+                  self.pictureInPictureStartRetryGeneration == retryGeneration
+            else { return }
+
+            if self.didReceiveMiniPlayerPictureInPictureWillStart
+                || self.pictureInPictureController?.isPictureInPictureActive == true
+                || controller?.isPictureInPictureActive == true
+                || self.isPictureInPictureActive {
+                self.cancelMiniPlayerPictureInPictureStartTracking()
+                return
+            }
+
+            if self.miniPlayerPictureInPictureIssueCount < 2 {
+                self.configurePictureInPictureIfNeeded()
+                attemptIssueStart("retry")
+            }
+
+            let elapsedNanoseconds = UInt64(max(0, CACurrentMediaTime() - settleStartUptime) * 1_000_000_000)
+            let remainingNanoseconds = maxWaitNanoseconds > elapsedNanoseconds
+                ? maxWaitNanoseconds - elapsedNanoseconds
+                : 200_000_000
+            try? await Task.sleep(nanoseconds: remainingNanoseconds)
+            guard !Task.isCancelled,
+                  !self.isTerminated,
+                  self.pictureInPictureStartRetryGeneration == retryGeneration
+            else { return }
+            let started = self.didReceiveMiniPlayerPictureInPictureWillStart
+                || self.pictureInPictureController?.isPictureInPictureActive == true
+                || controller?.isPictureInPictureActive == true
+                || self.isPictureInPictureActive
             guard !started else {
                 self.cancelMiniPlayerPictureInPictureStartTracking()
                 return
             }
+            let finalLayerReady = self.engine.pictureInPictureContentSource()?.playerLayer?.isReadyForDisplay == true
+            let finalPossible = (self.pictureInPictureController ?? controller)?.isPictureInPicturePossible ?? false
+            let finalActive = (self.pictureInPictureController ?? controller)?.isPictureInPictureActive ?? false
+            PlayerMetricsLog.diagnostic(
+                "pipMiniStart timeout possible=\(finalPossible) active=\(finalActive) selfActive=\(self.isPictureInPictureActive) issueCount=\(self.miniPlayerPictureInPictureIssueCount) layerReady=\(finalLayerReady) hasWindow=\(self.surfaceView?.window != nil)"
+            )
             let failure = self.pictureInPictureMiniPlayerFailureHandler
             self.cancelMiniPlayerPictureInPictureStartTracking()
             failure?()
@@ -4303,6 +4437,18 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             cancelTransientSystemOverlayPlaybackPreservation()
             pause()
             return
+        }
+        if !isNativeController,
+           !isPictureInPictureActive,
+           let view = surfaceView,
+           engine.usesNativePlaybackControls,
+           prefersNativePlaybackControls,
+           nativePlaybackController == nil {
+            attachSurface(
+                view,
+                prefersNativePlaybackControls: true,
+                preservesReadinessDuringSurfaceHandoff: true
+            )
         }
         schedulePictureInPictureInlineRecovery()
     }
@@ -6414,6 +6560,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         pictureInPictureMiniPlayerStartTimeoutTask?.cancel()
         pictureInPictureMiniPlayerStartTimeoutTask = nil
         pictureInPictureMiniPlayerFailureHandler = nil
+        isTrackingMiniPlayerPictureInPictureStart = false
+        didReceiveMiniPlayerPictureInPictureWillStart = false
+        miniPlayerPictureInPictureIssueCount = 0
     }
 
     private func clearPictureInPictureStartRetryTaskIfCurrent(_ generation: Int) {
@@ -6634,28 +6783,47 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func configurePictureInPictureIfNeeded() {
         guard isPictureInPictureEnabled,
-              !didConfigurePictureInPicture,
               !engine.supportsPictureInPicture,
               AVPictureInPictureController.isPictureInPictureSupported(),
               let contentSource = engine.pictureInPictureContentSource()
         else { return }
+
+        let layerID = contentSource.playerLayer.map { ObjectIdentifier($0) }
+        if didConfigurePictureInPicture,
+           let existing = pictureInPictureController,
+           configuredPictureInPictureLayerID == layerID {
+            existing.canStartPictureInPictureAutomaticallyFromInline =
+                isPictureInPictureEnabled && allowsAutomaticPictureInPictureFromInline
+            return
+        }
+
+        if let existing = pictureInPictureController {
+            guard !existing.isPictureInPictureActive else { return }
+            releasePictureInPictureController()
+        }
 
         let controller = AVPictureInPictureController(contentSource: contentSource)
         controller.delegate = self
         controller.canStartPictureInPictureAutomaticallyFromInline =
             isPictureInPictureEnabled && allowsAutomaticPictureInPictureFromInline
         pictureInPictureController = controller
+        configuredPictureInPictureLayerID = layerID
         didConfigurePictureInPicture = true
     }
 
     private func releasePictureInPictureControllerIfDisabled() {
-        guard !isPictureInPictureEnabled,
-              let controller = pictureInPictureController,
+        guard !isPictureInPictureEnabled else { return }
+        releasePictureInPictureController()
+    }
+
+    private func releasePictureInPictureController() {
+        guard let controller = pictureInPictureController,
               !controller.isPictureInPictureActive
         else { return }
         controller.canStartPictureInPictureAutomaticallyFromInline = false
         controller.delegate = nil
         pictureInPictureController = nil
+        configuredPictureInPictureLayerID = nil
         didConfigurePictureInPicture = false
     }
 
@@ -6778,6 +6946,8 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
                 pictureInPictureController.stopPictureInPicture()
                 return
             }
+            PlayerMetricsLog.diagnostic("pipDelegate willStart id=\(self.metricsID)")
+            self.didReceiveMiniPlayerPictureInPictureWillStart = true
             self.isPictureInPictureActive = true
             self.cancelMiniPlayerPictureInPictureStartTracking()
         }
@@ -6789,6 +6959,7 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
                   !self.isTerminated,
                   self.pictureInPictureController === pictureInPictureController
             else { return }
+            self.didReceiveMiniPlayerPictureInPictureWillStart = true
             self.isPictureInPictureActive = true
             self.cancelMiniPlayerPictureInPictureStartTracking()
             self.onPictureInPictureDidStart?()
@@ -6811,6 +6982,7 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
                   !self.isTerminated,
                   self.pictureInPictureController === pictureInPictureController
             else { return }
+            PlayerMetricsLog.diagnostic("pipDelegate didStop id=\(self.metricsID)")
             self.handlePictureInPictureDidStop(isNativeController: false)
         }
     }
@@ -6839,7 +7011,16 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
                   !self.isTerminated,
                   self.pictureInPictureController === pictureInPictureController
             else { return }
+            let nsError = error as NSError
+            let layerReady = self.engine.pictureInPictureContentSource()?.playerLayer?.isReadyForDisplay == true
+            PlayerMetricsLog.diagnostic(
+                "pipDelegate failedToStart id=\(self.metricsID) domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription) issueCount=\(self.miniPlayerPictureInPictureIssueCount) tracking=\(self.isTrackingMiniPlayerPictureInPictureStart) layerReady=\(layerReady) hasWindow=\(self.surfaceView?.window != nil)"
+            )
             self.isPictureInPictureActive = false
+            if self.isTrackingMiniPlayerPictureInPictureStart && self.miniPlayerPictureInPictureIssueCount < 2 {
+                // Keep the mini-player start tracking alive so the scheduled post-settle retry can fire cleanly.
+                return
+            }
             self.releasePictureInPictureControllerIfDisabled()
             self.errorMessage = "画中画启动失败：\(error.localizedDescription)"
             let failureHandler = self.pictureInPictureMiniPlayerFailureHandler

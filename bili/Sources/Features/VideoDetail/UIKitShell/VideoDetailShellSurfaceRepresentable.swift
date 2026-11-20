@@ -31,6 +31,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> VideoDetailShellSurfaceHost {
         let host = makeHost()
+        guard !detailViewModel.didTransferToSystemMiniPlayer else { return host }
         host.setDanmakuCanvasSize(danmakuCanvasSize)
         context.coordinator.configure(host: host, playerViewModel: playerViewModel)
         context.coordinator.attachIfPossible(to: host)
@@ -41,9 +42,12 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         _ uiView: VideoDetailShellSurfaceHost,
         context: Context
     ) {
+        guard !uiView.isTornDown, !detailViewModel.didTransferToSystemMiniPlayer else {
+            context.coordinator.dismantle()
+            return
+        }
         let coordinator = context.coordinator
         coordinator.configure(host: uiView, playerViewModel: playerViewModel)
-        guard !uiView.isTornDown else { return }
         coordinator.scheduleConfigurationIfNeeded(
             playerViewModel: playerViewModel,
             videoAspectRatio: videoAspectRatio,
@@ -102,6 +106,10 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             host: VideoDetailShellSurfaceHost,
             playerViewModel: PlayerStateViewModel
         ) {
+            guard !host.isTransferredToSystemMiniPlayer else {
+                dismantle()
+                return
+            }
             let hostChanged = self.host !== host
             if hostChanged {
                 isAttached = false
@@ -175,7 +183,8 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
                 guard let self,
                       let host = self.host,
                       let playerViewModel = self.configuredPlayer,
-                      !host.isTornDown
+                      !host.isTornDown,
+                      !host.isTransferredToSystemMiniPlayer
                 else {
                     self?.isConfigurationUpdateScheduled = false
                     return
@@ -203,7 +212,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         }
 
         func attachIfPossible(to host: VideoDetailShellSurfaceHost) {
-            guard !isAttached else { return }
+            guard !isAttached, !host.isTransferredToSystemMiniPlayer else { return }
             guard let parent = nearestViewController(from: host) else {
                 scheduleAttachmentRetry(for: host)
                 return
@@ -246,6 +255,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
                 guard let self,
                       let host,
                       let playerViewModel,
+                      !host.isTransferredToSystemMiniPlayer,
                       self.prewarmGeneration == generation,
                       self.host === host,
                       self.observedPlayer === playerViewModel
@@ -269,7 +279,11 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
                 for _ in 0..<8 {
                     guard !Task.isCancelled else { return }
                     try? await Task.sleep(for: .milliseconds(16))
-                    guard let self, let host, !Task.isCancelled else { return }
+                    guard let self,
+                          let host,
+                          !Task.isCancelled,
+                          !host.isTransferredToSystemMiniPlayer
+                    else { return }
                     if self.nearestViewController(from: host) != nil {
                         self.attachmentRetry = nil
                         self.attachIfPossible(to: host)

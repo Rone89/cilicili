@@ -241,6 +241,7 @@ struct BiliPlayerLifecycleActionBuilder {
         let shouldHandlePictureInPicture = isPictureInPictureEnabled
         let canActivatePlayback = allowsPlaybackActivation
         let appBackgroundRecoverySnapshotModel = appBackgroundRecoverySnapshotModel
+        viewModel.restoreVideoSurfaceForAppForegroundIfNeeded()
         if viewModel.isAwaitingAppBackgroundSurfaceRecovery {
             // The global application delegate can pause playback even when this
             // SwiftUI host misses the preceding inactive notification. The engine
@@ -287,8 +288,17 @@ struct BiliPlayerLifecycleActionBuilder {
                 // player during scene restoration. Keep a held frame while the
                 // first recovery task is still waiting for a fresh drawable.
                 guard !viewModel.isAwaitingAppBackgroundSurfaceRecovery else { return }
+                let keepsBackgroundAudio = viewModel.shouldContinuePlaybackInBackgroundForLifecycle
                 viewModel.recoverPlaybackAfterAppResume()
-                appBackgroundRecoverySnapshotModel.release(immediate: true)
+                if keepsBackgroundAudio {
+                    appBackgroundRecoverySnapshotModel.releaseForStableSurfaceTransition(
+                        isReadyForReveal: {
+                            viewModel.validateCurrentPlaybackSurfaceReadyForReveal()
+                        }
+                    )
+                } else {
+                    appBackgroundRecoverySnapshotModel.release(immediate: true)
+                }
                 return
             }
             appBackgroundRecoverySnapshotModel.releaseForAppBackgroundPlaybackRecovery(

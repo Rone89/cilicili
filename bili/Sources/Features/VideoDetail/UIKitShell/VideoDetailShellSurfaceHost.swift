@@ -87,6 +87,12 @@ final class VideoDetailShellSurfaceHost: UIView {
     private var isRotationChromePrewarming = false
     private(set) var isRotationChromePrewarmed = false
     private(set) var isTornDown = false
+    var isTransferredToSystemMiniPlayer: Bool {
+        detailViewModel?.didTransferToSystemMiniPlayer == true
+    }
+    private var canMutateBoundPlayer: Bool {
+        !isTornDown && !isTransferredToSystemMiniPlayer
+    }
 #if DEBUG
     private var lastReportedDiagnosticOverlayBounds = CGRect.null
 #endif
@@ -121,12 +127,15 @@ final class VideoDetailShellSurfaceHost: UIView {
         self.overlayState = overlayState
         self.experimentState = experimentState
         self.libraryStore = dependencies.libraryStore
-        playerViewModel.setBackgroundPlaybackEnabled(
-            dependencies.libraryStore.backgroundPlaybackEnabled
-        )
-        playerViewModel.setAutomaticPictureInPictureFromInlineAllowed(
-            dependencies.libraryStore.pictureInPictureEnabled
-        )
+        let bindsPlayerSurface = !detailViewModel.didTransferToSystemMiniPlayer
+        if bindsPlayerSurface {
+            playerViewModel.setBackgroundPlaybackEnabled(
+                dependencies.libraryStore.backgroundPlaybackEnabled
+            )
+            playerViewModel.setAutomaticPictureInPictureFromInlineAllowed(
+                dependencies.libraryStore.pictureInPictureEnabled
+            )
+        }
         self.rotationCoordinator = rotationCoordinator
         self.onShowMoreControls = onShowMoreControls
         self.onRequestFullscreen = onRequestFullscreen
@@ -140,11 +149,13 @@ final class VideoDetailShellSurfaceHost: UIView {
             viewModel: playerViewModel,
             isPictureInPictureEnabled: dependencies.libraryStore.allowsPictureInPictureController
                 && !playerViewModel.isAudioOnlyPlayback,
+            allowsAutomaticPictureInPictureFromInline: dependencies.libraryStore.pictureInPictureEnabled,
             prefersNativePlaybackSurface: usesNativeSurface,
             showsNativePlaybackControls: usesSystemControlsUI,
             showsNativePlaybackSpeeds: true,
             enablesNativeSurfaceGestures: usesNativeSurface && !usesCustomOverlay,
-            nativeAllowsPictureInPicturePlayback: nil
+            nativeAllowsPictureInPicturePlayback: nil,
+            bindsSurfaceImmediately: bindsPlayerSurface
         )
         let overlayRoot = PlayerOverlayHostRoot(
             detailViewModel: detailViewModel,
@@ -218,7 +229,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         .removeDuplicates { $0 == $1 }
         .sink { [weak self] isPictureInPictureEnabled, isAutoExitMiniPlayerEnabled in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.canMutateBoundPlayer else { return }
                 self.surfaceHostView.setPictureInPictureEnabled(
                     (isPictureInPictureEnabled || isAutoExitMiniPlayerEnabled)
                         && !self.state.playerViewModel.isAudioOnlyPlayback,
@@ -251,9 +262,11 @@ final class VideoDetailShellSurfaceHost: UIView {
             }
             .store(in: &cancellables)
 
-        bindNativeFullScreenPresentation(for: state.playerViewModel)
-        if usesSystemControlsUI {
-            installNativeSystemControlsAccessoriesIfNeeded()
+        if bindsPlayerSurface {
+            bindNativeFullScreenPresentation(for: state.playerViewModel)
+            if usesSystemControlsUI {
+                installNativeSystemControlsAccessoriesIfNeeded()
+            }
         }
     }
 
@@ -262,7 +275,8 @@ final class VideoDetailShellSurfaceHost: UIView {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] isFullScreen in
-                self?.syncNativeFullScreenOverlays(isFullScreen: isFullScreen)
+                guard let self, self.canMutateBoundPlayer else { return }
+                self.syncNativeFullScreenOverlays(isFullScreen: isFullScreen)
             }
     }
 
@@ -1332,7 +1346,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     override func layoutSubviews() {
         let didReconcileFullscreenFrame = reconcileFullscreenBoundsIfNeeded()
         super.layoutSubviews()
-        if didReconcileFullscreenFrame {
+        if didReconcileFullscreenFrame, canMutateBoundPlayer {
             surfaceHostView.refreshLayoutImmediately()
         }
         if nativeOptionsContainerView != nil {
@@ -1385,7 +1399,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     }
 
     func attach(to parent: UIViewController) {
-        guard !isTornDown else { return }
+        guard canMutateBoundPlayer else { return }
         guard overlayHostingController.parent == nil else { return }
         overlayOriginalParent = parent
         parent.addChild(overlayHostingController)
@@ -1468,6 +1482,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     }
 
     func refreshLayoutImmediately() {
+        guard canMutateBoundPlayer else { return }
         UIView.performWithoutAnimation {
             setNeedsLayout()
             layoutIfNeeded()
@@ -1529,6 +1544,7 @@ final class VideoDetailShellSurfaceHost: UIView {
 
     /// 清晰度切换等场景会替换 player 实例，UIKit 直连路径会原位重绑叠层。
     func setPlayerViewModel(_ playerViewModel: PlayerStateViewModel) {
+        guard canMutateBoundPlayer else { return }
         guard state.playerViewModel !== playerViewModel else { return }
         state.playerViewModel = playerViewModel
         bindNativeFullScreenPresentation(for: playerViewModel)
@@ -1545,7 +1561,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     }
 
     private func applyNativePlaybackControlsSettings() {
-        guard !isTornDown else { return }
+        guard canMutateBoundPlayer else { return }
         let usesNativeSurface = libraryStore.usesNativePlaybackSurface
         let usesSystemControlsUI = libraryStore.usesSystemNativePlaybackControlsUI
         let usesCustomOverlay = libraryStore.usesCustomPlaybackControlsOverlay
@@ -1589,6 +1605,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     }
 
     func setVideoGravity(_ gravity: AVLayerVideoGravity) {
+        guard canMutateBoundPlayer else { return }
         videoGravity = gravity
         updatePlaybackTransitionContentMode()
         surfaceHostView.setVideoGravity(gravity)

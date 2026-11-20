@@ -48,6 +48,11 @@ extension VideoDetailViewModel {
     }
 
     func configureStablePlayerStartupCallbacks(_ playerViewModel: PlayerStateViewModel) {
+        playerViewModel.setBackgroundPlaybackEnabled(libraryStore.backgroundPlaybackEnabled)
+        playerViewModel.setAutomaticPictureInPictureFromInlineAllowed(libraryStore.pictureInPictureEnabled)
+        playerViewModel.setPictureInPictureEnabled(
+            libraryStore.allowsPictureInPictureController && !playerViewModel.isAudioOnlyPlayback
+        )
         playerViewModel.onExplicitPlaybackStartRequested = { [weak self, weak playerViewModel] in
             guard let self,
                   let playerViewModel,

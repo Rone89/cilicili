@@ -45,6 +45,14 @@ private struct BiliPlayerLifecycleHostModifier: ViewModifier {
                 deliver(.active)
             }
             .onChange(of: scenePhase) { _, phase in
+                if phase == .background,
+                   !BiliPlayerLifecycleHostPolicy.shouldDeliverBackgroundScenePhase(
+                       applicationState: UIApplication.shared.applicationState,
+                       hasForegroundKeyWindow: UIApplication.shared.playbackDetailForegroundKeyWindow != nil
+                   ) {
+                    PlayerMetricsLog.diagnostic("appLifecycle ignoreSwiftUIScenePhaseBackground appActive=true")
+                    return
+                }
                 deliver(phase)
             }
             .onDisappear(perform: actions.onDisappear)
@@ -80,6 +88,16 @@ private struct BiliPlayerLifecycleHostModifier: ViewModifier {
         default:
             .inactive
         }
+    }
+}
+
+@MainActor
+enum BiliPlayerLifecycleHostPolicy {
+    static func shouldDeliverBackgroundScenePhase(
+        applicationState: UIApplication.State,
+        hasForegroundKeyWindow: Bool
+    ) -> Bool {
+        !(applicationState == .active && hasForegroundKeyWindow)
     }
 }
 

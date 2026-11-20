@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 @MainActor
 final class ActivePlaybackCoordinator {
@@ -59,6 +60,11 @@ final class ActivePlaybackCoordinator {
         return activePlayer?.pauseForAppBackground() ?? false
     }
 
+    func restoreActivePlaybackForAppForeground() {
+        cleanupRegisteredPlayers()
+        activePlayer?.restoreVideoSurfaceForAppForegroundIfNeeded()
+    }
+
     @discardableResult
     func resumeActivePlaybackAfterCancelledNavigation() -> Bool {
         activePlayer?.restoreAudioAfterCancelledNavigation() ?? false
@@ -70,6 +76,10 @@ final class ActivePlaybackCoordinator {
 
     func currentActivePlayer() -> PlayerStateViewModel? {
         activePlayer
+    }
+
+    var activePlayerWindowScene: UIWindowScene? {
+        activePlayer?.surfaceHostWindowScene
     }
 
     private func registeredPlayersIncludingActive() -> [PlayerStateViewModel] {

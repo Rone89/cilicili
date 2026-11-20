@@ -12,6 +12,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     let contentState = VideoDetailShellContentView.State()
     @Published private(set) var activePlayerViewModel: PlayerStateViewModel?
     @Published private(set) var surfacePlayerViewModel: PlayerStateViewModel?
+    @Published private(set) var isTransferredToSystemMiniPlayer = false
     @Published private(set) var videoAspectRatio: CGFloat
     @Published private(set) var currentPlayerHeight: CGFloat?
     private(set) var lastScrollOffset: CGFloat = 0
@@ -55,12 +56,14 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         self.runtimeSettings = runtimeSettings
         self.rotationCoordinator = rotationCoordinator
         contentUpdateGate = VideoDetailContentUpdateGate()
-        let initialPlayerViewModel = viewModel.playbackSession.activePlayer
+        let isTransferred = viewModel.didTransferToSystemMiniPlayer
+        let initialPlayerViewModel = isTransferred ? nil : viewModel.playbackSession.activePlayer
         videoAspectRatio =
             VideoDetailInitialVideoGeometry.metadataAspectRatio(for: initialVideo)
             ?? VideoDetailInitialVideoGeometry.metadataAspectRatio(for: viewModel.detail)
             ?? initialPlayerViewModel?.videoAspectRatio
             ?? VideoDetailInitialVideoGeometry.defaultAspectRatio
+        isTransferredToSystemMiniPlayer = isTransferred
         activePlayerViewModel = initialPlayerViewModel
         surfacePlayerViewModel = initialPlayerViewModel
         visitedContentTabs = [initialContentTab]
@@ -492,11 +495,17 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             .sink { [weak self] player in
                 guard let self else { return }
                 self.activePlayerViewModel = player
-                if let player {
+                if let player, !self.viewModel.didTransferToSystemMiniPlayer {
                     self.surfacePlayerViewModel = player
+                    self.isTransferredToSystemMiniPlayer = false
+                } else if self.viewModel.didTransferToSystemMiniPlayer {
+                    self.surfacePlayerViewModel = nil
+                    self.isTransferredToSystemMiniPlayer = true
                 }
                 self.bindVideoAspectRatio(to: player)
-                self.bindPlaybackState(to: player ?? self.surfacePlayerViewModel)
+                self.bindPlaybackState(
+                    to: player ?? (self.isTransferredToSystemMiniPlayer ? nil : self.surfacePlayerViewModel)
+                )
             }
             .store(in: &cancellables)
     }
@@ -655,6 +664,9 @@ private struct VideoDetailInteractivePlayerLayer: View {
 
         let suppressesRotationAnimation = rotationCoordinator.isTransitioning || layout.usesFullscreenLayout
 
+        let isMiniPlayerTransferred =
+            model.isTransferredToSystemMiniPlayer || viewModel.didTransferToSystemMiniPlayer
+
         ZStack(alignment: .topLeading) {
             // Keep the player stage opaque while the stable player/surface is
             // still being created. The content layer uses the light grouped
@@ -666,7 +678,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                 .disablingRotationTransaction(suppressesRotationAnimation)
                 .zIndex(1)
 
-            if let playerViewModel = model.surfacePlayerViewModel {
+            if let playerViewModel = model.surfacePlayerViewModel, !isMiniPlayerTransferred {
                 VideoDetailShellSurfaceRepresentable(
                     playerViewModel: playerViewModel,
                     detailViewModel: viewModel,
@@ -703,6 +715,15 @@ private struct VideoDetailInteractivePlayerLayer: View {
                     .disablingRotationTransaction(suppressesRotationAnimation)
                     .zIndex(3)
                 }
+            } else if isMiniPlayerTransferred {
+                VideoDetailMiniPlayerTransitionSurfaceFallback(
+                    snapshot: viewModel.playbackTransitionSnapshot
+                )
+                .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
+                .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                .allowsHitTesting(false)
+                .disablingRotationTransaction(suppressesRotationAnimation)
+                .zIndex(2)
             } else {
                 Group {
                     if let episodeID = viewModel.detail.pgcEpisodeID {
@@ -732,6 +753,23 @@ private struct VideoDetailInteractivePlayerLayer: View {
             guard newLayout.playerFrame != model.playerFrame else { return }
             model.scheduleLayoutSynchronization(newLayout)
         }
+    }
+}
+
+@MainActor
+private struct VideoDetailMiniPlayerTransitionSurfaceFallback: View {
+    let snapshot: PlaybackTransitionSnapshot?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let snapshot {
+                Image(uiImage: snapshot.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
+        }
+        .clipped()
     }
 }
 

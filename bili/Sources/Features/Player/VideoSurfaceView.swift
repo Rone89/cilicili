@@ -165,6 +165,7 @@ final class VideoSurfaceContainerView: UIView {
     private var isSystemPlaybackControlsSuppressedByGesture = false
     private var showsSystemPlaybackSpeeds = false
     private var isPictureInPictureEnabled = false
+    private var allowsAutomaticPictureInPictureFromInline = true
     private var nativeAllowsPictureInPicturePlaybackOverride: Bool?
     private var isNativePlaybackControllerEnabled = false
     private var usesLiveSurfaceDuringLayoutTransition = false
@@ -254,6 +255,15 @@ final class VideoSurfaceContainerView: UIView {
             return
         }
         isPictureInPictureEnabled = isEnabled
+        configureNativePlayerViewController()
+    }
+
+    func setAutomaticPictureInPictureFromInlineAllowed(_ isAllowed: Bool) {
+        guard allowsAutomaticPictureInPictureFromInline != isAllowed else {
+            configureNativePlayerViewController()
+            return
+        }
+        allowsAutomaticPictureInPictureFromInline = isAllowed
         configureNativePlayerViewController()
     }
 
@@ -728,7 +738,7 @@ final class VideoSurfaceContainerView: UIView {
             && AVPictureInPictureController.isPictureInPictureSupported()
         nativePlayerViewController.allowsPictureInPicturePlayback = isPictureInPictureAllowed
         nativePlayerViewController.canStartPictureInPictureAutomaticallyFromInline =
-            isPictureInPictureAllowed && isPictureInPictureEnabled
+            isPictureInPictureAllowed && isPictureInPictureEnabled && allowsAutomaticPictureInPictureFromInline
         nativePlayerViewController.requiresLinearPlayback = false
         nativePlayerViewController.updatesNowPlayingInfoCenter = false
         // 全屏进出完全交给系统全屏按钮与 AVKit 转场，不自动进出。

@@ -2610,3 +2610,170 @@
   - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将 `MARKETING_VERSION` 升级至 `1.1.6`、`CURRENT_PROJECT_VERSION` 递增至 `218`。
   - 本地未签名构建产物：`build/release-unsigned-ipa/bili-release-unsigned.ipa`（版本 `1.1.6` Build `218`，Bundle ID `cc.bili`，未签名，`23.60 MiB`，SHA-256：`00deb485151cb08c9513f8dc177a484b0d8348f3463bebe45bf0b36c23ecc818`）。
   - GitHub Release：`https://github.com/Rone89/cilicili/releases/tag/v1.1.6` 已发布，已上传 `bili-release-unsigned.ipa` 与中文更新概述。
+
+### 2026-11-20（修复应用内画中画失效与后台播放切后台卡顿 1–2 秒问题）
+
+- **当前分支与提交**：`main`（基线提交 `1e8cd61`，本地有待提交修复改动，Build 已递增至 `219`）
+- **问题根因与已实现修复（未提交）**：
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `218` 升级至 `219`（`1.1.6 (219)`）。
+  - **应用内画中画失效（`autoPictureInPictureOnExitEnabled`）**：
+    - `LibraryStore.usesNativePlaybackSurface` 固定使用 `AVPlayerViewController` 后，详情页期间 `AVPlayerLayer` 被移除；退出详情页切换至 [SystemMiniPlayerCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/SystemMiniPlayerCoordinator.swift) 的 `stagingHostView` 时，新建的 `AVPlayerLayer` 被插在根视图最底层（`at: 0`）且 `alpha = 0.015`，被不透明 `UITabBarController` 完全遮挡，真机 PiP 资格检查失败并在超时后停止播放。本次改为 `attachDefaultStagingSurface` 先以 `alpha = 1.0` 前置挂载不被遮挡，并在 `onPictureInPictureDidStart` 回调触发后再降至 `alpha = 0.015` 并沉底；`detachStagingContainer` 同步恢复 `alpha = 1.0` 并修复空的 `subviews` 判定逻辑（改为校验 `!stillBound && !hasPlayerLayer`）。
+    - [PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift)：记录 `configuredPictureInPictureLayerID`，在 `AVPlayerLayer` 重建后主动释放并重建过期 PiP 控制器以修复二次退出失效；在自定义 PiP 激活/还原期间通过 `preservesActiveCustomPictureInPictureLayer` 保留 `AVPlayerLayer` 并在 `handlePictureInPictureDidStop(isNativeController: false)` 后再切回 `nativePlaybackController`；收敛 `startPictureInPictureForMiniPlayer` 的重复立即启动请求。
+    - [VideoDetailViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/VideoDetailViewModel.swift)、[VideoDetailPlaybackNavigationStopActions.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/VideoDetailPlaybackNavigationStopActions.swift)、[VideoDetailRotationBridgeViewController.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift)、[VideoDetailPlayerStartupCreationActions.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/VideoDetailPlayerStartupCreationActions.swift)：补充 `playerWindowFrameProvider`，在 `beginMiniPlayer` 摘除页面前提前捕获转场快照，并在启动回调中初始化同步 `backgroundPlaybackEnabled`、`allowsAutomaticPictureInPictureFromInline` 与 `pictureInPictureEnabled`。
+    - [PlayerRenderingEngine.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerRenderingEngine.swift)、[VideoSurfaceView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/VideoSurfaceView.swift)、[DirectUIKitPlayerSurfaceHostView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/UIKitShell/DirectUIKitPlayerSurfaceHostView.swift)、[VideoDetailShellSurfaceHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift)、[AVPlayerHLSBridgeEngine.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift)：区分 `allowsAutomaticPictureInPictureFromInline`（页内切后台自动 PiP）与仅应用内退出画中画开关，避免覆盖 `canStartPictureInPictureAutomaticallyFromInline`。
+  - **后台播放切后台卡 1–2 秒才续播声音（`backgroundPlaybackEnabled`）**：
+    - [AppOrientationLock.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/AppOrientationLock.swift)：在 `AppDelegate.didFinishLaunchingWithOptions` 早期注册 `UIScene.didEnterBackgroundNotification` 与 `UIScene.willEnterForegroundNotification` 通知，确保早于 `AVPlayerViewController` 内部监听先执行。
+    - [AVPlayerHLSBridgeEngine.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift)、[PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift)、[ActivePlaybackCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/ActivePlaybackCoordinator.swift)、[BiliPlayerLifecycleActionBuilder.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/BiliPlayerLifecycleActionBuilder.swift)：开启后台播放且未启用页内切后台自动 PiP 时，进入后台立即通过 `suspendVideoSurfaceForBackgroundPlayback()` 从 `AVPlayerViewController` / `AVPlayerLayer` 临时摘除 `player`（保持 `.continuesIfPossible`、音频会话与播放进度不中断，并对 Now Playing 更新做 0.2s 合并节流），规避系统回收前台视频渲染管线时的 1–2 秒音频停顿；回前台后通过 `restoreActivePlaybackForAppForeground()` -> `restoreVideoSurfaceAfterBackgroundPlayback()` 恢复画面并在表面就绪后揭示。同时修正 `allowsPlaybackInCurrentApplicationState` 以兼容 `continuesPlaybackInBackground`。
+  - **新增单元测试**：[SystemMiniPlayerCoordinatorTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/SystemMiniPlayerCoordinatorTests.swift) 新增 `testAutoExitStagingHostMountsUnoccludedAndSinksAfterPiPStarts`；[PlayerFormalPlaybackConfigurationTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/PlayerFormalPlaybackConfigurationTests.swift) 新增 `testAutoExitOnlyModeKeepsAutomaticInlinePiPDisabledOnNativeController` 与 `testBackgroundPlaybackDetachesVisualSinksOnBackgroundAndRestoresOnForeground`。
+- **模拟器已验证**：
+  - `python3 Scripts/build-cache.py run -- xcodebuild test -project bili.xcodeproj -scheme bili -destination 'platform=iOS Simulator,name=iPhone 18 Pro Max,OS=27.0' -parallel-testing-enabled NO ...` 覆盖 4 组定向测试共 37 项用例全部通过（`Executed 37 tests, with 0 failures (0 unexpected) in 6.679 (6.697) seconds`，`** TEST SUCCEEDED **`）：
+    - `ActivePlaybackCoordinatorTests`：5 项通过
+    - `PlayerFormalPlaybackConfigurationTests`（指定 8 项）：8 项通过
+    - `SystemMiniPlayerCoordinatorTests`：13 项通过
+    - `VideoDetailSurfaceHostTests`：11 项通过
+    - （注：全部 37 项用例报告通过后，`IDETestOperationsObserverDebug` 在收集模拟器诊断日志时出现过 600.0 秒超时提示，测试执行结论本身为 `** TEST SUCCEEDED **`。）
+  - 由于 iOS 模拟器 `AVPictureInPictureController.isPictureInPictureSupported()` 返回 `false`，模拟器验证覆盖状态机、`AVPlayerLayer` 前置未遮挡挂载/下沉、视觉渲染槽摘除与前台恢复时 `avPlayer.rate == 1.0` 及 `timeControlStatus == .playing` 持续性，但未能在模拟器真实拉起系统 `pegasus` PiP 进程与物理音频输出。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`）**：
+  - `Release-iphoneos` 构建（`1.1.6 (219)`，仅命令行临时覆盖 `CODE_SIGN_STYLE=Manual`、`DEVELOPMENT_TEAM=G933USCY46`、`CODE_SIGN_IDENTITY="iPhone Distribution: Nazar Aryan (G933USCY46)"`、`PRODUCT_BUNDLE_IDENTIFIER=app.bamboo2779.brussels691`、`PROVISIONING_PROFILE_SPECIFIER=882865dd-38a8-4ea7-80c7-e1f3072e784b`）通过 `** BUILD SUCCEEDED **` 与 `codesign --verify --deep --strict` 校验，`bili.app/bili` SHA-256：`c435c094669d46b03aeac56a9912044fde6154b85a9928c4fe3da14520269a24`，已安装至真机（`databaseUUID: 1FE24A23-7577-4CEE-9771-742F7EDAB3D3`，`databaseSequenceNumber: 6676`，`installationURL: file:///private/var/containers/Bundle/Application/A57B8BA4-C121-4140-9FC6-3CD62DEB41FB/bili.app/`）并成功拉起 `app.bamboo2779.brussels691`。
+- **真机待验证**：
+  - 在 `RCe2027`（Build `219`）实测打开视频退出详情页后应用内画中画是否能稳定拉起、正常播控，以及点击还原回详情页与再次退出是否均可复用。
+  - 在 `RCe2027`（Build `219`）实测仅开启后台播放、视频播放中按 Home / 切后台时音频是否平滑连续输出，消除切后台卡 1–2 秒停顿。
+- **待办**：
+  - 等待用户真机实测结果；确认正常并获授权后再提交推送至 GitHub `main`。
+
+### 2026-11-20 接手继续：应用内画中画退出播放页又再次返回（Build 220）
+
+- **当前分支与基线**：`main` @ `1e8cd61`（未提交改动叠加 Build `219` -> `220`）
+- **真机日志排查（Build `219`，`RCe2027` / `Documents/player-diagnostics.log`）**：
+  - 在真机复现日志中（`BV1jz4e6ZEkp` 3 次、`BV1Mc4t6hEm9` 1 次），每次退出播放页后可见 `SystemMiniPlayerStagingView`（`view=7314833963190262926`，`target=layer`）先挂接，随后约 `497–551ms` 触发重入栈恢复路径（约 `12ms` 轮询间隔后连续 `play()` 请求），约 `514–681ms` 后重建详情页表面并重新刷新评论列表。
+  - 同时在模拟器（`iPhone 18 Pro Max`，`F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）探测 `NavigationStack` 的 `removeLast()` 与 `UINavigationController.popViewController(animated: true)`，路径均能正常归零并保持 `path=0`。
+- **代码修复与诊断增强（Build `220`）**：
+  - [PlayerStateViewModel.swift](bili/Sources/Features/Player/PlayerStateViewModel.swift)：
+    - 修复 `startPictureInPictureForMiniPlayer` 的重复 `startPictureInPicture()` 调用：KVO 分支（`L4237`）与 340ms 延迟兜底分支均补上 `!didIssueStartRequest` 守卫，避免画中画过渡期被二次触发导致状态异常。
+    - `attachSurface` 从原生 `AVPlayerViewController` 切往自定义小窗过渡 `layer` 时，同步清空旧控制器的 `delegate = nil` 并置 `allowsPictureInPicturePlayback = false`。
+    - 在 `pipMiniStart` 增加 `PlayerMetricsLog.diagnostic` 轨迹打点。
+  - [SystemMiniPlayerCoordinator.swift](bili/Sources/App/SystemMiniPlayerCoordinator.swift)：
+    - 为 `RetainedSession` 新增 `hasPictureInPictureStarted`（仅在 `onPictureInPictureDidStart` 后置 `true`）；若画中画尚未启动就收到 `restoreUserInterfaceForPictureInPictureStop` 回调，返回 `false` 拒绝误把用户推回详情页，并在下一主线程周期确认未激活时清理残留小窗会话。
+    - 补充 `miniPlayer pipDidStart`、`miniPlayer restoreUIRequested`、`miniPlayer restoreUISkippedBeforeStart` 与 `miniPlayer restoreUICompleted` 诊断打点。
+  - [VideoDetailViewCloseActions.swift](bili/Sources/Features/VideoDetail/VideoDetailViewCloseActions.swift)：在 `performExit` 补充 `detailClose performExit` 诊断打点。
+  - [SystemMiniPlayerCoordinatorTests.swift](biliTests/SystemMiniPlayerCoordinatorTests.swift)：新增 `testRestoreUserInterfaceBeforePictureInPictureStartsIsIgnored` 与 `testDetachingNativeControllerForStagingSurfaceClearsDelegateAndPiP`。
+- **已验证（模拟器 `iPhone 18 Pro Max` / `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：
+  - `SystemMiniPlayerCoordinatorTests`：16 项全部通过（`failed=0`，含新增 2 项）。
+  - `ActivePlaybackCoordinatorTests`：5 项全部通过（`failed=0`）。
+  - `VideoDetailSurfaceHostTests`：11 项全部通过（`failed=0`）。
+  - `PlayerFormalPlaybackConfigurationTests`：69 项通过、1 项失败（`testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely`，`debugSpeedBoostPhase` 在 220ms 后仍处于 `.restoring` 而非 `.idle`，`NativePlayerSurfaceGestureController.swift` 未改动，与本任务无关）。
+  - 注意：模拟器上 `AVPictureInPictureController.isPictureInPictureSupported()` 为 `false`，系统级 PiP 窗口拉起与真机 AVKit 回调仍需真机实测。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos` Build `220`）**：
+  - `xcodebuild archive`（`G933USCY46` 手动签名参数命令行临时覆盖，未改动本地签名配置文件）+ `Scripts/remove-empty-frameworks.sh` + `codesign --verify --deep --strict` 通过；`app.bamboo2779.brussels691`（`1.1.6 (220)`）已安装至 `RCe2027`（`databaseSequenceNumber: 6700`，`installationURL: file:///private/var/containers/Bundle/Application/0E4C359B-4BD5-4D5A-8F3C-0383A488EB2D/bili.app/`）。
+- **真机待验证**：
+  - 请在 `RCe2027`（Build `220`）开启“应用内画中画”后，播放视频并分别通过返回按钮与左边缘右滑退出详情页，确认不再出现退出后自动返回播放页的现象，且小窗可正常展示与手动点击还原。
+  - 若真机仍出现异常，可直接重新拉取真机沙盒 `Documents/player-diagnostics.log` 查看新增的 `detailClose` / `pipMiniStart` / `miniPlayer` 精确事件序列。
+
+### 2026-11-20（Build 220 真机日志定位退出抢播根因与 Build 221 修复实现）
+
+- **当前分支与基线**：`main` @ `1e8cd61`（本地未提交改动，Build 已递增至 `221` / `1.1.6 (221)`）。
+- **真机日志与模拟器复现根因（Build `220`）**：
+  - 已从 `RCe2027`（`00008160-001C311028434036`）拉取 Build `220` 沙盒诊断日志并保存至 `build/logs/build220-player-diagnostics.log`（`59,141` 行；Git 忽略）。
+  - 在 `BV1Vnsr6TEgA`、`BV1nfsV6qEKf`、`BV19vxc6tEsi`、`BV1AAsX6EEKQ`、`BV11Qs46UED8` 等 6 次退出的实机日志中，无论是返回按钮（`detailClose performExit`）还是左边缘右滑退出，均依次出现 `surface attach` 挂入 `SystemMiniPlayerStagingView`（`displayPolicy target=layer`）与 `pipMiniStart begin possible=true active=false selfActive=false` / `pipMiniStart issue=immediate`，但全程无 `miniPlayer pipDidStart` 与 `restoreUIRequested`；约 `442–557ms` 后退场详情页容器在同一 `VideoDetailViewModel` 上重新触发 `commentsRefresh sort=hot items=<同前> offset=-248 size=0 bounds=0 insetTop=248 width=0`、`surface attach`（`displayPolicy target=controller`）与 3 次 `event=播放请求`，直接从 `SystemMiniPlayerStagingView` 抢回 `AVPlayer` 并销毁系统 PiP。
+  - 在 `iPhone 18 Pro Max`（`F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）上的 `testNavigationStackExitSurfaceHandoffProbe` 基线复现完全一致：Pop 动画结束触发 `PlaybackDetailPageHost.onDisappear`（`event=pageDisappeared`）约 `8–29ms` 后，`DirectUIKitPlayerSurfaceHostView`（`AVPlayerViewController`）与 `VideoDetailCommentsTableViewHost` 重新执行 `makeUIView` 附着；同时 `SystemMiniPlayerStagingView` 因挂到根 `UIHostingController.view` 下而触发 SwiftUI `[SwiftUI] Adding 'SystemMiniPlayerStagingView' as a subview of UIHostingController.view is not supported...` 层级警告，且因 `VideoDetailPlaybackDiagnostics` 随 `activePlayerViewModel = nil` 清空了诊断回调导致原探针测试未报错。
+- **已实现修复与单测补充（Build `221`，未提交）**：
+  - [VideoDetailSwiftUIContainer.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift)：`VideoDetailSwiftUIContainerModel` 新增 `isTransferredToSystemMiniPlayer`，在 `viewModel.didTransferToSystemMiniPlayer == true` 时于 `init` 及 `playbackSession.$activePlayer` 订阅中清空 `surfacePlayerViewModel = nil`；`VideoDetailInteractivePlayerLayer` 在已移交小窗后不再挂载 `VideoDetailShellSurfaceRepresentable`，改用 `VideoDetailMiniPlayerTransitionSurfaceFallback`（基于 `viewModel.playbackTransitionSnapshot` 与黑底展示退场冻结帧）。
+  - [DirectUIKitPlayerSurfaceHostView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/UIKitShell/DirectUIKitPlayerSurfaceHostView.swift)：`init` 新增 `bindsSurfaceImmediately: Bool = true`，允许在已移交态构造宿主时跳过初始 `bindSurface`。
+  - [VideoDetailShellSurfaceHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift)：新增 `isTransferredToSystemMiniPlayer` 与 `canMutateBoundPlayer`，构造时若 `detailViewModel.didTransferToSystemMiniPlayer` 已为 `true` 则不修改播放器属性并传 `bindsSurfaceImmediately: false`，并对 `CombineLatest` 订阅、`bindNativeFullScreenPresentation`、`layoutSubviews`、`attach(to:)`、`refreshLayoutImmediately()`、`setPlayerViewModel(_:)`、`applyNativePlaybackControlsSettings()` 与 `setVideoGravity(_:)` 全部加装 `canMutateBoundPlayer` 守卫。
+  - [VideoDetailShellSurfaceRepresentable.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceRepresentable.swift)：在 `makeUIView`、`updateUIView` 与 `Coordinator`（`configure`、`scheduleConfigurationIfNeeded`、`attachIfPossible`、`schedulePrewarm`、`scheduleAttachmentRetry`）全链路拦截已移交至系统小窗的播放器。
+  - [SystemMiniPlayerCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/SystemMiniPlayerCoordinator.swift)：`attachDefaultStagingSurface` 将 `stagingHostView` 直接挂载在 `targetWindow`（`UIHostingController.view` 之上的公共父视图）而非 `targetWindow.rootViewController?.view`，消除 SwiftUI 视图层级破坏警告。
+  - [SystemMiniPlayerCoordinatorTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/SystemMiniPlayerCoordinatorTests.swift)：更新 `testAutoExitStagingHostMountsUnoccludedAndSinksAfterPiPStarts` 为校验 `window.subviews` 与未混入 `rootVC.view.subviews`；强化 `testNavigationStackExitSurfaceHandoffProbe` 断言 Pop 后 `1500ms` 仍维持 `stagingHost.surfaceView.isBound(to: player)`、`AVPlayerLayer` 存在、`!player.usesNativePlaybackSurfaceController` 与窗口级挂载；新增 `testTransferredMiniPlayerClearsSurfaceModelAndIgnoresLateShellHostCreation`。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `220` 递增至 `221`。
+- **已验证（本地编译与签名校验，于最后一次源码与版本号改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（`bili`、`biliTests`、`biliUITests` 均通过编译）。
+  - `Release-iphoneos` 真机构建（`1.1.6 (221)`，仅命令行临时覆盖 `CODE_SIGN_STYLE=Manual`、`DEVELOPMENT_TEAM=G933USCY46`、`CODE_SIGN_IDENTITY="iPhone Distribution: Nazar Aryan (G933USCY46)"`、`PRODUCT_BUNDLE_IDENTIFIER=app.bamboo2779.brussels691`、`PROVISIONING_PROFILE_SPECIFIER=882865dd-38a8-4ea7-80c7-e1f3072e784b`）：`** BUILD SUCCEEDED **`，`Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 校验通过，`CFBundleVersion=221`、`CFBundleShortVersionString=1.1.6`，`bili.app/bili` SHA-256：`229546628b92cd49d389e72ff2c952eaa228c5db1e34ffbe061ed6c50ddad6e6`。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos` Build `221`）**：
+  - 设备重新唤醒隧道连接后，`xcrun devicectl device install app --device 00008160-001C311028434036 build/DerivedData/Xcode-27/Build/Products/Release-iphoneos/bili.app` 安装成功（`bundleID: app.bamboo2779.brussels691`，`databaseUUID: 1FE24A23-7577-4CEE-9771-742F7EDAB3D3`，`databaseSequenceNumber: 6716`，`installationURL: file:///private/var/containers/Bundle/Application/78FFC2C4-A435-46C6-8A97-5F579DEF2AB2/bili.app/`）；`xcrun devicectl device info apps` 核实已安装版本为 `1.1.6 (221)`，且 `xcrun devicectl device process launch` 已成功在真机拉起应用。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - 本次改动后**尚未实际运行**模拟器单元测试：在沙箱内执行 `xcodebuild test -destination 'platform=iOS Simulator,id=F0B4287D-8633-4CC1-B7C2-0A37F353FE7C'` 时，因 `CoreSimulatorService` XPC 被沙箱阻断（`Connection invalid` / `Unable to find a device matching ...`）失败退出（code 70）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `221`）实测：
+    1. 开启“应用内画中画”后，分别通过返回按钮与左边缘右滑退出播放详情页，确认可稳定保持系统画中画小窗、不再丢失 PiP 或重建详情播放器，且支持点击小窗还原与再次退出复用。
+    2. 开启“后台播放”且关闭“页内自动画中画”后切后台，确认音频平滑续播无 1–2 秒停顿，回前台画面恢复正常。
+  - 需在非沙箱终端或 Xcode 复跑定向模拟器单测（`SystemMiniPlayerCoordinatorTests`、`ActivePlaybackCoordinatorTests`、`VideoDetailSurfaceHostTests` 及 `PlayerFormalPlaybackConfigurationTests` 相关用例）确认 Build `221` 运行时全绿（此前基线中 `PlayerFormalPlaybackConfigurationTests` 全套另有 `testPlayerItemRecoveryWithoutFreshFramesFallsBackToMediaRebuild` 及 7 项 `Seek` 用例在整套连跑时失败，属既有待排查基线问题）。
+  - 仅在真机确认 Build `221` 正常且用户明确授权后再提交推送至 GitHub `main`。
+
+### 2026-11-20（Build 221 真机复验确认抢播已消除，Build 222 修复 PiP 提交前抢跑并发并补全 AVKit 失败诊断）
+
+- **当前分支与基线**：`main` @ `1e8cd61`（本地未提交改动，Build 已递增至 `222` / `1.1.6 (222)`）。
+- **真机日志分析（Build `221`，`build/logs/build221-player-diagnostics.log`，`59,629` 行）**：
+  - 用户反馈 Build `221` 通过返回按钮与右滑退出仍无应用内画中画；拉取实机诊断日志确认退出后原有的 `commentsRefresh`、`surface attach target=controller` 与 3 次 `播放请求` 二次重建**已完全消失**。
+  - 所有退出尝试均停在 `surface attach view=-7221985147653755930` -> `pipMiniStart begin possible=true active=false selfActive=false` -> `pipMiniStart issue=immediate` 之后，既无 `miniPlayer pipDidStart`，且原 `AVPictureInPictureControllerDelegate`（`willStart` / `didStop` / `failedToStartPictureInPictureWithError`）、超时分支与 `stopActiveMiniPlayer` 未写入诊断日志。
+  - 对照 Build `219` 曾触发 `restoreUserInterface` 与 Build `220`/`221` 的代码差异：`attachDefaultStagingSurface` 刚将 `SystemMiniPlayerStagingView` 与新建 `AVPlayerLayer` 插入窗口并在同一 RunLoop 同步调用 `controller.startPictureInPicture()`（CoreAnimation 尚未提交、`layer.isReadyForDisplay` 仍未就绪），而 Build `220` 新增的 `!didIssueStartRequest` 守卫在首次同步调用未生效后阻断了 `120ms`/`220ms`/`340ms` 重试。
+- **已实现修复与诊断增强（Build `222`，未提交）**：
+  - [PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift)：
+    - 重构 `startPictureInPictureForMiniPlayer`：不再于同步 RunLoop 直接发 `startPictureInPicture()` 并永久锁死重试，而是先跨过 `20ms` CoreAnimation 事务提交并等待新 `AVPlayerLayer` 报告 `isReadyForDisplay == true`（最多约 `192ms`，同时要求 `isPictureInPicturePossible == true`）后发 `issue=afterCommit`（或 via KVO `issue=kvo`）；若 320ms 后仍未进入 `willStart`/`isPictureInPictureActive`，允许 1 次干净 `issue=retry`；仅在 `willStart`/`didStart` 回调后置 `didReceiveMiniPlayerPictureInPictureWillStart = true` 停止跟踪。
+    - `AVPictureInPictureControllerDelegate` 补充 `pipDelegate willStart`、`pipDelegate didStop` 与 `pipDelegate failedToStart`（含 `NSError` domain/code/description、`layerReady`、`hasWindow`）诊断打点，并对首次启动追踪期间的早期短暂失败保留 1 次重试验机会而不立刻销毁小窗会话；超时分支补充 `pipMiniStart timeout` 打点。
+  - [SystemMiniPlayerCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/SystemMiniPlayerCoordinator.swift)：在 `stopActiveMiniPlayer` 补充 `miniPlayer stop` 诊断打点。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `221` 递增至 `222`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（`bili`、`biliTests`、`biliUITests`）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (222)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=222`、`CFBundleShortVersionString=1.1.6`，`bili.app/bili` SHA-256：`647bea532e4f2e145186f017f2fdc5774efc2ac7316c0f205fe971e5b7482322`。
+  - 真机安装启动（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 安装成功（`databaseSequenceNumber: 6724`，`installationURL: file:///private/var/containers/Bundle/Application/87E5E486-B22B-45DA-BD32-BBB183FB9F21/bili.app/`）；`xcrun devicectl device info apps` 核实版本 `1.1.6 (222)`，`xcrun devicectl device process launch` 已成功拉起。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221` / `222` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `222`）实测返回按钮与左边缘右滑退出详情页是否成功拉起系统画中画，以及 `backgroundPlaybackEnabled` 切后台续播；若仍异常，可立即拉取新日志查看 `pipMiniStart issue=afterCommit/retry` 与 `pipDelegate willStart/failedToStart domain=... code=...`。
+  - 在非沙箱环境复跑定向模拟器单测，真机确认通过并获授权后再提交推送至 GitHub `main`。
+
+### 2026-11-20（Build 222 确认应用内画中画成功拉起；Build 223 修复退出小窗后打开新视频/还原播放卡死）
+
+- **当前分支与基线**：`main` @ `1e8cd61`（本地未提交改动，Build 已递增至 `223` / `1.1.6 (223)`）。
+- **真机实测与日志分析（Build `222`，`build/logs/build222-player-diagnostics.log`，`60,488` 行）**：
+  - 用户实测 Build `222` 确认：**退出视频播放页已稳定弹出应用内小窗**（日志实证 `pipMiniStart issue=afterCommit attempt=1 layerReady=true possible=true hasWindow=true` -> `pipDelegate willStart` -> `miniPlayer pipDidStart` 连续成功）。
+  - 但用户在有小窗期间进入新视频时出现“卡住无法播放”。日志实证 5 次切换新视频（`BV1DwWu6KEHJ`、`BV1h9n96tEcU`、`BV1wRsV6gEeF`、`BV1YpHV6nE1v`、`BV1x1x96aEGM`）以及 1 次从同一视频小窗恢复（`BV1wRsV6gEeF` `13:22:11Z -> 13:22:12Z`）**100% 复现**同一时序：
+    1. `miniPlayer stop ... started=true pipActive=true` 调用 `stopPictureInPictureIfNeeded()` 后，新视频起播正常完成首帧（`333ms–518ms`）并播放 `0.68s–1.05s`。
+    2. 约 `1–2s` 后系统关闭旧画中画辅助 `UIScene` 并派发 `UIScene.didEnterBackgroundNotification`，[AppOrientationLock.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/AppOrientationLock.swift) 中 `AppDelegate` 以 `object: nil` 无条件监听该通知并调用 `ActivePlaybackCoordinator.shared.pauseActivePlaybackForAppBackground()`，在应用仍处于前台 `.active` 状态时误停了新视频（日志出现 `appBackgroundStop mode=manual time=0.68s–1.05s`，而 `PlaybackHitchMonitor` 仍每 5 秒持续上报说明 `UIApplication.shared.applicationState == .active`）。
+    3. `pauseForAppBackground()` 同时置位 `isPlaybackStoppedForAppBackground = true` 与 `isAwaitingAppBackgroundSurfaceRecovery = true`，使 `PlayerStateViewModel` 进入 `isBuffering = true` / `playbackPhase = .buffering`，界面在冻结帧上持续显示「正在缓冲」；且因应用并未真正切后台，缺少 `.active` 回调调用 `finishAppBackgroundSurfaceRecoveryReveal()`。
+- **已实现修复与回归测试（Build `223`，未提交）**：
+  - [AppOrientationLock.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/AppOrientationLock.swift)：
+    - 将 `UIScene.didEnterBackgroundNotification` / `UIScene.willEnterForegroundNotification` 改为走 `AppDelegate` 的 `SceneLifecycleEvaluationContext` 场景过滤（使用 `#selector` 与 `isolated deinit` 移除观测，消除 Swift 6 `@Sendable` 闭包告警）：仅当通知对象为 `.windowApplication` 的 `UIWindowScene` 且匹配当前活跃播放器的 `activePlayerWindowScene`（或无活跃播放器窗口场景时确认为主应用窗口场景且无其他前景 `.windowApplication` 场景）才触发前后台暂停/恢复；忽略 PiP 辅助场景或非当前窗口场景并输出 `appLifecycle ignoreSceneBackground` 诊断。
+  - [ActivePlaybackCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/ActivePlaybackCoordinator.swift) & [PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift)：
+    - 新增只读 `surfaceHostWindowScene` / `activePlayerWindowScene` 暴露活跃播放器所属 `UIWindowScene`。
+    - 在 `appBackgroundStop mode=manual` 日志补充 `appState=...` 便于核验应用前后台状态。
+    - 提取 `finishStoppedBackgroundResumeIfAdvanced(from:generation:)`，在手动停止后台恢复确认时间推进时同时调用 `finishAppBackgroundSurfaceRecoveryReveal()`，避免「正在缓冲」永久滞留。
+  - [BiliPlayerLifecycleHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/BiliPlayerLifecycleHost.swift)：补充 `BiliPlayerLifecycleHostPolicy.shouldDeliverBackgroundScenePhase`，当 `UIApplication.shared.applicationState == .active` 且主窗口仍在前景时忽略 SwiftUI `.onChange(of: scenePhase)` 的误报 `.background`。
+  - [SystemMiniPlayerCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/SystemMiniPlayerCoordinator.swift)：`detachStagingContainer` 在非采用等待路径调用 `staging.surfaceView.detachPlayerSurface(preservingReadinessDuringSurfaceHandoff: true)`，确保停用旧小窗时清空暂存表面与 `playerViewModel` 绑定。
+  - [ActivePlaybackCoordinatorTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/ActivePlaybackCoordinatorTests.swift) & [SystemMiniPlayerCoordinatorTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/SystemMiniPlayerCoordinatorTests.swift)：新增 `testAppDelegateSceneLifecycleFilteringIgnoresSecondaryAndMismatchedScenes`、`testAppDelegateSceneBackgroundHandlerIgnoresNonSceneObjectForForegroundPlayer` 与 `testOpeningNewVideoStopsPreviousMiniPlayerDetachesStagingAndIgnoresLatePiPSceneBackground`。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `222` 递增至 `223`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（`bili`、`biliTests`、`biliUITests` 均通过，修改文件零新增编译告警）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (223)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=223`，`bili.app/bili` SHA-256：`0688795a58ce4df36b3c8aacbf0b23d962477bc112be73ea5a4e27daeaa51e8c`。
+  - 真机安装启动（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 安装成功（`databaseSequenceNumber: 6732`，`installationURL: file:///private/var/containers/Bundle/Application/011DE425-DCBF-4725-8F49-AC2EA9E549D2/bili.app/`），`xcrun devicectl device process launch` 已成功拉起。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221` / `222` / `223` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `223`）实测：
+    1. 退出视频拉起应用内小窗后，直接点击另一个新视频，确认可正常起播并持续播放不再在 ~1 秒处卡住。
+    2. 在小窗播放中点击还原同一视频、以及切后台（`backgroundPlaybackEnabled` 开启/关闭两种设置）均仍正常。
+  - 在非沙箱环境复跑定向模拟器单测（含新增的 `ActivePlaybackCoordinatorTests` 与 `SystemMiniPlayerCoordinatorTests`），真机确认通过并获授权后再提交推送至 GitHub `main`。
+
+### 2026-11-20（Build 223 真机确认切新视频正常播放；Build 224 优化切新视频时旧小窗退场速度）
+
+- **当前分支与基线**：`main` @ `1e8cd61`（本地未提交改动，Build 已递增至 `224` / `1.1.6 (224)`）。
+- **真机反馈（Build `223`）**：
+  - 用户确认 Build `223` 上应用内画中画、切新视频持续播放均已正常（“上面都没有问题”）。
+  - 但仍观察到“开启应用内画中画，从一个视频退出成功小窗，进入一个新视频时会加载 1s 左右视频小窗才消失”。
+- **优化实现与测试（Build `224`，未提交）**：
+  - [SystemMiniPlayerCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/SystemMiniPlayerCoordinator.swift)：
+    - 重构 `stopActiveMiniPlayer()`：在异步 `stopPictureInPictureIfNeeded()` 后若 `player.isPictureInPictureActive` 仍为 `true`，不再同步调用 `player.stop(reason: .navigation)` 与移除 `stagingHostView`（该同步拆层会立刻移除 `AVPlayerLayer` 与宿主窗口并触发 `PlaybackAudioSession.deactivate`，导致 AVKit 失去折叠退场目标并退避 ~1 秒超时关闭）；而是立即调用 `player.pauseForNavigation()` 与 `ActivePlaybackCoordinator.shared.deactivate(player)`（瞬间静音停播且保留音频会话不阻塞新视频），将 `stagingHostView.alpha` 置为 `0.001` 保留宿主层挂载，待 `onPictureInPictureDidStop`（或 `1.5s` 兜底超时）触发 `finalizeRetiringSessionIfMatching` 后再彻底 `stop(reason: .navigation)` 与 `detachStagingContainer`。
+  - [SystemMiniPlayerCoordinatorTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/SystemMiniPlayerCoordinatorTests.swift)：新增 `testOpeningNewVideoDefersLayerTeardownUntilAsyncPiPDidStop`，验证异步关闭期间立即暂停并解除激活、保留层绑定直至 `onPictureInPictureDidStop` 再执行 `stop()` 与解绑。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `223` 递增至 `224`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（`bili`、`biliTests`、`biliUITests`）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (224)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=224`，`bili.app/bili` SHA-256：`6d436f5bccbd2e030263fba54aa92a6eadd31b16dac1a11c79320ecc9333941a`。
+  - 真机安装启动（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 成功（`databaseSequenceNumber: 6740`，`installationURL: file:///private/var/containers/Bundle/Application/18CB1A17-AEFF-4C9C-9F0D-1BC1C9C3B0D8/bili.app/`），`xcrun devicectl device process launch` 已成功拉起。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221`–`224` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `224`）实测从视频退出进入小窗后再点开新视频时，旧小窗关闭与新视频起播速度是否明显改善。
+  - 在非沙箱环境复跑定向模拟器单测，真机确认满意并获授权后再提交推送至 GitHub `main`。

@@ -121,4 +121,147 @@ final class ActivePlaybackCoordinatorTests: XCTestCase {
         XCTAssertEqual(engine.backgroundPauseCallCount, 0)
         XCTAssertTrue(player.wantsAutoplay)
     }
+
+    func testAppDelegateSceneLifecycleFilteringIgnoresSecondaryAndMismatchedScenes() {
+        XCTAssertFalse(
+            AppDelegate.shouldPauseActivePlaybackForSceneDidEnterBackground(
+                AppDelegate.SceneLifecycleEvaluationContext(
+                    hasNotificationObject: true,
+                    isWindowScene: true,
+                    isApplicationWindowScene: false,
+                    hasPrimaryAppWindow: false,
+                    matchesActivePlayerWindowScene: false,
+                    hasActivePlayerWindowScene: true,
+                    hasOtherForegroundApplicationScene: true,
+                    applicationState: .active
+                )
+            )
+        )
+        XCTAssertFalse(
+            AppDelegate.shouldPauseActivePlaybackForSceneDidEnterBackground(
+                AppDelegate.SceneLifecycleEvaluationContext(
+                    hasNotificationObject: true,
+                    isWindowScene: true,
+                    isApplicationWindowScene: true,
+                    hasPrimaryAppWindow: true,
+                    matchesActivePlayerWindowScene: false,
+                    hasActivePlayerWindowScene: true,
+                    hasOtherForegroundApplicationScene: true,
+                    applicationState: .active
+                )
+            )
+        )
+        XCTAssertFalse(
+            AppDelegate.shouldPauseActivePlaybackForSceneDidEnterBackground(
+                AppDelegate.SceneLifecycleEvaluationContext(
+                    hasNotificationObject: false,
+                    isWindowScene: false,
+                    isApplicationWindowScene: false,
+                    hasPrimaryAppWindow: false,
+                    matchesActivePlayerWindowScene: false,
+                    hasActivePlayerWindowScene: false,
+                    hasOtherForegroundApplicationScene: true,
+                    applicationState: .active
+                )
+            )
+        )
+        XCTAssertTrue(
+            AppDelegate.shouldPauseActivePlaybackForSceneDidEnterBackground(
+                AppDelegate.SceneLifecycleEvaluationContext(
+                    hasNotificationObject: true,
+                    isWindowScene: true,
+                    isApplicationWindowScene: true,
+                    hasPrimaryAppWindow: true,
+                    matchesActivePlayerWindowScene: true,
+                    hasActivePlayerWindowScene: true,
+                    hasOtherForegroundApplicationScene: false,
+                    applicationState: .inactive
+                )
+            )
+        )
+        XCTAssertTrue(
+            AppDelegate.shouldPauseActivePlaybackForSceneDidEnterBackground(
+                AppDelegate.SceneLifecycleEvaluationContext(
+                    hasNotificationObject: true,
+                    isWindowScene: true,
+                    isApplicationWindowScene: true,
+                    hasPrimaryAppWindow: true,
+                    matchesActivePlayerWindowScene: false,
+                    hasActivePlayerWindowScene: false,
+                    hasOtherForegroundApplicationScene: false,
+                    applicationState: .background
+                )
+            )
+        )
+        XCTAssertFalse(
+            AppDelegate.shouldRestoreActivePlaybackForSceneWillEnterForeground(
+                AppDelegate.SceneLifecycleEvaluationContext(
+                    hasNotificationObject: true,
+                    isWindowScene: true,
+                    isApplicationWindowScene: false,
+                    hasPrimaryAppWindow: false,
+                    matchesActivePlayerWindowScene: false,
+                    hasActivePlayerWindowScene: true,
+                    hasOtherForegroundApplicationScene: true,
+                    applicationState: .active
+                )
+            )
+        )
+        XCTAssertTrue(
+            AppDelegate.shouldRestoreActivePlaybackForSceneWillEnterForeground(
+                AppDelegate.SceneLifecycleEvaluationContext(
+                    hasNotificationObject: true,
+                    isWindowScene: true,
+                    isApplicationWindowScene: true,
+                    hasPrimaryAppWindow: true,
+                    matchesActivePlayerWindowScene: true,
+                    hasActivePlayerWindowScene: true,
+                    hasOtherForegroundApplicationScene: false,
+                    applicationState: .active
+                )
+            )
+        )
+        XCTAssertFalse(
+            BiliPlayerLifecycleHostPolicy.shouldDeliverBackgroundScenePhase(
+                applicationState: .active,
+                hasForegroundKeyWindow: true
+            )
+        )
+        XCTAssertTrue(
+            BiliPlayerLifecycleHostPolicy.shouldDeliverBackgroundScenePhase(
+                applicationState: .background,
+                hasForegroundKeyWindow: false
+            )
+        )
+    }
+
+    func testAppDelegateSceneBackgroundHandlerIgnoresNonSceneObjectForForegroundPlayer() {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        defer { coordinator.stopActivePlayback() }
+
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let player = PlayerStateViewModel(
+            videoURL: nil,
+            audioURL: nil,
+            title: "非场景通知过滤测试",
+            referer: "https://www.bilibili.com",
+            engine: engine
+        )
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(8)
+
+        let appDelegate = AppDelegate()
+        XCTAssertFalse(
+            appDelegate.handleSceneDidEnterBackground(
+                Notification(name: UIScene.didEnterBackgroundNotification, object: NSObject())
+            )
+        )
+        XCTAssertTrue(player.wantsAutoplay)
+        XCTAssertEqual(engine.backgroundPauseCallCount, 0)
+        XCTAssertFalse(player.isAwaitingAppBackgroundSurfaceRecovery)
+    }
 }

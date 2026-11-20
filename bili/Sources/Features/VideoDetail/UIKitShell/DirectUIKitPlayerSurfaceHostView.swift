@@ -8,6 +8,7 @@ import UIKit
 final class DirectUIKitPlayerSurfaceHostView: UIView {
     private var viewModel: PlayerStateViewModel
     private var isPictureInPictureEnabled: Bool
+    private var allowsAutomaticPictureInPictureFromInline: Bool
     private var prefersNativePlaybackSurface: Bool
     private var showsNativePlaybackControls: Bool
     private var showsNativePlaybackSpeeds: Bool
@@ -23,14 +24,17 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
     init(
         viewModel: PlayerStateViewModel,
         isPictureInPictureEnabled: Bool,
+        allowsAutomaticPictureInPictureFromInline: Bool = true,
         prefersNativePlaybackSurface: Bool = NativePlaybackControlsExperiment.stored(),
         showsNativePlaybackControls: Bool = NativePlaybackControlsExperiment.usesSystemPlaybackControlsUI(),
         showsNativePlaybackSpeeds: Bool = NativePlaybackControlsExperiment.storedSpeedsEnabled(),
         enablesNativeSurfaceGestures: Bool = NativePlaybackControlsExperiment.usesNativeSurfaceGestureController(),
-        nativeAllowsPictureInPicturePlayback: Bool? = nil
+        nativeAllowsPictureInPicturePlayback: Bool? = nil,
+        bindsSurfaceImmediately: Bool = true
     ) {
         self.viewModel = viewModel
         self.isPictureInPictureEnabled = isPictureInPictureEnabled
+        self.allowsAutomaticPictureInPictureFromInline = allowsAutomaticPictureInPictureFromInline
         self.prefersNativePlaybackSurface = prefersNativePlaybackSurface
         self.showsNativePlaybackControls = showsNativePlaybackControls
         self.showsNativePlaybackSpeeds = showsNativePlaybackSpeeds
@@ -56,7 +60,9 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
             surfaceView.topAnchor.constraint(equalTo: topAnchor),
             surfaceView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
-        bindSurface(to: viewModel, startsPlayback: false)
+        if bindsSurfaceImmediately {
+            bindSurface(to: viewModel, startsPlayback: false)
+        }
     }
 
     @available(*, unavailable)
@@ -81,10 +87,12 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
     ) {
         guard !isTornDown else { return }
         isPictureInPictureEnabled = isEnabled
-        surfaceView.setPictureInPictureEnabled(isEnabled)
         if let allowsAutomaticInline {
+            allowsAutomaticPictureInPictureFromInline = allowsAutomaticInline
+            surfaceView.setAutomaticPictureInPictureFromInlineAllowed(allowsAutomaticInline)
             viewModel.setAutomaticPictureInPictureFromInlineAllowed(allowsAutomaticInline)
         }
+        surfaceView.setPictureInPictureEnabled(isEnabled)
         viewModel.setPictureInPictureEnabled(isEnabled)
     }
 
@@ -160,6 +168,7 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
     private func bindSurface(to playerViewModel: PlayerStateViewModel, startsPlayback: Bool) {
         let prefersNativeControls = prefersNativePlaybackSurface
         surfaceView.configureBoundsRefresh(for: playerViewModel, synchronously: true)
+        surfaceView.setAutomaticPictureInPictureFromInlineAllowed(allowsAutomaticPictureInPictureFromInline)
         surfaceView.setPictureInPictureEnabled(isPictureInPictureEnabled)
         surfaceView.setNativeAllowsPictureInPicturePlayback(
             prefersNativeControls ? nativeAllowsPictureInPicturePlayback : nil
@@ -172,6 +181,7 @@ final class DirectUIKitPlayerSurfaceHostView: UIView {
             prefersNativeControls && showsNativePlaybackControls && showsNativePlaybackSpeeds
         )
         surfaceView.setPlayerViewModel(playerViewModel, prefersNativePlaybackControls: prefersNativeControls)
+        playerViewModel.setAutomaticPictureInPictureFromInlineAllowed(allowsAutomaticPictureInPictureFromInline)
         playerViewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         playerViewModel.attachSurface(
             surfaceView,

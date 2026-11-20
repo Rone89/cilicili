@@ -151,6 +151,7 @@ final class VideoDetailViewModel: ObservableObject {
     var lastUserSeekAt: Date?
     var loadTiming = VideoDetailViewModelLoadTimingState()
     var isRouteRemovedFromNavigationStack: (() -> Bool)?
+    var playerWindowFrameProvider: (() -> (frame: CGRect?, window: UIWindow?))?
     private var cleanupStablePlaybackBeforeDeinit: (@Sendable () -> Void)?
     let relatedLoadTimeoutNanoseconds: UInt64 = 5_000_000_000
 

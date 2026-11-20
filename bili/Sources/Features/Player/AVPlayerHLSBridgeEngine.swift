@@ -92,6 +92,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var targetMuted = false
     private var isTemporaryAudioSuppressed = false
     private var isPictureInPictureEnabled = false
+    private var allowsAutomaticPictureInPictureFromInline = true
+    private var isVideoSurfaceSuspendedForBackgroundPlayback = false
     private var contentOverlay: AnyView?
     private var contentOverlayHostingController: UIHostingController<AnyView>?
     private weak var contentOverlayContainerView: UIView?
@@ -294,6 +296,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     func attachSurface(_ surface: UIView) {
         pendingSurfaceDetachTask?.cancel()
         pendingSurfaceDetachTask = nil
+        isVideoSurfaceSuspendedForBackgroundPlayback = false
         surfaceView = surface
         PlaybackDiagnosticsExperiment.onDisplayPolicyChange = { [weak self] in
             self?.refreshDisplayDynamicRangePolicy()
@@ -347,6 +350,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func recoverSurface(forcingControllerRebind: Bool) {
         guard !isStopped else { return }
+        isVideoSurfaceSuspendedForBackgroundPlayback = false
         #if DEBUG
         debugRecoveryEvent("recoverSurfaceStart", fields: [:])
         debugAudioPhase = "recoverSurface"
@@ -365,7 +369,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 // playback. Reassigning its player forces a fresh drawable after a
                 // long screen lock, where the item can remain ready but its layer is
                 // no longer rendering frames.
-                playerViewController.player = nil
+                if playerViewController.player != nil {
+                    playerViewController.player = nil
+                }
                 playerViewController.player = player
                 configureNativePlaybackController(playerViewController)
                 playerViewController.view.setNeedsLayout()
@@ -376,7 +382,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         guard let surfaceView else { return }
         let layer = ensurePlayerLayer(in: surfaceView)
-        layer.player = nil
+        if layer.player != nil {
+            layer.player = nil
+        }
         layer.player = player
         layer.isHidden = false
         layer.opacity = 1
@@ -530,6 +538,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func attachNativePlaybackController(_ controller: AVPlayerViewController) {
+        isVideoSurfaceSuspendedForBackgroundPlayback = false
         if let playerViewController, playerViewController !== controller {
             playerViewController.player = nil
             controllerReadyForDisplayObserver = nil
@@ -547,11 +556,51 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    func setAutomaticPictureInPictureFromInlineAllowed(_ isAllowed: Bool) {
+        guard allowsAutomaticPictureInPictureFromInline != isAllowed else { return }
+        allowsAutomaticPictureInPictureFromInline = isAllowed
+        if let playerViewController {
+            configureNativePlaybackController(playerViewController)
+        }
+    }
+
     func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {
         // Configure before the app leaves the foreground. Skipping our own pause
         // alone leaves AVPlayer's automatic background policy free to stop video.
         // Changing this policy preserves the current item, buffer and play rate.
         player.audiovisualBackgroundPlaybackPolicy = isEnabled ? .continuesIfPossible : .automatic
+    }
+
+    func suspendVideoSurfaceForBackgroundPlayback() {
+        // Disconnect visual sinks before AVKit/WindowServer tears down foreground
+        // video surfaces so AVPlayer continues audio-only playback without stalling.
+        isVideoSurfaceSuspendedForBackgroundPlayback = true
+        if let playerViewController, playerViewController.player != nil {
+            playerViewController.player = nil
+        }
+        if let playerLayer, playerLayer.player != nil {
+            playerLayer.player = nil
+        }
+    }
+
+    func restoreVideoSurfaceAfterBackgroundPlayback() {
+        guard isVideoSurfaceSuspendedForBackgroundPlayback else { return }
+        isVideoSurfaceSuspendedForBackgroundPlayback = false
+        if let playerViewController {
+            if playerViewController.player !== player {
+                playerViewController.player = player
+            }
+            configureNativePlaybackController(playerViewController)
+            playerViewController.view.setNeedsLayout()
+            playerViewController.view.setNeedsDisplay()
+            playerViewController.view.layer.setNeedsDisplay()
+        } else if let surfaceView {
+            let layer = ensurePlayerLayer(in: surfaceView)
+            if layer.player !== player {
+                layer.player = player
+            }
+            refreshSurfaceLayout()
+        }
     }
 
     func detachNativePlaybackController(_ controller: AVPlayerViewController) {
@@ -579,6 +628,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         playbackGeneration &+= 1
         let generation = playbackGeneration
         isStopped = false
+        isVideoSurfaceSuspendedForBackgroundPlayback = false
         invalidateAudioSessionActivation()
         tearDownCurrentItemForReplacement()
         self.source = source
@@ -830,6 +880,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         playbackGeneration &+= 1
         invalidateAudioSessionActivation()
         isStopped = true
+        isVideoSurfaceSuspendedForBackgroundPlayback = false
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
         cancelTerminalStallWatchdog()
@@ -1603,7 +1654,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             && AVPictureInPictureController.isPictureInPictureSupported()
         controller.allowsPictureInPicturePlayback = isPictureInPictureAllowed
         controller.canStartPictureInPictureAutomaticallyFromInline =
-            isPictureInPictureAllowed && isPictureInPictureEnabled
+            isPictureInPictureAllowed && isPictureInPictureEnabled && allowsAutomaticPictureInPictureFromInline
         controller.requiresLinearPlayback = false
         controller.updatesNowPlayingInfoCenter = false
         controller.view.backgroundColor = .black

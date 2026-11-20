@@ -456,7 +456,10 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     func setMuted(_ isMuted: Bool)
     func setTemporaryAudioSuppressed(_ isSuppressed: Bool)
     func setPictureInPictureEnabled(_ isEnabled: Bool)
+    func setAutomaticPictureInPictureFromInlineAllowed(_ isAllowed: Bool)
     func setBackgroundPlaybackEnabled(_ isEnabled: Bool)
+    func suspendVideoSurfaceForBackgroundPlayback()
+    func restoreVideoSurfaceAfterBackgroundPlayback()
     func seek(toTime time: TimeInterval) -> TimeInterval?
     func seekToLiveEdge() -> TimeInterval?
     func seek(toProgress progress: Double, duration: TimeInterval?) -> TimeInterval?
@@ -526,7 +529,13 @@ extension PlayerRenderingEngine {
 
     func setPictureInPictureEnabled(_: Bool) {}
 
+    func setAutomaticPictureInPictureFromInlineAllowed(_: Bool) {}
+
     func setBackgroundPlaybackEnabled(_: Bool) {}
+
+    func suspendVideoSurfaceForBackgroundPlayback() {}
+
+    func restoreVideoSurfaceAfterBackgroundPlayback() {}
 
     func stopPictureInPictureIfNeeded() {
         guard isPictureInPictureActive else { return }

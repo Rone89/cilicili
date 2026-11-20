@@ -41,6 +41,7 @@ struct VideoDetailViewCloseActions {
     ) {
         guard !presentationState.wrappedValue.isClosingDetail else { return }
         presentationState.wrappedValue.isClosingDetail = true
+        PlayerMetricsLog.diagnostic("detailClose performExit id=\(holder.viewModel?.detail.bvid ?? "-")")
         holder.viewModel?.markExitingVideoDetailRoute()
         holder.viewModel?.stopPlaybackForNavigation()
         navigate()

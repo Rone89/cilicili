@@ -29,6 +29,16 @@ extension VideoDetailViewModel {
               SystemMiniPlayerCoordinator.shared.canStartMiniPlayer(for: playerViewModel)
         else { return false }
 
+        let providedGeometry = (preferredFrameInWindow == nil || preferredWindow == nil)
+            ? playerWindowFrameProvider?()
+            : nil
+        let resolvedFrameInWindow = preferredFrameInWindow ?? providedGeometry?.frame
+        let resolvedWindow = preferredWindow ?? providedGeometry?.window
+
+        // Capture the frozen frame while the detail controller still owns playback;
+        // `beginMiniPlayer` detaches `AVPlayerViewController` and hands off to staging.
+        let outgoingSnapshot = playerViewModel.makePlaybackTransitionSnapshot()
+
         let session = SystemMiniPlayerCoordinator.RetainedSession(
             video: detail,
             selectedCID: selectedCID,
@@ -45,8 +55,8 @@ extension VideoDetailViewModel {
         )
         guard SystemMiniPlayerCoordinator.shared.beginMiniPlayer(
             with: session,
-            preferredFrameInWindow: preferredFrameInWindow,
-            preferredWindow: preferredWindow
+            preferredFrameInWindow: resolvedFrameInWindow,
+            preferredWindow: resolvedWindow
         ) else {
             return false
         }
@@ -57,9 +67,9 @@ extension VideoDetailViewModel {
         navigationState.isPlaybackStopPending = false
 
         // Freeze the last video frame on the outgoing detail page while it
-        // slides away so transferring the live `AVPlayerLayer` never flashes black.
-        if let snapshot = playerViewModel.makePlaybackTransitionSnapshot() {
-            playbackTransitionState.snapshot = snapshot
+        // slides away so transferring the live surface never flashes black.
+        if let outgoingSnapshot {
+            playbackTransitionState.snapshot = outgoingSnapshot
             playbackTransitionState.fallbackCoverURL = playbackTransitionCoverURL()
             playbackTransitionState.opacity = 1
         }

@@ -129,6 +129,14 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             guard let self else { return true }
             return self.isRemovedOrLeavingNavigationHierarchy
         }
+        contentController.viewModel.playerWindowFrameProvider = { [weak self] in
+            guard let self else { return (nil, nil) }
+            let window = self.view.window
+            let frameInWindow = self.contentController.playerFrame.width > 16
+                ? self.contentController.view.convert(self.contentController.playerFrame, to: window)
+                : nil
+            return (frameInWindow, window)
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -392,6 +400,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         NativeFullscreenOrientationLease.shared.cancel()
         let viewModel = contentController.viewModel
         viewModel.isRouteRemovedFromNavigationStack = nil
+        viewModel.playerWindowFrameProvider = nil
         if !viewModel.isAwaitingRelatedVideoReturnPlayback {
             viewModel.markExitingVideoDetailRoute()
             let preferredWindow = view.window

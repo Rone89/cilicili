@@ -1341,6 +1341,39 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
+    func testBackgroundPlaybackDetachesVisualSinksOnBackgroundAndRestoresOnForeground() throws {
+        let engine = AVPlayerHLSBridgeEngine()
+        let player = PlayerStateViewModel(
+            videoURL: URL(string: "https://example.com/v.m4s"),
+            audioURL: URL(string: "https://example.com/a.m4s"),
+            title: "后台音轨无感切换测试",
+            referer: "https://www.bilibili.com",
+            engine: engine
+        )
+        let surface = VideoSurfaceContainerView()
+        surface.setPlayerViewModel(player, prefersNativePlaybackControls: true)
+        player.attachSurface(surface, prefersNativePlaybackControls: true)
+        let controller = surface.nativePlayerViewController
+        let avPlayer = try XCTUnwrap(controller.player)
+        defer {
+            surface.detachPlayerSurface()
+            ActivePlaybackCoordinator.shared.unregister(player)
+            player.stop()
+        }
+
+        ActivePlaybackCoordinator.shared.activate(player)
+        player.setBackgroundPlaybackEnabled(true)
+        player.setAutomaticPictureInPictureFromInlineAllowed(false)
+
+        XCTAssertFalse(ActivePlaybackCoordinator.shared.pauseActivePlaybackForAppBackground())
+        XCTAssertEqual(avPlayer.audiovisualBackgroundPlaybackPolicy, .continuesIfPossible)
+        XCTAssertNil(controller.player)
+
+        ActivePlaybackCoordinator.shared.restoreActivePlaybackForAppForeground()
+        XCTAssertTrue(controller.player === avPlayer)
+    }
+
+    @MainActor
     func testVideoSurfaceContainerCanShowSystemPlaybackControls() {
         let surface = VideoSurfaceContainerView()
 

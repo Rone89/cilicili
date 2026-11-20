@@ -91,6 +91,14 @@ private extension UIWindow {
 
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    private var hasRegisteredSceneLifecycleObservers = false
+
+    isolated deinit {
+        if hasRegisteredSceneLifecycleObservers {
+            NotificationCenter.default.removeObserver(self)
+        }
+    }
+
     func application(
         _ application: UIApplication,
         willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -105,7 +113,143 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         PlayerSystemMediaControls.clear()
         LaunchAppearance.applyToConnectedWindows()
+        registerEarlySceneBackgroundLifecycleObservers()
         return true
+    }
+
+    private func registerEarlySceneBackgroundLifecycleObservers() {
+        guard !hasRegisteredSceneLifecycleObservers else { return }
+        hasRegisteredSceneLifecycleObservers = true
+        let center = NotificationCenter.default
+        // Register at launch before any AVPlayerViewController exists so our FIFO
+        // handler disconnects visual sinks before AVKit tears down foreground rendering.
+        center.addObserver(
+            self,
+            selector: #selector(handleSceneDidEnterBackgroundNotification(_:)),
+            name: UIScene.didEnterBackgroundNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleSceneWillEnterForegroundNotification(_:)),
+            name: UIScene.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleSceneDidEnterBackgroundNotification(_ notification: Notification) {
+        _ = handleSceneDidEnterBackground(notification)
+    }
+
+    @objc
+    private func handleSceneWillEnterForegroundNotification(_ notification: Notification) {
+        handleSceneWillEnterForeground(notification)
+    }
+
+    @discardableResult
+    func handleSceneDidEnterBackground(_ notification: Notification) -> Bool {
+        let application = UIApplication.shared
+        let context = Self.makeSceneLifecycleEvaluationContext(
+            for: notification,
+            activePlayerWindowScene: ActivePlaybackCoordinator.shared.activePlayerWindowScene,
+            connectedScenes: application.connectedScenes,
+            applicationState: application.applicationState
+        )
+        guard Self.shouldPauseActivePlaybackForSceneDidEnterBackground(context) else {
+            let role = (notification.object as? UIWindowScene)?.session.role.rawValue ?? "none"
+            PlayerMetricsLog.diagnostic(
+                "appLifecycle ignoreSceneBackground role=\(role) matchingPlayer=\(context.matchesActivePlayerWindowScene) hasActiveScene=\(context.hasActivePlayerWindowScene) otherFG=\(context.hasOtherForegroundApplicationScene) appState=\(context.applicationState.rawValue)"
+            )
+            return false
+        }
+        return ActivePlaybackCoordinator.shared.pauseActivePlaybackForAppBackground()
+    }
+
+    func handleSceneWillEnterForeground(_ notification: Notification) {
+        let application = UIApplication.shared
+        let context = Self.makeSceneLifecycleEvaluationContext(
+            for: notification,
+            activePlayerWindowScene: ActivePlaybackCoordinator.shared.activePlayerWindowScene,
+            connectedScenes: application.connectedScenes,
+            applicationState: application.applicationState
+        )
+        guard Self.shouldRestoreActivePlaybackForSceneWillEnterForeground(context) else { return }
+        ActivePlaybackCoordinator.shared.restoreActivePlaybackForAppForeground()
+    }
+
+    struct SceneLifecycleEvaluationContext {
+        let hasNotificationObject: Bool
+        let isWindowScene: Bool
+        let isApplicationWindowScene: Bool
+        let hasPrimaryAppWindow: Bool
+        let matchesActivePlayerWindowScene: Bool
+        let hasActivePlayerWindowScene: Bool
+        let hasOtherForegroundApplicationScene: Bool
+        let applicationState: UIApplication.State
+    }
+
+    static func makeSceneLifecycleEvaluationContext(
+        for notification: Notification,
+        activePlayerWindowScene: UIWindowScene?,
+        connectedScenes: Set<UIScene>,
+        applicationState: UIApplication.State
+    ) -> SceneLifecycleEvaluationContext {
+        let object = notification.object
+        let windowScene = object as? UIWindowScene
+        let isApplicationWindowScene = windowScene?.session.role == .windowApplication
+        let hasPrimaryAppWindow = windowScene?.windows.contains { !($0 is PlayerHostWindow) } ?? false
+        let matchesActivePlayerWindowScene = if let windowScene, let activePlayerWindowScene {
+            windowScene === activePlayerWindowScene
+        } else {
+            false
+        }
+        let hasOtherForegroundApplicationScene = connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .contains { candidate in
+                candidate !== windowScene
+                    && candidate.session.role == .windowApplication
+                    && (candidate.activationState == .foregroundActive || candidate.activationState == .foregroundInactive)
+                    && candidate.windows.contains { !($0 is PlayerHostWindow) }
+            }
+        return SceneLifecycleEvaluationContext(
+            hasNotificationObject: object != nil,
+            isWindowScene: windowScene != nil,
+            isApplicationWindowScene: isApplicationWindowScene,
+            hasPrimaryAppWindow: hasPrimaryAppWindow,
+            matchesActivePlayerWindowScene: matchesActivePlayerWindowScene,
+            hasActivePlayerWindowScene: activePlayerWindowScene != nil,
+            hasOtherForegroundApplicationScene: hasOtherForegroundApplicationScene,
+            applicationState: applicationState
+        )
+    }
+
+    static func shouldPauseActivePlaybackForSceneDidEnterBackground(
+        _ context: SceneLifecycleEvaluationContext
+    ) -> Bool {
+        guard context.hasNotificationObject else {
+            return context.applicationState != .active && !context.hasOtherForegroundApplicationScene
+        }
+        guard context.isWindowScene, context.isApplicationWindowScene else {
+            return false
+        }
+        if context.hasActivePlayerWindowScene {
+            return context.matchesActivePlayerWindowScene
+        }
+        return context.hasPrimaryAppWindow && !context.hasOtherForegroundApplicationScene
+    }
+
+    static func shouldRestoreActivePlaybackForSceneWillEnterForeground(
+        _ context: SceneLifecycleEvaluationContext
+    ) -> Bool {
+        guard context.hasNotificationObject else { return true }
+        guard context.isWindowScene, context.isApplicationWindowScene else {
+            return false
+        }
+        if context.hasActivePlayerWindowScene {
+            return context.matchesActivePlayerWindowScene
+        }
+        return context.hasPrimaryAppWindow
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
