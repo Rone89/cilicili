@@ -15,6 +15,44 @@ struct VideoDetailToolbarSegmentedPickerView: View {
     }
 }
 
+struct VideoDetailVerticalToolbarTabButton: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+    let tab: VideoDetailContentTab
+    let isSelected: Bool
+    let action: () -> Void
+
+    private var symbolName: String {
+        switch tab {
+        case .detail:
+            return "info.circle"
+        case .comments:
+            return "text.bubble"
+        }
+    }
+
+    private var accessibilityID: String {
+        switch tab {
+        case .detail:
+            return "video.detail.toolbar-picker.detail"
+        case .comments:
+            return "video.detail.toolbar-picker.comments"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbolName)
+                .symbolVariant(isSelected ? .fill : .none)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(isSelected ? appTintColor : .primary)
+        }
+        .tint(isSelected ? appTintColor : .primary)
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier(accessibilityID)
+    }
+}
+
 private struct VideoDetailToolbarSegmentedPickerPreview: View {
     @State private var selection: VideoDetailContentTab = .detail
 

@@ -349,6 +349,33 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         XCTAssertEqual(AppOrientationLock.resolvedSupportedOrientations(for: padWindow), .all)
     }
 
+    func testVerticalTrailingChromeRailDetectsDuoCoverDisplayOnly() {
+        XCTAssertTrue(
+            AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+                containerSize: CGSize(width: 466, height: 678),
+                safeAreaInsets: EdgeInsets(top: 0, leading: 0, bottom: 34, trailing: 84)
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+                containerSize: CGSize(width: 440, height: 956),
+                safeAreaInsets: EdgeInsets(top: 62, leading: 0, bottom: 34, trailing: 0)
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+                containerSize: CGSize(width: 669, height: 951),
+                safeAreaInsets: EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 0)
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+                containerSize: CGSize(width: 956, height: 440),
+                safeAreaInsets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62)
+            )
+        )
+    }
+
     private func waitForSurfaceHost(in root: UIView) async throws -> DirectUIKitPlayerSurfaceHostView {
         let deadline = ContinuousClock.now + .seconds(3)
         while ContinuousClock.now < deadline {

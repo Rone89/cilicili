@@ -535,22 +535,65 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
 /// Declared by the navigation page for the UIKit shell, rather than its child host.
 struct VideoDetailBottomToolbarModifier: ViewModifier {
     @Environment(\.navigationHistoryContext) private var navigationHistory
+    @State private var usesVerticalRightRail = false
     var isEnabled = true
     let isHidden: Bool
     @Binding var selection: VideoDetailContentTab
     let onOpenCommentComposer: (() -> Void)?
 
+    private func resolveUsesVerticalRightRail(proxy: GeometryProxy) -> Bool {
+        if AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+            containerSize: proxy.size,
+            safeAreaInsets: proxy.safeAreaInsets
+        ) {
+            return true
+        }
+        return AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+            for: UIApplication.shared.playbackDetailForegroundKeyWindow
+        )
+    }
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if isEnabled {
             content
+                .onGeometryChange(for: Bool.self) { proxy in
+                    resolveUsesVerticalRightRail(proxy: proxy)
+                } action: { nextValue in
+                    usesVerticalRightRail = nextValue
+                }
                 .toolbar {
                     if let navigationHistory {
                         ToolbarItem(placement: .bottomBar) {
                             VideoDetailHistoryBackMenu(history: navigationHistory)
                         }
                     }
-                    if let onOpenCommentComposer {
+                    if usesVerticalRightRail {
+                        ToolbarSpacer(.flexible, placement: .bottomBar)
+                        ToolbarItem(placement: .bottomBar) {
+                            VideoDetailVerticalToolbarTabButton(
+                                tab: .detail,
+                                isSelected: selection == .detail
+                            ) {
+                                selection = .detail
+                            }
+                        }
+                        ToolbarItem(placement: .bottomBar) {
+                            VideoDetailVerticalToolbarTabButton(
+                                tab: .comments,
+                                isSelected: selection == .comments
+                            ) {
+                                selection = .comments
+                            }
+                        }
+                        if let onOpenCommentComposer {
+                            ToolbarSpacer(.fixed, placement: .bottomBar)
+                            ToolbarItem(placement: .bottomBar) {
+                                VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
+                            }
+                            .sharedBackgroundVisibility(.automatic)
+                        }
+                    } else if let onOpenCommentComposer {
                         ToolbarSpacer(.flexible, placement: .bottomBar)
                         ToolbarItem(placement: .bottomBar) {
                             VideoDetailToolbarSegmentedPickerView(

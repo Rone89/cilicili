@@ -26,7 +26,14 @@ final class AdaptiveLayoutUITests: XCTestCase {
         }
 
         let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
-        XCTAssertTrue(toolbar.waitForExistence(timeout: 15), app.debugDescription)
+        let verticalDetailTab = app.buttons["video.detail.toolbar-picker.detail"].firstMatch
+        let verticalCommentsTab = app.buttons["video.detail.toolbar-picker.comments"].firstMatch
+        XCTAssertTrue(
+            waitForCondition(timeout: 15) {
+                toolbar.exists || (verticalDetailTab.exists && verticalCommentsTab.exists)
+            },
+            app.debugDescription
+        )
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 10), app.debugDescription)
 
         let playerFrameElement = element("ui.videoDetail.playerFrame", in: app).firstMatch
@@ -35,6 +42,31 @@ final class AdaptiveLayoutUITests: XCTestCase {
         let portraitPlayerFrame = playerFrameElement.frame
 
         attachScreenshot(app.screenshot(), name: "adaptive-video-detail-portrait")
+
+        if verticalDetailTab.exists && verticalCommentsTab.exists {
+            // Duo outer cover display: vertical right-rail icon switcher (info.circle above text.bubble)
+            XCTAssertGreaterThan(
+                verticalDetailTab.frame.minX,
+                portraitWindowWidth * 0.72,
+                "Vertical detail tab should sit in the right rail: \(verticalDetailTab.frame)"
+            )
+            XCTAssertLessThan(
+                verticalDetailTab.frame.midY,
+                verticalCommentsTab.frame.midY,
+                "Detail icon (info.circle) should sit above comments icon (text.bubble)"
+            )
+            XCTAssertEqual(
+                verticalDetailTab.frame.midX,
+                verticalCommentsTab.frame.midX,
+                accuracy: 4,
+                "Vertical switcher icons should align on the same vertical axis"
+            )
+            verticalCommentsTab.tap()
+            let commentsList = app.tables["comments.list"].firstMatch
+            XCTAssertTrue(commentsList.waitForExistence(timeout: 10), app.debugDescription)
+            attachScreenshot(app.screenshot(), name: "adaptive-video-detail-duo-comments")
+            verticalDetailTab.tap()
+        }
 
         let isLargeScreenPortrait = portraitWindowWidth >= 700
         if isLargeScreenPortrait {

@@ -200,6 +200,35 @@ nonisolated enum AdaptiveLayoutPolicy {
         return (playerColumnWidth, contentColumnWidth)
     }
 
+    /// Whether the active container/window exposes an asymmetric trailing system
+    /// chrome rail (iPhone Duo folded cover display in portrait, where trailing
+    /// safe area reserves ~84pt for the vertical status/toolbar/tab rail while
+    /// leading safe area stays minimal).
+    static func usesVerticalTrailingChromeRail(
+        containerSize: CGSize,
+        safeAreaInsets: EdgeInsets
+    ) -> Bool {
+        guard containerSize.width > 0, containerSize.height > 0 else { return false }
+        return containerSize.height > containerSize.width
+            && safeAreaInsets.trailing >= 50
+            && safeAreaInsets.leading <= 16
+    }
+
+    @MainActor
+    static func usesVerticalTrailingChromeRail(for window: UIWindow?) -> Bool {
+        guard let window else { return false }
+        let insets = window.safeAreaInsets
+        return usesVerticalTrailingChromeRail(
+            containerSize: window.bounds.size,
+            safeAreaInsets: EdgeInsets(
+                top: insets.top,
+                leading: insets.left,
+                bottom: insets.bottom,
+                trailing: insets.right
+            )
+        )
+    }
+
     /// Whether a scene/window should allow all orientations natively (iPad, Duo unfolded,
     /// regular-width multitasking) instead of locking root screens to portrait.
     @MainActor

@@ -3015,15 +3015,18 @@
   - [HomeTopBar.swift](bili/Sources/Features/Home/HomeTopBar.swift)：
     - 在 `iPhone Duo` 外屏（`466×678 pt`）实测发现，原先将模式切换菜单（`home.feed.modeMenu`）与头像按钮（`home.account.avatar`）包入单个 `ToolbarItem` 的固定横向 `HStack`（`108pt` 宽）会直接溢出 `48pt` 宽的 Duo 右侧系统栏并裁切出屏；进一步排查发现仅拆分 `ToolbarItem` 时，由于 `HomeModeMenuButton` 底层使用 `UIViewRepresentable`（`customView` 型 `UIBarButtonItem`）且带固定 `44×44` frame，iOS 27.1 会把 `≡` 留在顶部横栏、只把头像放进右侧栏。
     - 最终改为两个纯 SwiftUI `Menu` 的标准 `ToolbarItem(placement: .topBarTrailing)`（`HomeModeMenuButton` 使用纯 SwiftUI `Menu` + `Picker` 单选与隐藏 Tab 分组，移除 `UIViewRepresentable` 与外层固定 `44×44` frame），并在 `HomeTopBarProfileButtonContent` 通过 `.onGeometryChange` 仅在顶部横排导航栏（`global minY < 130pt`）时对头像施加 `+5pt` 右向视觉补偿（Duo 外屏右侧竖栏 `minY ≈ 230pt` 自动为 `0pt`）。实测确认在 `iPhone Duo` 外屏上二者竖排合并进右侧同一条液态玻璃胶囊（`dx = -0.2pt, dy = 0.0pt`），在 `iPhone 18 Pro Max` 横排共享胶囊中头像上/下/右边距达到 `7.0 / 6.7 / 7.0 pt`（`dx = -0.2pt, dy = +0.2pt` 与胶囊右端半圆同心，无裁切）。全项目扫描确认无其他 `.topBarTrailing` 横向 `HStack`。
-  - [AdaptiveLayoutUITests.swift](biliUITests/AdaptiveLayoutUITests.swift)：新增首页双按钮不超出窗口右边缘的防回归断言；适配短屏外屏（`678pt` 高度）「我的」页向下滚动查找「设置」；兼容 `iPhone Duo` 外屏被动设备旋转不触发横屏时点击播放器全屏按钮进入 `678×466 pt` 横屏全屏的验证路径。
+  - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)、[VideoDetailToolbarSegmentedPicker.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailToolbarSegmentedPicker.swift) & [VideoDetailNativeContentTabView.swift](bili/Sources/Features/VideoDetail/VideoDetailNativeContentTabView.swift)：
+    - 新增 `AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail`，基于竖屏非对称右侧安全区（`trailing >= 50 && leading <= 16`）动态识别 `iPhone Duo` 外屏右侧竖栏态（普通 iPhone、iPad 与 Duo 展开内屏均返回 `false`）。
+    - 在 Duo 外屏右侧竖栏态下，视频详情页 `.bottomBar` 将「简介 / 评论」切换从底部居中横排文字分段器切换为两个相邻原生图标 `ToolbarItem`（`VideoDetailVerticalToolbarTabButton`，简介 `info.circle`、评论 `text.bubble`，选中态高亮主题色并填充），由 iOS 27.1 自动竖排合并进右侧液态玻璃胶囊并与 `<` 返回、`📝` 发评垂直对齐，底部内容区零遮挡；普通 iPhone / iPad / Duo 内屏保持原有底部横排分段器不变。
+  - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift) & [AdaptiveLayoutUITests.swift](biliUITests/AdaptiveLayoutUITests.swift)：补充 `testVerticalTrailingChromeRailDetectsDuoCoverDisplayOnly` 单元测试，以及首页双按钮不越界断言、短屏「我的」页滚动、Duo 外屏视频详情右侧竖排图标位置/点击切换评论与全屏过渡断言。
 - **已验证（于最后一次代码改动后在模拟器执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`）**：
     - 单元测试（`duo-adaptive-v1.xcresult`）：`AdaptiveLayoutAndPlayerIdentityTests`（5/5）+ `PlayerSpeedBoostPolicyTests`（10/10）共 **15/15 通过（0 失败，0 跳过）**。
     - 内屏展开态（`669×951 pt`）：`AdaptiveLayoutUITests`（`duo-adaptive-v2.xcresult`）**2/2 通过**，实机截图确认三列热搜、横排液态玻璃工具栏、底部悬浮 TabBar 与「我的」页渲染正常。
-    - 外屏闭合态（`466×678 pt`）：`AdaptiveLayoutUITests`（`duo-outer-v3.xcresult` **2/2 通过**）及纯 SwiftUI `Menu` 改造后复测 `testAdaptiveRootTabsAndDeveloperToggle`（`duo-outer-v5.xcresult` **1/1 通过，0 运行时警告**），实机截图确认首页切换按钮与头像已**竖排合并进右侧同一条液态玻璃胶囊**且与下方竖排 TabBar 对齐，点击全屏按钮可正常旋转至 `678×466 pt` 横屏全屏。
+    - 外屏闭合态（`466×678 pt`）：`AdaptiveLayoutUITests`（`duo-outer-v3.xcresult` **2/2 通过**）、纯 SwiftUI `HomeTopBar` 复测（`duo-outer-v5.xcresult` **1/1 通过，0 运行时警告**）以及视频详情右侧竖排图标切换栏复测（`duo-video-toolbar-outer-v2.xcresult` **1/1 通过**，实机截图确认 `<`、`[info.circle / text.bubble]` 共享竖排胶囊与 `📝` 垂直对齐于右侧栏且点击 `text.bubble` 正常切换评论列表）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：
-    - `RootTabScrollUITests`（`iphone18pm-homemenu-v2.xcresult` **2/2 通过**，以及补充横排 `+5pt` 圆心对齐补偿后的 `testHomeProfileMenuOpensFromToolbar` `iphone18pm-homemenu-v3.xcresult` **1/1 通过，0 运行时警告**），像素复核确认头像圆心偏移由 `-5.2pt` 收敛至 `dx = -0.2pt, dy = +0.2pt`（上/下/右留白 `7.0 / 6.7 / 7.0 pt`）。此前 `AdaptiveLayoutUITests` 亦全通过（`iphone18pm-topbar-regression.xcresult`）。
+    - `RootTabScrollUITests`（`iphone18pm-homemenu-v2.xcresult` **2/2 通过**、`iphone18pm-homemenu-v3.xcresult` **1/1 通过，0 运行时警告**，像素复核头像圆心偏移 `dx = -0.2pt, dy = +0.2pt`）以及视频详情回归（`iphone18pm-video-toolbar-v1.xcresult` **2/2 通过，0 运行时警告**，含新增单元测试与 `testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`）。
 - **未验证与待办（明确区分，不推测通过）**：
   - 真机 `RCe2027` 当前安装的是 `21f8e57`（不含本轮 `HomeTopBar.swift` 修改）；如需在真机复核新的原生工具栏胶囊样式，可重新执行本地真机构建安装。
   - 真机 `iPhone Duo` 实体铰链半折/热折展连续动画及真机 iPad 多窗口仍待真实硬件验收。
