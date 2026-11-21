@@ -63,10 +63,14 @@ nonisolated enum PlayerSpeedBoostPolicy {
     }
 
     static func availableBoostRates(for baselineRate: BiliPlaybackRate) -> [Double] {
-        if baselineRate.rawValue >= 1.5 {
-            return [2.0, 3.0, 4.0]
+        switch baselineRate {
+        case .x075, .x10:
+            return [1.25, 1.5, 2.0]
+        case .x125:
+            return [1.5, 2.0]
+        case .x15, .x20:
+            return [2.0]
         }
-        return [1.5, 2.0, 3.0, 4.0]
     }
 
     static func resolvedBoostRate(

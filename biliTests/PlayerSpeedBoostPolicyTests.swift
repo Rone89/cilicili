@@ -111,22 +111,22 @@ final class PlayerSpeedBoostPolicyTests: XCTestCase {
     }
 
     func testHorizontalSlideResolvesMultiTierSpeedsWithHysteresis() {
-        // Default 1.0x baseline unlocks [1.5, 2.0, 3.0, 4.0]
+        // Default 1.0x baseline unlocks smooth full-frame tiers [1.25, 1.5, 2.0] starting at 2.0x
         var current = 2.0
-        current = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: -60, baselineRate: .x10, currentRate: current)
+        current = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: -58, baselineRate: .x10, currentRate: current)
         XCTAssertEqual(current, 1.5)
 
         // Near boundary within hysteresis margin stays at 1.5
         current = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: -10, baselineRate: .x10, currentRate: current)
         XCTAssertEqual(current, 1.5)
 
-        current = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: 58, baselineRate: .x10, currentRate: current)
-        XCTAssertEqual(current, 3.0)
+        current = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: -110, baselineRate: .x10, currentRate: current)
+        XCTAssertEqual(current, 1.25)
 
-        current = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: 120, baselineRate: .x10, currentRate: current)
-        XCTAssertEqual(current, 4.0)
+        current = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: 0, baselineRate: .x10, currentRate: current)
+        XCTAssertEqual(current, 2.0)
 
-        // Baseline 1.5x skips 1.5x tier and clamps at 2.0x on left swipe
+        // Baseline 1.5x clamps at 2.0x
         let from15 = PlayerSpeedBoostPolicy.resolvedBoostRate(forHorizontalOffset: -80, baselineRate: .x15, currentRate: 2.0)
         XCTAssertEqual(from15, 2.0)
     }
@@ -140,7 +140,7 @@ final class PlayerSpeedBoostPolicyTests: XCTestCase {
             referer: "https://www.bilibili.com"
         )
         defer { player.stop() }
-        player.setPlaybackRate(.x125)
+        player.setPlaybackRate(.x10)
 
         let model = PlayerSpeedBoostModel()
         XCTAssertTrue(
@@ -153,13 +153,13 @@ final class PlayerSpeedBoostPolicyTests: XCTestCase {
         XCTAssertEqual(model.phase, .boosting)
         XCTAssertEqual(model.displayedRateTitle, "2x")
 
-        // Slide right to 3x and slide up past lock threshold (-52pt)
-        model.updateGestureOffset(horizontalOffset: 60, verticalOffset: -60, playerViewModel: player)
-        XCTAssertEqual(model.displayedRateValue, 3.0)
-        XCTAssertEqual(model.displayedRateTitle, "3x")
+        // Slide left to 1.5x and slide up past lock threshold (-52pt)
+        model.updateGestureOffset(horizontalOffset: -60, verticalOffset: -60, playerViewModel: player)
+        XCTAssertEqual(model.displayedRateValue, 1.5)
+        XCTAssertEqual(model.displayedRateTitle, "1.5x")
         XCTAssertTrue(model.isLockTargetHighlighted)
 
-        // Release finger -> enters .locked without restoring 1.25x yet
+        // Release finger -> enters .locked without restoring 1.0x yet
         model.end(reason: .gestureEnded, playerViewModel: player, showPlaybackControls: {})
         XCTAssertEqual(model.phase, .locked)
         XCTAssertTrue(model.isIndicatorVisible)
@@ -168,13 +168,13 @@ final class PlayerSpeedBoostPolicyTests: XCTestCase {
         model.end(reason: .supersededBySeek, playerViewModel: player, showPlaybackControls: {})
         XCTAssertEqual(model.phase, .locked)
 
-        // Tapping locked pill restores exact baseline (1.25x)
+        // Tapping locked pill restores exact baseline (1.0x)
         var didShowControls = false
         model.unlock(playerViewModel: player) {
             didShowControls = true
         }
         XCTAssertEqual(model.phase, .restoring)
-        XCTAssertEqual(player.playbackRate, .x125)
+        XCTAssertEqual(player.playbackRate, .x10)
         XCTAssertTrue(didShowControls)
     }
 }

@@ -921,6 +921,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard abs(currentRate - normalizedRate) > 0.001 else { return }
         currentRate = normalizedRate
         player.defaultRate = normalizedRate
+        applyRateAwareBuffering()
+        applyRateAwareAudioPitchAlgorithm()
         if player.rate > 0 {
             player.rate = normalizedRate
         }
@@ -1946,7 +1948,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     private func applyRateAwareAudioPitchAlgorithm(to item: AVPlayerItem) {
-        item.audioTimePitchAlgorithm = currentRate >= 1.45 ? .timeDomain : .spectral
+        if currentRate > 2.0 {
+            item.audioTimePitchAlgorithm = .varispeed
+        } else if currentRate >= 1.45 {
+            item.audioTimePitchAlgorithm = .timeDomain
+        } else {
+            item.audioTimePitchAlgorithm = .spectral
+        }
     }
 
     private func observePlayerState() {
