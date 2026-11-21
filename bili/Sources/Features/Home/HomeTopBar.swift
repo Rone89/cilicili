@@ -59,18 +59,12 @@ struct HomeTopBar: ToolbarContent {
                 onSelect: onSelect,
                 onOpenRootPage: actions.onOpenRootPage
             )
-            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
         }
 
         ToolbarItem(placement: .topBarTrailing) {
             HomeTopBarProfileButton(actions: actions)
-                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
         }
     }
-}
-
-private enum HomeTopBarLayout {
-    static let controlHeight: CGFloat = 44
 }
 
 struct FeedToolbarTitle: View {
@@ -114,65 +108,59 @@ struct FeedScrolledToolbarTitle: View {
     }
 }
 
-/// Liquid-glass icon button that opens a native single-selection menu to pick
-/// the feed mode. When some root tabs are hidden from the bottom bar, their
-/// entries join the same menu as a second group. UIKit's UIMenu keeps the
-/// checkmark on the trailing edge and sizes the menu to its content (narrow),
-/// which SwiftUI's Menu does not guarantee across OS versions.
-private struct HomeModeMenuButton: UIViewRepresentable {
+/// Native SwiftUI menu button to pick the home feed mode (and hidden root tabs
+/// when tabs are collapsed). Staying pure SwiftUI lets iOS 26/27 Liquid Glass
+/// group it with the profile button horizontally on regular screens and
+/// vertically inside the right rail on iPhone Duo's cover display.
+private struct HomeModeMenuButton: View {
     let selection: HomePageSelection
     let hiddenTabs: [AppTab]
     let onSelect: (HomePageSelection) -> Void
     let onOpenRootPage: (AppTab) -> Void
 
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.showsMenuAsPrimaryAction = true
-        button.tintColor = .label
-        let configuration = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        button.setImage(
-            UIImage(systemName: "line.3.horizontal.decrease", withConfiguration: configuration),
-            for: .normal
-        )
-        button.accessibilityIdentifier = "home.feed.modeMenu"
-        button.accessibilityLabel = "切换首页页面"
-        button.menu = makeMenu()
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        button.accessibilityValue = selection.title
-        button.menu = makeMenu()
-    }
-
-    private func makeMenu() -> UIMenu {
-        let modeActions = HomePageSelection.menuOrder.map { item in
-            UIAction(
-                title: item.title,
-                state: item == selection ? .on : .off
-            ) { _ in
-                guard item != selection else { return }
+    private var selectionTitleBinding: Binding<String> {
+        Binding(
+            get: { selection.title },
+            set: { title in
+                guard let item = HomePageSelection.menuOrder.first(where: { $0.title == title }),
+                      item != selection
+                else { return }
                 onSelect(item)
             }
-        }
-        guard !hiddenTabs.isEmpty else {
-            return UIMenu(title: "", options: .singleSelection, children: modeActions)
-        }
-        let modeSection = UIMenu(
-            title: "",
-            options: [.displayInline, .singleSelection],
-            children: modeActions
         )
-        let navActions = hiddenTabs.map { tab in
-            UIAction(
-                title: tab.title,
-                image: UIImage(systemName: tab == .mine ? "slider.horizontal.3" : tab.systemImage)
-            ) { _ in
-                onOpenRootPage(tab)
+    }
+
+    var body: some View {
+        Menu {
+            Picker("切换首页页面", selection: selectionTitleBinding) {
+                ForEach(HomePageSelection.menuOrder, id: \.title) { item in
+                    Text(item.title).tag(item.title)
+                }
             }
+
+            if !hiddenTabs.isEmpty {
+                Section {
+                    ForEach(hiddenTabs, id: \.self) { tab in
+                        Button {
+                            onOpenRootPage(tab)
+                        } label: {
+                            Label(
+                                tab.title,
+                                systemImage: tab == .mine ? "slider.horizontal.3" : tab.systemImage
+                            )
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.primary)
         }
-        let navSection = UIMenu(title: "", options: .displayInline, children: navActions)
-        return UIMenu(title: "", children: [modeSection, navSection])
+        .tint(.primary)
+        .accessibilityLabel("切换首页页面")
+        .accessibilityValue(selection.title)
+        .accessibilityIdentifier("home.feed.modeMenu")
     }
 }
 
@@ -225,8 +213,6 @@ private struct HomeTopBarProfileButtonContent: View {
         } label: {
             avatar
                 .overlay(alignment: .topLeading) { unreadDot(showsUnread: showsUnread) }
-                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("个人空间与消息")
