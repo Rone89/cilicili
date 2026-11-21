@@ -24,6 +24,7 @@ enum AppLinkDestination {
     case videoComment(VideoCommentRoute)
     case liveRoom(LiveRoom)
     case user(VideoOwner)
+    case article(ArticleRoute)
     case browser(URL)
 }
 
@@ -53,7 +54,8 @@ nonisolated struct VideoCommentRoute: Hashable, Sendable {
 
 nonisolated enum AppLinkRouter {
     static func destination(for url: URL, api: BiliAPIClient) async -> AppLinkDestination {
-        let normalizedURL = normalizedHTTPURL(url) ?? url
+        let unwrappedURL = unwrappedExternalURL(url)
+        let normalizedURL = normalizedHTTPURL(unwrappedURL) ?? unwrappedURL
 
         if let videoLink = BiliVideoLink(url: normalizedURL) {
             if let video = await videoItem(for: videoLink, api: api) {
@@ -69,6 +71,10 @@ nonisolated enum AppLinkRouter {
             return .user(owner)
         }
 
+        if let articleRoute = articleRoute(from: normalizedURL) {
+            return .article(articleRoute)
+        }
+
         if isShortBiliHost(normalizedURL.host),
            let resolvedURL = await resolvedRedirectURL(from: normalizedURL),
            resolvedURL.absoluteString != normalizedURL.absoluteString {
@@ -82,7 +88,105 @@ nonisolated enum AppLinkRouter {
 
     static func canHandle(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return false }
-        return scheme == "http" || scheme == "https"
+        return scheme == "http" || scheme == "https" || scheme == "bilibili" || scheme == "cilicili"
+    }
+
+    static func unwrappedExternalURL(_ url: URL) -> URL {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "bilibili" || scheme == "cilicili"
+        else {
+            return url
+        }
+
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryItems = components?.queryItems ?? []
+
+        // 支持 cilicili://open?url=https://... 或 bilibili://browser?url=https://...
+        for key in ["url", "target", "jump_url", "link"] {
+            if let rawTarget = queryItems.firstValue(named: key),
+               let targetHTTP = normalizedHTTPURLString(rawTarget),
+               let targetURL = URL(string: targetHTTP) {
+                return targetURL
+            }
+        }
+
+        let host = (components?.host ?? "").lowercased()
+        let pathSegments = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+        let queryString = components?.percentEncodedQuery.map { "?\($0)" } ?? ""
+
+        switch host {
+        case "video":
+            if let target = pathSegments.first, !target.isEmpty {
+                let normalizedTarget: String
+                if target.uppercased().hasPrefix("BV") || target.lowercased().hasPrefix("av") {
+                    normalizedTarget = target
+                } else if target.allSatisfy(\.isNumber) {
+                    normalizedTarget = "av\(target)"
+                } else {
+                    normalizedTarget = target
+                }
+                if let resolved = URL(string: "https://www.bilibili.com/video/\(normalizedTarget)\(queryString)") {
+                    return resolved
+                }
+            }
+        case "bangumi", "pgc":
+            if pathSegments.count >= 2 {
+                let kind = pathSegments[0].lowercased()
+                let id = pathSegments[1]
+                if kind == "season", !id.isEmpty {
+                    let prefix = id.lowercased().hasPrefix("ss") ? id : "ss\(id)"
+                    if let resolved = URL(string: "https://www.bilibili.com/bangumi/play/\(prefix)\(queryString)") {
+                        return resolved
+                    }
+                } else if (kind == "ep" || kind == "episode"), !id.isEmpty {
+                    let prefix = id.lowercased().hasPrefix("ep") ? id : "ep\(id)"
+                    if let resolved = URL(string: "https://www.bilibili.com/bangumi/play/\(prefix)\(queryString)") {
+                        return resolved
+                    }
+                }
+            } else if let first = pathSegments.first, !first.isEmpty {
+                let prefix = first.lowercased().hasPrefix("ss") || first.lowercased().hasPrefix("ep") ? first : "ss\(first)"
+                if let resolved = URL(string: "https://www.bilibili.com/bangumi/play/\(prefix)\(queryString)") {
+                    return resolved
+                }
+            }
+        case "article", "read":
+            if let first = pathSegments.first, !first.isEmpty {
+                let cv = first.lowercased().hasPrefix("cv") ? first : "cv\(first)"
+                if let resolved = URL(string: "https://www.bilibili.com/read/\(cv)\(queryString)") {
+                    return resolved
+                }
+            }
+        case "opus":
+            if let opusID = pathSegments.first, !opusID.isEmpty,
+               let resolved = URL(string: "https://www.bilibili.com/opus/\(opusID)\(queryString)") {
+                return resolved
+            }
+        case "space", "author":
+            if let mid = pathSegments.first, !mid.isEmpty,
+               let resolved = URL(string: "https://space.bilibili.com/\(mid)\(queryString)") {
+                return resolved
+            }
+        case "live":
+            if let roomID = pathSegments.first, !roomID.isEmpty,
+               let resolved = URL(string: "https://live.bilibili.com/\(roomID)\(queryString)") {
+                return resolved
+            }
+        default:
+            break
+        }
+
+        return url
+    }
+
+    private static func articleRoute(from url: URL) -> ArticleRoute? {
+        let source = ArticleRoute.parseSource(from: url)
+        switch source {
+        case .cv, .opus:
+            return ArticleRoute(source: source, title: "专栏", webURL: url)
+        case .url:
+            return nil
+        }
     }
 
     static func displayTitle(for url: URL) -> String {
@@ -165,6 +269,9 @@ nonisolated enum AppLinkRouter {
         }
         if let owner = userOwner(from: normalizedURL) {
             return .user(owner)
+        }
+        if let articleRoute = articleRoute(from: normalizedURL) {
+            return .article(articleRoute)
         }
         return nil
     }

@@ -2916,3 +2916,40 @@
   - 对比 `v1.1.6`（`18976de`）整理完成 `1.1.7` GitHub Release 更新说明，覆盖应用内画中画体验与稳定性修复、原生专栏阅读页（含整卡直达、底部点赞/评论/分享栏及右上角作者头像独立容器）、视频三分手势控制，以及未签名 IPA 固定 Bundle ID（`com.rayc.cilicili`）。
 - **已验证**：
   - `git diff --check`：通过（exit 0）。
+
+### 2026-11-21（Build 231 注册 `bilibili://` 与 `cilicili://` 外部拉起跳转）
+
+- **当前分支与基线**：基于 `main` @ `66fcff2`（`v1.1.7` 已推送并发布 Release；本地新增 Build `231` / `1.1.7 (231)` 未提交改动）。
+- **已实现功能与测试（Build `231`，未提交）**：
+  - [bili-Info.plist](file:///Users/rayc/Desktop/ccswift/Config/bili-Info.plist#L23-L36)：注册 `CFBundleURLTypes`，支持 `bilibili` 与 `cilicili` 两个 URL Scheme。
+  - [AppLinkRouter.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/AppLinkRouter.swift#L22-L170) & [RootTabViewActions.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootTabViewActions.swift#L57-L62)：
+    - 新增 `AppLinkDestination.article(ArticleRoute)`，让外部/内链专栏（`/read/cv...`、`/opus/...`）直接进入原生专栏阅读页。
+    - `canHandle` 与 `unwrappedExternalURL` 支持 `cilicili://open?url=...`、`bilibili://video/...`、`bilibili://bangumi/...`、`bilibili://pgc/...`、`bilibili://article/...`、`bilibili://read/cv...`、`bilibili://opus/...`、`bilibili://space/...`、`bilibili://author/...` 与 `bilibili://live/...`（沿用现有 `RootTabView.onOpenURL` 入口分发）。
+  - [AppLinkProfileRoutingTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/AppLinkProfileRoutingTests.swift#L24-L61)：新增 `testExternalSchemesAreAcceptedAndUnwrapped` 覆盖 `cilicili://open?url=...` 与各类 `bilibili://` 协议转换。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `230` 递增至 `231`。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（exit 0）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.7 (231)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`codesign --verify --deep --strict` 通过，`CFBundleVersion=231`，包内 `Info.plist` 已确认包含 `CFBundleURLSchemes: [bilibili, cilicili]`，`bili.app/bili` SHA-256：`603a5784652e2f44dc8ebea3e19b9c13958c71d6de8ab647fa7c82e5e5ec6d3d`。
+- **未完成与环境阻塞**：
+  - `xcrun devicectl device install app` 因设备当前无线服务未就绪返回 `CoreDeviceError 4016`（Build `231` 尚未安装到真机）。
+  - 受当前沙箱 `CoreSimulatorService` XPC 限制，模拟器单元测试尚未实际运行。
+- **真机与本地待办**：
+  - 唤醒/连接 `RCe2027` 后安装 Build `231`，测试在未安装官方 B 站时点击网页「打开 App」或通过 Safari 快捷指令拉起 `cilicili://open?url=<网页链接>` 是否能直接跳转到对应视频/专栏/UP 主页面。
+
+### 2026-11-21（Build 232 完善「退出所有账号」入口与容错清理）
+
+- **当前分支与基线**：基于 `main` @ `66fcff2`（含 Build `231` 与本轮 Build `232` / `1.1.7 (232)` 本地未提交改动）。
+- **已实现改动（Build `232`，未提交）**：
+  - [SessionStore.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Services/SessionStore.swift#L437-L469)：移除 `logout()` 对 `credentialStorageError == nil` 的前置拦截，对所有 `credentialsByMID` 与 `accounts` 中的 `mid` 执行尽最大努力清理 Keychain 凭据与评论草稿，并重置 `credentialStorageError` 与全部内存账号态。
+  - [MultiAccountExperimentSettingsView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MultiAccountExperimentSettingsView.swift#L41-L210)：在「账号管理」页底部新增「退出所有账号 / 退出登录」区域（带确认弹窗），调用 `sessionStore.logout()` 与 `BiliWebCookieStore.clearLoginCookies()`。
+  - [MineAccountSection.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MineAccountSection.swift#L14-L78)：在账号切换菜单内同步增加「退出所有账号 / 退出登录」入口。
+  - [MultiAccountSessionTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/MultiAccountSessionTests.swift#L379-L405)：新增 `testLogoutClearsAllSavedAccountsAndCredentials`。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `231` 递增至 `232`。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（exit 0）。
+- **未完成与环境阻塞**：
+  - 受当前沙箱 `CoreSimulatorService` XPC 限制，模拟器单元测试尚未实际运行。
+- **真机与本地待办**：
+  - 在 `RCe2027` 安装 Build `232` 后，验证从「我的」首页菜单及「账号管理」页均可通过「退出所有账号」一次清空所有已保存账号。

@@ -13,7 +13,8 @@ struct MineAccountSection: View {
             if sessionStore.isLoggedIn {
                 MineAccountSwitcherMenu(
                     sessionStore: sessionStore,
-                    onOpenRoute: onOpenRoute
+                    onOpenRoute: onOpenRoute,
+                    onLogoutAll: { viewModel.logout() }
                 )
 
                 Button(role: .destructive) {
@@ -40,6 +41,7 @@ struct MineAccountSection: View {
 private struct MineAccountSwitcherMenu: View {
     @ObservedObject var sessionStore: SessionStore
     let onOpenRoute: (MineOverlayRoute) -> Void
+    let onLogoutAll: () -> Void
 
     @State private var errorMessage: String?
 
@@ -65,6 +67,15 @@ private struct MineAccountSwitcherMenu: View {
                 onOpenRoute(.accountManagement)
             } label: {
                 Label("账号管理", systemImage: "person.2")
+            }
+
+            Button(role: .destructive) {
+                onLogoutAll()
+            } label: {
+                Label(
+                    sessionStore.accounts.count > 1 ? "退出所有账号" : "退出登录",
+                    systemImage: "rectangle.portrait.and.arrow.right"
+                )
             }
         } label: {
             HStack(spacing: 8) {

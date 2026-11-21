@@ -376,6 +376,29 @@ final class MultiAccountSessionTests: XCTestCase {
         )
     }
 
+    func testLogoutClearsAllSavedAccountsAndCredentials() throws {
+        let keychain = makeKeychain()
+        let sessionStore = SessionStore(keychain: keychain)
+
+        try saveMainAccount(mid: 1001, session: "s1", in: sessionStore)
+        _ = try sessionStore.saveAdditionalAccount(
+            cookies(mid: 1002, session: "s2", csrf: "c2")
+        )
+        XCTAssertEqual(sessionStore.accounts.count, 2)
+        XCTAssertTrue(sessionStore.isLoggedIn)
+
+        try sessionStore.logout()
+
+        XCTAssertTrue(sessionStore.accounts.isEmpty)
+        XCTAssertFalse(sessionStore.isLoggedIn)
+        XCTAssertNil(sessionStore.mainAccountMID)
+        XCTAssertNil(sessionStore.playbackAccountMID)
+        XCTAssertNil(sessionStore.dynamicFeedAccountMID)
+        XCTAssertNil(sessionStore.interactionAccountMID)
+        XCTAssertNil(sessionStore.sessdata)
+        XCTAssertNil(sessionStore.user)
+    }
+
     private func cookies(
         mid: Int,
         session: String,

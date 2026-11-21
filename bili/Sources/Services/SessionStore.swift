@@ -435,18 +435,19 @@ final class SessionStore: ObservableObject {
     }
 
     func logout() throws {
-        guard credentialStorageError == nil else { throw KeychainError.recoveryRequired }
-        for mid in credentialsByMID.keys {
-            try deleteAccountCredentials(for: mid)
+        let allMIDs = Set(credentialsByMID.keys).union(accounts.map(\.mid))
+        for mid in allMIDs {
+            try? deleteAccountCredentials(for: mid)
         }
-        try keychain.delete(accountRegistryKey)
-        try keychain.delete(sessdataKey)
-        try keychain.delete(accessKeyKey)
-        try keychain.delete(loginCookieHeaderKey)
-        try keychain.delete(loginCredentialKindKey)
-        for mid in credentialsByMID.keys {
+        try? keychain.delete(accountRegistryKey)
+        try? keychain.delete(sessdataKey)
+        try? keychain.delete(accessKeyKey)
+        try? keychain.delete(loginCookieHeaderKey)
+        try? keychain.delete(loginCredentialKindKey)
+        for mid in allMIDs {
             ScopedCommentDraftCache.shared.remove(accountMID: mid)
         }
+        credentialStorageError = nil
         credentialsByMID = [:]
         accounts = []
         mainAccountMID = nil

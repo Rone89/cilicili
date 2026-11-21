@@ -20,4 +20,44 @@ final class AppLinkProfileRoutingTests: XCTestCase {
             XCTAssertNil(AppLinkRouter.userOwner(from: try XCTUnwrap(URL(string: address))))
         }
     }
+
+    func testExternalSchemesAreAcceptedAndUnwrapped() throws {
+        let wrapped = try XCTUnwrap(URL(string: "cilicili://open?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD"))
+        XCTAssertTrue(AppLinkRouter.canHandle(wrapped))
+        XCTAssertEqual(
+            AppLinkRouter.unwrappedExternalURL(wrapped).absoluteString,
+            "https://www.bilibili.com/video/BV1xx411c7mD"
+        )
+
+        let videoScheme = try XCTUnwrap(URL(string: "bilibili://video/BV1xx411c7mD?p=2"))
+        XCTAssertTrue(AppLinkRouter.canHandle(videoScheme))
+        XCTAssertEqual(
+            AppLinkRouter.unwrappedExternalURL(videoScheme).absoluteString,
+            "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
+        )
+
+        let aidScheme = try XCTUnwrap(URL(string: "bilibili://video/170001"))
+        XCTAssertEqual(
+            AppLinkRouter.unwrappedExternalURL(aidScheme).absoluteString,
+            "https://www.bilibili.com/video/av170001"
+        )
+
+        let spaceScheme = try XCTUnwrap(URL(string: "bilibili://space/123456"))
+        XCTAssertEqual(
+            AppLinkRouter.unwrappedExternalURL(spaceScheme).absoluteString,
+            "https://space.bilibili.com/123456"
+        )
+
+        let articleScheme = try XCTUnwrap(URL(string: "bilibili://article/24680135"))
+        XCTAssertEqual(
+            AppLinkRouter.unwrappedExternalURL(articleScheme).absoluteString,
+            "https://www.bilibili.com/read/cv24680135"
+        )
+
+        let liveScheme = try XCTUnwrap(URL(string: "bilibili://live/22637261"))
+        XCTAssertEqual(
+            AppLinkRouter.unwrappedExternalURL(liveScheme).absoluteString,
+            "https://live.bilibili.com/22637261"
+        )
+    }
 }

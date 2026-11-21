@@ -1,12 +1,14 @@
 import SwiftUI
 
 struct MineAccountManagementView: View {
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var sessionStore: SessionStore
     @ObservedObject var libraryStore: LibraryStore
     let api: BiliAPIClient
 
     @State private var isShowingWebLogin = false
     @State private var isAddingAccount = false
+    @State private var isConfirmingLogoutAll = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -14,6 +16,9 @@ struct MineAccountManagementView: View {
             accountsSection
             purposeSection
             addAccountSection
+            if sessionStore.isLoggedIn || !sessionStore.accounts.isEmpty {
+                logoutAllSection
+            }
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
@@ -35,6 +40,18 @@ struct MineAccountManagementView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "未知错误")
+        }
+        .confirmationDialog(
+            "确定退出所有账号？",
+            isPresented: $isConfirmingLogoutAll,
+            titleVisibility: .visible
+        ) {
+            Button("退出所有账号", role: .destructive) {
+                logoutAllAccounts()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("将清除所有已保存账号的本地登录凭据。")
         }
     }
 
@@ -166,6 +183,30 @@ struct MineAccountManagementView: View {
             }
         } footer: {
             Text("新增账号使用独立的临时网页登录环境，不会自动带入当前主账号的 Cookie。首版暂不提供第二账号的短信和扫码登录。")
+        }
+    }
+
+    private var logoutAllSection: some View {
+        Section {
+            Button(role: .destructive) {
+                isConfirmingLogoutAll = true
+            } label: {
+                Label(
+                    sessionStore.accounts.count > 1 ? "退出所有账号" : "退出登录",
+                    systemImage: "rectangle.portrait.and.arrow.right"
+                )
+            }
+            .accessibilityIdentifier("mine.accountManagement.logoutAll")
+        }
+    }
+
+    private func logoutAllAccounts() {
+        do {
+            try sessionStore.logout()
+            BiliWebCookieStore.clearLoginCookies()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

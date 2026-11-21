@@ -56,6 +56,8 @@ extension RootTabView {
             openLiveRoomFromLink(room)
         case .user(let owner):
             openUserFromLink(owner)
+        case .article(let route):
+            pushRootRoute(route)
         case .browser(let url):
             inAppBrowserItem = InAppBrowserItem(url: url)
         }
