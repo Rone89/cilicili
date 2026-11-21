@@ -55,11 +55,15 @@ final class AdaptiveLayoutUITests: XCTestCase {
         // Rotate to landscape
         XCUIDevice.shared.orientation = .landscapeLeft
         let landscapeWindow = app.windows.firstMatch
-        XCTAssertTrue(waitForCondition(timeout: 5) {
+        let didRotateByDeviceOrientation = waitForCondition(timeout: 4) {
             landscapeWindow.frame.width > landscapeWindow.frame.height
-        }, "Window did not rotate to landscape: \(landscapeWindow.frame)")
+        }
 
         if isLargeScreenPortrait {
+            XCTAssertTrue(
+                didRotateByDeviceOrientation,
+                "Large screen window did not rotate to landscape: \(landscapeWindow.frame)"
+            )
             // Large screen landscape must remain in two-column split (not auto-fullscreen)
             XCTAssertTrue(toolbar.waitForExistence(timeout: 5), "Toolbar should remain visible in iPad landscape split mode")
             let landscapeSplitPlayerFrame = playerFrameElement.frame
@@ -108,6 +112,20 @@ final class AdaptiveLayoutUITests: XCTestCase {
             }, "Exiting fullscreen on iPad must return to two-column split, got \(playerFrameElement.frame)")
             XCTAssertTrue(commentsList.waitForExistence(timeout: 5))
         } else {
+            if !didRotateByDeviceOrientation {
+                let fullscreenButton = fullscreenControl(in: app)
+                if !fullscreenButton.exists {
+                    let surface = app.buttons["ui.player.surface"].firstMatch
+                    if surface.exists { surface.tap() }
+                }
+                if fullscreenButton.waitForExistence(timeout: 5) {
+                    fullscreenButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                }
+                XCTAssertTrue(waitForCondition(timeout: 5) {
+                    landscapeWindow.frame.width > landscapeWindow.frame.height
+                        || playerFrameElement.frame.height >= landscapeWindow.frame.height - 40
+                }, "Compact screen did not enter landscape or fullscreen after tapping fullscreen: window=\(landscapeWindow.frame) player=\(playerFrameElement.frame)")
+            }
             attachScreenshot(app.screenshot(), name: "adaptive-video-detail-iphone-landscape")
         }
     }
@@ -129,10 +147,23 @@ final class AdaptiveLayoutUITests: XCTestCase {
         }
 
         let modeMenu = app.buttons["home.feed.modeMenu"].firstMatch
+        let profileButton = app.buttons["home.account.avatar"].firstMatch
         XCTAssertTrue(modeMenu.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(profileButton.waitForExistence(timeout: 5), app.debugDescription)
+        let rootWindow = app.windows.firstMatch
+        XCTAssertLessThanOrEqual(
+            modeMenu.frame.maxX,
+            rootWindow.frame.maxX + 1,
+            "Home mode menu clipped past window trailing edge: \(modeMenu.frame) window=\(rootWindow.frame)"
+        )
+        XCTAssertLessThanOrEqual(
+            profileButton.frame.maxX,
+            rootWindow.frame.maxX + 1,
+            "Home profile button clipped past window trailing edge: \(profileButton.frame) window=\(rootWindow.frame)"
+        )
         attachScreenshot(app.screenshot(), name: "adaptive-root-home-portrait")
 
-        if app.windows.firstMatch.frame.width >= 700 {
+        if rootWindow.frame.width >= 700 {
             XCUIDevice.shared.orientation = .landscapeLeft
             XCTAssertTrue(waitForCondition(timeout: 5) {
                 app.windows.firstMatch.frame.width > app.windows.firstMatch.frame.height
@@ -148,9 +179,14 @@ final class AdaptiveLayoutUITests: XCTestCase {
         attachScreenshot(app.screenshot(), name: "adaptive-root-search")
 
         tapRootTab(named: "我的", in: app)
+        let settingsHeader = app.staticTexts["设置"]
+        let interfaceRow = app.buttons["mine.settings.interface"]
+        for _ in 0..<4 where !settingsHeader.exists && !interfaceRow.exists {
+            app.swipeUp()
+        }
         XCTAssertTrue(
-            app.staticTexts["设置"].waitForExistence(timeout: 5)
-                || app.buttons["mine.settings.interface"].waitForExistence(timeout: 5),
+            settingsHeader.waitForExistence(timeout: 5)
+                || interfaceRow.waitForExistence(timeout: 5),
             app.debugDescription
         )
         attachScreenshot(app.screenshot(), name: "adaptive-root-mine")

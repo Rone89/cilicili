@@ -53,28 +53,24 @@ struct HomeTopBar: ToolbarContent {
         }
 
         ToolbarItem(placement: .topBarTrailing) {
-            HStack(spacing: HomeTopBarLayout.capsuleActionSpacing) {
-                HomeModeMenuButton(
-                    selection: selection,
-                    hiddenTabs: hiddenTabs,
-                    onSelect: onSelect,
-                    onOpenRootPage: actions.onOpenRootPage
-                )
-                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-
-                HomeTopBarProfileButton(actions: actions)
-                    .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
-            }
-            .frame(height: HomeTopBarLayout.controlHeight)
-            .glassEffect(.regular.interactive(), in: Capsule())
+            HomeModeMenuButton(
+                selection: selection,
+                hiddenTabs: hiddenTabs,
+                onSelect: onSelect,
+                onOpenRootPage: actions.onOpenRootPage
+            )
+            .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
         }
-        .sharedBackgroundVisibility(.hidden)
+
+        ToolbarItem(placement: .topBarTrailing) {
+            HomeTopBarProfileButton(actions: actions)
+                .frame(width: HomeTopBarLayout.controlHeight, height: HomeTopBarLayout.controlHeight)
+        }
     }
 }
 
 private enum HomeTopBarLayout {
     static let controlHeight: CGFloat = 44
-    static let capsuleActionSpacing: CGFloat = 20
 }
 
 struct FeedToolbarTitle: View {

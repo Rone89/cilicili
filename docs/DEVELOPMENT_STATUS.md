@@ -3004,3 +3004,24 @@
   - **真机实测清单（`RCe2027`）**：实测长按默认 `1.5x`、左滑 `1.25x`、右滑 `2.0x`、上滑锁定、点击胶囊恢复（确认自定义与原生播放器均可点击恢复且松手/解锁均不唤醒其他播放控件）以及锁定态切后台/退页自动恢复原倍速；一并复验 Build `231`（外部 URL Scheme 跳转）与 Build `232`（退出所有账号）。
   - **大屏真机实测与产物**：iPad / iPhone Duo 真机多窗口、分屏、Stage Manager 与折展姿态仍待对应真机验证；`build/release-unsigned-ipa` 仍为 `2026-11-21 18:30` 旧产物（未重打未签名 IPA）。
   - **分支交付待确认**：`codex/adaptive-ipad-duo` 仍仅在本地提交，待真机实测确认后按指令决定是否推送远端、重打未签名 IPA 或合入 `main`。
+
+### 2026-11-22（`iPhone Duo` iOS 27.1 模拟器内外双屏实测与首页工具栏修复）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `8de1b43` 叠加本轮修复并提交，未推送远端、未合入 `main`）。
+- **环境准备与规则持久化**：
+  - 按用户授权通过 `xcodebuild -downloadPlatform iOS` 安装官方 `iOS 27.1 Simulator (24A94401)` 运行时，系统自动创建 `iPhone Duo`（`04780036-FD65-4893-BEC1-1401DD821C06`，外屏 `1398×2034 px` = `466×678 pt` 带右侧 `84pt` 系统栏、内屏 `2007×2853 px` = `669×951 pt`）。
+  - 更新 [AGENTS.md](AGENTS.md)（并同步至主工作区 `/Users/rayc/Desktop/ccswift/AGENTS.md`）：明确平时默认继续使用现有 `iPhone 18 Pro Max`（iOS 27.0），**仅在用户明确要求测 Duo 时**才启用 `iPhone Duo`（iOS 27.1）模拟器；实测结束后已关闭 `iPhone Duo`。
+- **实测发现与已实现修复**：
+  - [HomeTopBar.swift](bili/Sources/Features/Home/HomeTopBar.swift)：在 `iPhone Duo` 外屏（`466×678 pt`）实测发现，原先将模式切换菜单（`home.feed.modeMenu`）与头像按钮（`home.account.avatar`）包入单个 `ToolbarItem` 的固定横向 `HStack`（`108pt` 宽）会直接溢出 `48pt` 宽的 Duo 右侧系统栏并裁切出屏且遮挡封面；现拆分为两个标准 `ToolbarItem(placement: .topBarTrailing)`，让系统在 Duo 外屏自动分离落位于顶部栏与右侧系统栏、在 Duo 内屏及普通 iPhone / iPad 自动合并为共享横排液态玻璃胶囊。全项目扫描确认无其他 `.topBarTrailing` 横向 `HStack`。
+  - [AdaptiveLayoutUITests.swift](biliUITests/AdaptiveLayoutUITests.swift)：新增首页双按钮不超出窗口右边缘的防回归断言；适配短屏外屏（`678pt` 高度）「我的」页向下滚动查找「设置」；兼容 `iPhone Duo` 外屏被动设备旋转不触发横屏时点击播放器全屏按钮进入 `678×466 pt` 横屏全屏的验证路径。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`）**：
+    - 单元测试（`duo-adaptive-v1.xcresult`）：`AdaptiveLayoutAndPlayerIdentityTests`（5/5）+ `PlayerSpeedBoostPolicyTests`（10/10）共 **15/15 通过（0 失败，0 跳过）**。
+    - 内屏展开态（`669×951 pt`）：`AdaptiveLayoutUITests`（`duo-adaptive-v2.xcresult`）**2/2 通过**，实机截图确认三列热搜、横排液态玻璃工具栏、底部悬浮 TabBar 与「我的」页渲染正常。
+    - 外屏闭合态（`466×678 pt`）：`AdaptiveLayoutUITests`（`duo-outer-v3.xcresult`）**2/2 通过**，实机截图确认修复后首页双按钮完整落位于边界内（无裁切、无遮挡双列卡片），点击全屏按钮可正常旋转至 `678×466 pt` 横屏全屏。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：
+    - `RootTabScrollUITests/testHomeProfileMenuOpensFromToolbar`（1/1）+ `AdaptiveLayoutUITests`（2/2）（`iphone18pm-topbar-regression.xcresult`）：**3/3 通过（0 失败，0 跳过，0 运行时警告）**，确认 `HomeTopBar` 修改对普通 iPhone 无回归。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 真机 `RCe2027` 当前安装的是 `21f8e57`（不含本轮 `HomeTopBar.swift` 修改）；如需在真机复核新的原生工具栏胶囊样式，可重新执行本地真机构建安装。
+  - 真机 `iPhone Duo` 实体铰链半折/热折展连续动画及真机 iPad 多窗口仍待真实硬件验收。
