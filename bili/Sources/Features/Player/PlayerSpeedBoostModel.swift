@@ -37,11 +37,15 @@ nonisolated enum PlayerSpeedBoostPolicy {
         case alreadyAtMaximumRate
     }
 
-    static let defaultBoostRate: Double = 2.0
+    static let defaultBoostRate: Double = 1.5
     static let stepHorizontalDistance: CGFloat = 48
     static let hysteresisMargin: CGFloat = 8
     static let lockTriggerVerticalOffset: CGFloat = -52
     static let lockReleaseVerticalOffset: CGFloat = -36
+
+    static func defaultBoostRate(for baselineRate: BiliPlaybackRate) -> Double {
+        baselineRate == .x15 ? 2.0 : 1.5
+    }
 
     static func rejectionReason(
         isTerminated: Bool,
@@ -63,10 +67,14 @@ nonisolated enum PlayerSpeedBoostPolicy {
     }
 
     static func availableBoostRates(for baselineRate: BiliPlaybackRate) -> [Double] {
-        if baselineRate.rawValue >= 1.5 {
-            return [2.0, 3.0, 4.0]
+        switch baselineRate {
+        case .x075, .x10:
+            return [1.25, 1.5, 2.0]
+        case .x125:
+            return [1.5, 2.0]
+        case .x15, .x20:
+            return [2.0]
         }
-        return [1.5, 2.0, 3.0, 4.0]
     }
 
     static func resolvedBoostRate(
@@ -75,8 +83,9 @@ nonisolated enum PlayerSpeedBoostPolicy {
         currentRate: Double
     ) -> Double {
         let tiers = availableBoostRates(for: baselineRate)
-        guard let defaultIndex = tiers.firstIndex(of: defaultBoostRate) else {
-            return defaultBoostRate
+        let startRate = defaultBoostRate(for: baselineRate)
+        guard let defaultIndex = tiers.firstIndex(of: startRate) else {
+            return startRate
         }
         let currentIndex = tiers.firstIndex(of: currentRate) ?? defaultIndex
         let rawStep = Int((deltaX / stepHorizontalDistance).rounded(.towardZero))
@@ -89,21 +98,17 @@ nonisolated enum PlayerSpeedBoostPolicy {
 
         // Apply deadband hysteresis around tier boundaries to avoid jitter.
         if targetIndex > currentIndex {
-            let boundary = CGFloat(currentIndex + 1 - defaultIndex) * stepHorizontalDistance
-            if deltaX < boundary + hysteresisMargin && deltaX >= boundary - stepHorizontalDistance {
-                if currentIndex < defaultIndex && deltaX < 0 {
-                    // Moving back toward default 2.0x from 1.5x requires passing -step + margin
-                    let lowerBoundary = CGFloat(currentIndex - defaultIndex) * stepHorizontalDistance + stepHorizontalDistance
-                    if deltaX < lowerBoundary + hysteresisMargin {
-                        return currentRate
-                    }
-                } else if deltaX < boundary + hysteresisMargin {
-                    return currentRate
-                }
+            let threshold: CGFloat = currentIndex < defaultIndex
+                ? CGFloat(currentIndex - defaultIndex) * stepHorizontalDistance + hysteresisMargin
+                : CGFloat(currentIndex + 1 - defaultIndex) * stepHorizontalDistance
+            if deltaX < threshold {
+                return currentRate
             }
         } else {
-            let boundary = CGFloat(currentIndex - defaultIndex) * stepHorizontalDistance
-            if deltaX > boundary - hysteresisMargin {
+            let threshold: CGFloat = currentIndex > defaultIndex
+                ? CGFloat(currentIndex - defaultIndex) * stepHorizontalDistance - hysteresisMargin
+                : CGFloat(currentIndex - 1 - defaultIndex) * stepHorizontalDistance
+            if deltaX > threshold {
                 return currentRate
             }
         }
@@ -169,19 +174,20 @@ final class PlayerSpeedBoostModel: ObservableObject {
                 return false
             }
             let beganAt = CACurrentMediaTime()
+            let initialBoostRate = PlayerSpeedBoostPolicy.defaultBoostRate(for: existingState.restoredRate)
             state = PlayerSpeedBoostState(
                 restoredRate: existingState.restoredRate,
                 beganAt: beganAt,
-                activeBoostRate: PlayerSpeedBoostPolicy.defaultBoostRate
+                activeBoostRate: initialBoostRate
             )
             boostedPlayerViewModel = playerViewModel
-            displayedRate = .x20
-            displayedRateValue = PlayerSpeedBoostPolicy.defaultBoostRate
+            displayedRate = BiliPlaybackRate(rawValue: initialBoostRate) ?? .x15
+            displayedRateValue = initialBoostRate
             isLockTargetHighlighted = false
             setPhase(.boosting)
             Haptics.medium()
             hidePlaybackControls()
-            playerViewModel.setTemporaryPlaybackRate(PlayerSpeedBoostPolicy.defaultBoostRate)
+            playerViewModel.setTemporaryPlaybackRate(initialBoostRate)
             return true
         }
 
@@ -201,14 +207,14 @@ final class PlayerSpeedBoostModel: ObservableObject {
         restoreTransitionGeneration &+= 1
         let previousRate = playerViewModel.playbackRate
         let beganAt = CACurrentMediaTime()
-        let initialBoostRate = PlayerSpeedBoostPolicy.defaultBoostRate
+        let initialBoostRate = PlayerSpeedBoostPolicy.defaultBoostRate(for: previousRate)
         state = PlayerSpeedBoostState(
             restoredRate: previousRate,
             beganAt: beganAt,
             activeBoostRate: initialBoostRate
         )
         boostedPlayerViewModel = playerViewModel
-        displayedRate = .x20
+        displayedRate = BiliPlaybackRate(rawValue: initialBoostRate) ?? .x15
         displayedRateValue = initialBoostRate
         isLockTargetHighlighted = false
         setPhase(.boosting)
