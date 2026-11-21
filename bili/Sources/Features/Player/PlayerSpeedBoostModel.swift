@@ -134,7 +134,7 @@ nonisolated enum PlayerSpeedBoostPolicy {
 @MainActor
 final class PlayerSpeedBoostModel: ObservableObject {
     @Published private(set) var phase: PlayerSpeedBoostPhase = .idle
-    @Published private(set) var displayedRate: BiliPlaybackRate = .x20
+    @Published private(set) var displayedRate: BiliPlaybackRate = BiliPlaybackRate(rawValue: PlayerSpeedBoostPolicy.defaultBoostRate) ?? .x15
     @Published private(set) var displayedRateValue: Double = PlayerSpeedBoostPolicy.defaultBoostRate
     @Published private(set) var isLockTargetHighlighted = false
 

@@ -2979,15 +2979,25 @@
 - **真机验收待办**：
   - 在真机 iPad（分屏 / Stage Manager / 连续缩窄再拉宽 / 外接显示器）与 iPhone Duo（外屏闭合、展开内屏、折叠半折、视频播放中/暂停态/Seek 后折展）上按验收清单实测。
 
-### 2026-11-22（长按倍速滑动切档与上滑锁定手势增强）
+### 2026-11-22（长按倍速滑动切档、上滑锁定、隐藏控件与锁定态缺陷修复）
 
-- **已实现改动（`codex/adaptive-ipad-duo`）**：
-  - [PlayerStateViewModel.swift](bili/Sources/Features/Player/PlayerStateViewModel.swift)：新增 `setTemporaryPlaybackRate(_ rawRate: Double)`，在不污染常规倍速菜单 `BiliPlaybackRate.allCases` 的前提下支持 `1.5x / 2.0x / 3.0x / 4.0x` 临时倍速调节。
-  - [PlayerSpeedBoostModel.swift](bili/Sources/Features/Player/PlayerSpeedBoostModel.swift)：新增 `PlayerSpeedBoostPolicy` 左右边缘防误触判定（`allowsGestureStart`）、横向滑动多档切换与迟滞防抖（`resolvedBoostRate`）、上滑锁定判定（`isLockTargetHighlighted`，触发阈值 `-52pt`、回退 `-36pt`），以及 `.locked` 相位和 `unlock` 恢复长按前真实倍速逻辑，切档与锁定均附带轻量触觉反馈。
-  - [BiliPlayerSpeedBoostActions.swift](bili/Sources/Features/Player/BiliPlayerSpeedBoostActions.swift)、[BiliPlayerSurfaceGestureActions.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureActions.swift)、[BiliPlayerSurfaceGestureLayerHost.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayerHost.swift)、[BiliPlayerSurfaceGestureLayer.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift)、[NativePlayerSurfaceGestureController.swift](bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift) 与 [VideoDetailShellSurfaceHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift)：打通自定义播放器层与原生全屏控制器的长按偏移跟踪及锁定点击解除通路。
-  - [PlayerSpeedBoostIndicator.swift](bili/Sources/Features/Player/PlayerSpeedBoostIndicator.swift) & [BiliPlayerSurfaceOverlayLayer.swift](bili/Sources/Features/Player/BiliPlayerSurfaceOverlayLayer.swift)：加速态展示当前倍速与「左右滑调速 · 上滑锁定 / 松手锁定倍速」提示；锁定态显示可点击的「已锁定 · 点击恢复」胶囊，非锁定态保持完全透传不阻挡手势。
-  - [PlayerSpeedBoostPolicyTests.swift](biliTests/PlayerSpeedBoostPolicyTests.swift)：补充边缘防误触、横向多档滑动迟滞、上滑锁定及点击恢复原倍速 3 项单元测试。
-- **已验证（于最后一次代码改动后执行）**：
-  - `PlayerSpeedBoostPolicyTests`（9/9）与 `AdaptiveLayoutAndPlayerIdentityTests`（5/5）在 `iPhone 18 Pro Max`（iOS 27.0）全部通过，**14/14 通过（0 失败，0 跳过）**。
-- **真机待办**：
-  - 在真机上实测单指长按 `2x` 后左右滑切换 `1.5x / 2x / 3x / 4x` 及上滑锁定、点击浮标恢复的手感与触觉反馈；如需重新打包带该功能的未签名 IPA，可再次执行 `Scripts/build-release-unsigned-ipa.sh`。
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，从 `15c3a9e` 演进至 `28a6d0a` 并叠加本轮修复提交，未推送远端、未合入 `main`）。
+- **已实现改动（`15c3a9e` -> `28a6d0a` 及本轮修复）**：
+  - [PlayerStateViewModel.swift](bili/Sources/Features/Player/PlayerStateViewModel.swift) & [AVPlayerHLSBridgeEngine.swift](bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift)：新增 `setTemporaryPlaybackRate(_ rawRate: Double)`，临时倍速切换时同步应用速率感知缓冲（`applyRateAwareBuffering`）与音调算法（`applyRateAwareAudioPitchAlgorithm`：`<1.45x` 使用 `.spectral`、`1.45x–2.0x` 使用 `.timeDomain`、`>2.0x` 使用 `.varispeed`）。
+  - [PlayerSpeedBoostModel.swift](bili/Sources/Features/Player/PlayerSpeedBoostModel.swift)：
+    - 长按默认倍速定稿为 `1.5x`（`1.0x`/`0.75x` 基线下左滑 `1.25x`、居中 `1.5x`、右滑 `2.0x`；`1.25x` 基线为 `1.5x`/`2.0x`；`1.5x` 基线为 `2.0x`），带 `48pt` 步距与 `8pt` 迟滞防抖、左右边缘防误触（`allowsGestureStart`）以及上滑锁定（触发 `-52pt`、回退 `-36pt`）。
+    - `PlayerSpeedBoostEndReason.shouldShowPlaybackControls` 固定为 `false`，长按松手或点击锁定胶囊恢复原倍速后均不再唤醒其他播放控件。
+    - 本轮修复：将 `displayedRate` 初始值与 `defaultBoostRate`（`1.5x`）对齐，避免初始态仍为 `.x20`。
+  - [BiliPlayerSurfaceOverlayLayer.swift](bili/Sources/Features/Player/BiliPlayerSurfaceOverlayLayer.swift)：
+    - 本轮修复：原先 `.allowsHitTesting(speedBoostModel.phase == .locked && onUnlockSpeedBoost != nil)` 挂在未观察 `speedBoostModel` 的外层 `BiliPlayerSurfaceOverlayLayer` 上，导致进入 `.locked` 后自定义播放器顶部的「点击恢复」胶囊始终无法响应点击；现下沉至观察了 `@ObservedObject var speedBoostModel` 的 `PlayerSpeedBoostOverlayHost` 内 `PlayerSpeedBoostIndicator` 节点本身，既确保锁定态可点击恢复，又保持视频其余区域手势完全透传。
+  - [NativePlayerSurfaceGestureController.swift](bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift)：
+    - 本轮修复：`endSpeedBoostIfActive(reason:)` 新增对 `.locked` 态的非 `.gestureEnded` 清理路径，确保锁定倍速期间切后台（`.background`）、退出页面（`.disappear`）、切换视频（`.playerChanged`）或播放器终止（`.terminated`）均能可靠恢复原倍速并清除锁定态；同时在 `handleLongPressState` 的 `.ended`/`.cancelled`/`.failed` 增加激活守卫，防止边缘误触被拒后错误打断已锁定状态，并将锁定态 `allowsHitTesting` 收紧到胶囊自身。
+  - [PlayerSpeedBoostIndicator.swift](bili/Sources/Features/Player/PlayerSpeedBoostIndicator.swift)、[BiliPlayerSpeedBoostActions.swift](bili/Sources/Features/Player/BiliPlayerSpeedBoostActions.swift)、[BiliPlayerSurfaceGestureActions.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureActions.swift)、[BiliPlayerSurfaceGestureLayerHost.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayerHost.swift)、[BiliPlayerSurfaceGestureLayer.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift) & [VideoDetailShellSurfaceHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift)：打通自定义播放器与原生全屏控制器的长按滑动切档、上滑锁定及点击恢复链路。
+  - [PlayerFormalPlaybackConfigurationTests.swift](biliTests/PlayerFormalPlaybackConfigurationTests.swift) & [PlayerSpeedBoostPolicyTests.swift](biliTests/PlayerSpeedBoostPolicyTests.swift)：对齐 `testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely` 至 `1.5x` 默认倍速并覆盖左滑 `1.25x`、右滑 `2.0x`、上滑锁定、边缘误触不打断锁定与 `detach` 恢复原倍速；补充 `testSpeedBoostActionsKeepControlsHiddenAcrossBeginLockAndUnlock` 验证全链路控件保持隐藏。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - 13 组核心单元测试（`iPhone 18 Pro Max` / iOS 27.0 / UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `/Users/rayc/Desktop/ccswift/build/DerivedData/Xcode-27` 缓存，`-parallel-testing-enabled NO`，`build/logs/adaptive-speedboost-regression-v8.xcresult`）：**142/142 通过（0 失败，0 跳过，`** TEST SUCCEEDED **`）**，覆盖 `PlayerSpeedBoostPolicyTests`、`PlayerPlaybackControlsVisibilityModelTests`、`PlayerFormalPlaybackConfigurationTests/testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely`、`AdaptiveLayoutAndPlayerIdentityTests`、`AppLinkProfileRoutingTests`、`MultiAccountSessionTests`、`ArticleDetailTests`、`PlayerSurfaceVerticalAdjustmentPolicyTests`、`PlaybackDetailSharedLayoutTests`、`RootTabBarVisibilityTests`、`SystemMiniPlayerCoordinatorTests`、`VideoDetailSurfaceHostTests`、`ActivePlaybackCoordinatorTests`。（注：测试全部通过后 Xcode 模拟器诊断采集出现既有 600s 超时日志，测试结论为 `Passed`。）
+- **未验证与待办（明确区分，不推测通过）**：
+  - **真机待安装与实测**：当前已连接真机 `RCe2027` 安装的是 `main` 分支 Build `232`（不含 `codex/adaptive-ipad-duo` 的大屏适配与滑动/锁定长按倍速）；本工作树尚未针对最新修复重新签名安装真机，也未重打 `build/release-unsigned-ipa`（现有 IPA 为 `2026-11-21 18:30` 旧产物，不含 `15c3a9e` 及之后提交）。
+  - **真机实测清单**：在 `RCe2027` 实测长按默认 `1.5x`、左滑 `1.25x`、右滑 `2.0x`、上滑锁定、点击胶囊恢复（确认自定义与原生播放器均可点击恢复且不唤醒其他播放控件）以及锁定态切后台/退页恢复原倍速；在 iPad / iPhone Duo 真机实测多窗口、分屏、Stage Manager 与折展姿态。
+  - **分支交付待确认**：`codex/adaptive-ipad-duo` 仍仅在本地提交，待用户决定是否安装真机、重打未签名 IPA、推送远端或合入 `main`。

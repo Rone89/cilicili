@@ -87,8 +87,12 @@ final class NativePlayerSurfaceGestureController: NSObject {
     var debugIsSpeedBoostIndicatorVisible: Bool { speedBoostModel.isIndicatorVisible }
     var debugHostingViewController: UIViewController { hostingController }
 
-    func debugTriggerLongPress(state: UIGestureRecognizer.State) {
-        handleLongPressState(state)
+    func debugTriggerLongPress(
+        state: UIGestureRecognizer.State,
+        location: CGPoint? = nil,
+        containerWidth: CGFloat = 0
+    ) {
+        handleLongPressState(state, location: location, containerWidth: containerWidth)
     }
 
     func debugSimulatePanActive(isSeeking: Bool) {
@@ -374,9 +378,11 @@ final class NativePlayerSurfaceGestureController: NSObject {
             )
         case .ended:
             speedBoostStartLocation = nil
+            guard isSpeedBoostGestureActive || speedBoostModel.phase == .boosting else { return }
             endSpeedBoostIfActive(reason: .gestureEnded)
         case .cancelled, .failed:
             speedBoostStartLocation = nil
+            guard isSpeedBoostGestureActive || speedBoostModel.phase == .boosting else { return }
             endSpeedBoostIfActive(reason: .systemInterrupted)
         default:
             break
@@ -503,7 +509,8 @@ final class NativePlayerSurfaceGestureController: NSObject {
     }
 
     private func endSpeedBoostIfActive(reason: PlayerSpeedBoostEndReason) {
-        guard isSpeedBoostGestureActive || speedBoostModel.phase == .boosting else {
+        let shouldEndLocked = reason != .gestureEnded && speedBoostModel.phase == .locked
+        guard isSpeedBoostGestureActive || speedBoostModel.phase == .boosting || shouldEndLocked else {
             isSpeedBoostGestureActive = false
             if !isPanInteractionActive {
                 endCustomGestureControlsSuppressionIfNeeded()
@@ -761,11 +768,11 @@ private struct NativePlayerSurfaceGestureHUD: View {
                     isLockTargetHighlighted: speedBoostModel.isLockTargetHighlighted,
                     onUnlock: onUnlockSpeedBoost
                 )
+                .allowsHitTesting(speedBoostModel.phase == .locked)
                 .padding(.top, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .accessibilityIdentifier("ui.player.nativeSpeedBoostIndicator")
-                .allowsHitTesting(speedBoostModel.phase == .locked)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -82,7 +82,6 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                 topAccessoryPadding: topAccessoryPadding,
                 onUnlockSpeedBoost: onUnlockSpeedBoost
             )
-            .allowsHitTesting(speedBoostModel.phase == .locked && onUnlockSpeedBoost != nil)
             .zIndex(8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -121,6 +120,7 @@ private struct PlayerSpeedBoostOverlayHost: View {
                 isLockTargetHighlighted: speedBoostModel.isLockTargetHighlighted,
                 onUnlock: onUnlockSpeedBoost
             )
+            .allowsHitTesting(speedBoostModel.phase == .locked && onUnlockSpeedBoost != nil)
             .padding(.top, topAccessoryPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .transition(.opacity.combined(with: .scale(scale: 0.96)))

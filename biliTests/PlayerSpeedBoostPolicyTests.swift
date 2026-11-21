@@ -191,4 +191,66 @@ final class PlayerSpeedBoostPolicyTests: XCTestCase {
         XCTAssertEqual(player.playbackRate, .x10)
         XCTAssertFalse(didShowControls)
     }
+
+    @MainActor
+    func testSpeedBoostActionsKeepControlsHiddenAcrossBeginLockAndUnlock() {
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let player = PlayerStateViewModel(
+            videoURL: nil,
+            audioURL: nil,
+            title: "Speed Boost Visibility Probe",
+            referer: "https://www.bilibili.com",
+            engine: engine
+        )
+        defer { player.stop() }
+        player.setPlaybackRate(.x10)
+        engine.onPlaybackStateChange?(.playing)
+
+        let surfaceState = PlayerSurfaceStateModel(viewModel: player)
+        let speedBoostModel = PlayerSpeedBoostModel()
+        XCTAssertEqual(speedBoostModel.displayedRate, .x15)
+        XCTAssertEqual(speedBoostModel.displayedRateValue, 1.5)
+
+        let visibilityModel = PlayerPlaybackControlsVisibilityModel()
+        visibilityModel.hide(animated: false)
+        let configuration = BiliPlayerViewOptions(showsPlaybackControls: true).configuration()
+        let actions = BiliPlayerSpeedBoostActions(
+            viewModel: player,
+            surfaceState: surfaceState,
+            speedBoostModel: speedBoostModel,
+            visibilityActions: BiliPlayerPlaybackControlsVisibilityActions(
+                playbackControlsVisibility: visibilityModel,
+                configuration: configuration
+            )
+        )
+
+        XCTAssertTrue(actions.beginIfNeeded())
+        XCTAssertEqual(player.playbackRate, .x15)
+        XCTAssertFalse(visibilityModel.isVisible)
+        actions.updateGestureOffset(horizontalOffset: 60, verticalOffset: -60)
+        XCTAssertEqual(player.playbackRate, .x20)
+        actions.end(reason: .gestureEnded)
+        XCTAssertEqual(speedBoostModel.phase, .locked)
+        XCTAssertFalse(visibilityModel.isVisible)
+
+        actions.unlock()
+        XCTAssertEqual(player.playbackRate, .x10)
+        XCTAssertFalse(visibilityModel.isVisible)
+        XCTAssertEqual(visibilityModel.opacity, 0)
+        XCTAssertFalse(visibilityModel.acceptsHitTesting)
+
+        // When controls were visible before long-press, beginning hides them
+        // and releasing does not re-open them.
+        visibilityModel.show(
+            scheduleAutoHide: false,
+            animated: false,
+            showsPlaybackControls: true
+        )
+        XCTAssertTrue(visibilityModel.isVisible)
+        XCTAssertTrue(actions.beginIfNeeded())
+        XCTAssertFalse(visibilityModel.isVisible)
+        actions.end(reason: .gestureEnded)
+        XCTAssertEqual(player.playbackRate, .x10)
+        XCTAssertFalse(visibilityModel.isVisible)
+    }
 }

@@ -1554,31 +1554,78 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertEqual(controller.debugSpeedBoostPhase, .idle)
         controller.debugSimulatePanActive(isSeeking: false)
 
-        // Begin long-press -> temporary 2.0x boost & top capsule HUD visible, pan blocked.
-        controller.debugTriggerLongPress(state: .began)
-        XCTAssertEqual(player.playbackRate, .x20)
+        // Begin long-press -> temporary 1.5x default boost & top capsule HUD visible, pan blocked.
+        controller.debugTriggerLongPress(
+            state: .began,
+            location: CGPoint(x: 195, y: 110),
+            containerWidth: bounds.width
+        )
+        XCTAssertEqual(player.playbackRate, .x15)
         XCTAssertEqual(controller.debugSpeedBoostPhase, .boosting)
-        XCTAssertEqual(controller.debugSpeedBoostDisplayedRate, .x20)
+        XCTAssertEqual(controller.debugSpeedBoostDisplayedRate, .x15)
         XCTAssertTrue(controller.debugIsSpeedBoostIndicatorVisible)
         XCTAssertFalse(controller.gestureRecognizerShouldBegin(controller.debugPanGesture))
+
+        // Slide right -> 2.0x; slide left -> 1.25x.
+        controller.debugTriggerLongPress(
+            state: .changed,
+            location: CGPoint(x: 255, y: 110),
+            containerWidth: bounds.width
+        )
+        XCTAssertEqual(player.playbackRate, .x20)
+        XCTAssertEqual(controller.debugSpeedBoostDisplayedRate, .x20)
+
+        controller.debugTriggerLongPress(
+            state: .changed,
+            location: CGPoint(x: 135, y: 110),
+            containerWidth: bounds.width
+        )
+        XCTAssertEqual(player.playbackRate, .x125)
+        XCTAssertEqual(controller.debugSpeedBoostDisplayedRate, .x125)
 
         // End long-press -> restores 1.0x immediately and transitions restoring -> idle.
         controller.debugTriggerLongPress(state: .ended)
         XCTAssertEqual(player.playbackRate, .x10)
         XCTAssertEqual(controller.debugSpeedBoostPhase, .restoring)
         XCTAssertEqual(controller.debugSpeedBoostDisplayedRate, .x10)
-        try await Task.sleep(for: .milliseconds(220))
+        for _ in 0..<25 where controller.debugSpeedBoostPhase != .idle {
+            try await Task.sleep(for: .milliseconds(40))
+        }
         XCTAssertEqual(controller.debugSpeedBoostPhase, .idle)
         XCTAssertFalse(controller.debugIsSpeedBoostIndicatorVisible)
 
-        // Safety fallback: detaching while boosting must restore non-2.0x rate (e.g. 1.5x).
+        // Slide up to lock, then verify detaching while locked still restores original rate (1.5x).
         player.setPlaybackRate(.x15)
-        controller.debugTriggerLongPress(state: .began)
+        controller.debugTriggerLongPress(
+            state: .began,
+            location: CGPoint(x: 195, y: 110),
+            containerWidth: bounds.width
+        )
         XCTAssertEqual(player.playbackRate, .x20)
         XCTAssertEqual(controller.debugSpeedBoostPhase, .boosting)
+        controller.debugTriggerLongPress(
+            state: .changed,
+            location: CGPoint(x: 195, y: 50),
+            containerWidth: bounds.width
+        )
+        controller.debugTriggerLongPress(state: .ended)
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .locked)
+        XCTAssertEqual(player.playbackRate, .x20)
+
+        // A rejected edge long-press ending must not disrupt the locked boost.
+        controller.debugTriggerLongPress(
+            state: .began,
+            location: CGPoint(x: 8, y: 110),
+            containerWidth: bounds.width
+        )
+        controller.debugTriggerLongPress(state: .ended)
+        XCTAssertEqual(controller.debugSpeedBoostPhase, .locked)
+        XCTAssertEqual(player.playbackRate, .x20)
+
         surface.detachPlayerSurface()
         XCTAssertEqual(player.playbackRate, .x15)
         XCTAssertNotEqual(controller.debugSpeedBoostPhase, .boosting)
+        XCTAssertNotEqual(controller.debugSpeedBoostPhase, .locked)
     }
 
     @MainActor
