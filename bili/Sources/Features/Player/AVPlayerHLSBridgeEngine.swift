@@ -1930,7 +1930,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             ? environment.preferredForwardBufferDuration
             : environment.separatedTrackForwardBufferDuration
         guard currentRate >= 1.75, !isDirectLiveHLS else { return baseDuration }
-        return max(baseDuration, environment.highRateForwardBufferDuration)
+        let highRateMultiplier: Double = currentRate >= 2.5 ? 1.5 : 1.0
+        return max(baseDuration, environment.highRateForwardBufferDuration * highRateMultiplier)
     }
 
     private func applyRateAwareBuffering() {
