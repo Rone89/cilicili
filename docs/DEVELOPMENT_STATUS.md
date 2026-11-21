@@ -2981,7 +2981,7 @@
 
 ### 2026-11-22（长按倍速滑动切档、上滑锁定、隐藏控件与锁定态缺陷修复）
 
-- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，从 `15c3a9e` 演进至 `28a6d0a` 并叠加本轮修复提交，未推送远端、未合入 `main`）。
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，应用源码提交 `21f8e57`，未推送远端、未合入 `main`）。
 - **已实现改动（`15c3a9e` -> `28a6d0a` 及本轮修复）**：
   - [PlayerStateViewModel.swift](bili/Sources/Features/Player/PlayerStateViewModel.swift) & [AVPlayerHLSBridgeEngine.swift](bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift)：新增 `setTemporaryPlaybackRate(_ rawRate: Double)`，临时倍速切换时同步应用速率感知缓冲（`applyRateAwareBuffering`）与音调算法（`applyRateAwareAudioPitchAlgorithm`：`<1.45x` 使用 `.spectral`、`1.45x–2.0x` 使用 `.timeDomain`、`>2.0x` 使用 `.varispeed`）。
   - [PlayerSpeedBoostModel.swift](bili/Sources/Features/Player/PlayerSpeedBoostModel.swift)：
@@ -2997,7 +2997,10 @@
 - **已验证（于最后一次代码改动后在模拟器执行）**：
   - `git diff --check`：通过（exit 0）。
   - 13 组核心单元测试（`iPhone 18 Pro Max` / iOS 27.0 / UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `/Users/rayc/Desktop/ccswift/build/DerivedData/Xcode-27` 缓存，`-parallel-testing-enabled NO`，`build/logs/adaptive-speedboost-regression-v8.xcresult`）：**142/142 通过（0 失败，0 跳过，`** TEST SUCCEEDED **`）**，覆盖 `PlayerSpeedBoostPolicyTests`、`PlayerPlaybackControlsVisibilityModelTests`、`PlayerFormalPlaybackConfigurationTests/testNativePlaybackControlsLongPressSpeedBoostTogglesTemporaryTwoXRateAndResetsSafely`、`AdaptiveLayoutAndPlayerIdentityTests`、`AppLinkProfileRoutingTests`、`MultiAccountSessionTests`、`ArticleDetailTests`、`PlayerSurfaceVerticalAdjustmentPolicyTests`、`PlaybackDetailSharedLayoutTests`、`RootTabBarVisibilityTests`、`SystemMiniPlayerCoordinatorTests`、`VideoDetailSurfaceHostTests`、`ActivePlaybackCoordinatorTests`。（注：测试全部通过后 Xcode 模拟器诊断采集出现既有 600s 超时日志，测试结论为 `Passed`。）
-- **未验证与待办（明确区分，不推测通过）**：
-  - **真机待安装与实测**：当前已连接真机 `RCe2027` 安装的是 `main` 分支 Build `232`（不含 `codex/adaptive-ipad-duo` 的大屏适配与滑动/锁定长按倍速）；本工作树尚未针对最新修复重新签名安装真机，也未重打 `build/release-unsigned-ipa`（现有 IPA 为 `2026-11-21 18:30` 旧产物，不含 `15c3a9e` 及之后提交）。
-  - **真机实测清单**：在 `RCe2027` 实测长按默认 `1.5x`、左滑 `1.25x`、右滑 `2.0x`、上滑锁定、点击胶囊恢复（确认自定义与原生播放器均可点击恢复且不唤醒其他播放控件）以及锁定态切后台/退页恢复原倍速；在 iPad / iPhone Duo 真机实测多窗口、分屏、Stage Manager 与折展姿态。
-  - **分支交付待确认**：`codex/adaptive-ipad-duo` 仍仅在本地提交，待用户决定是否安装真机、重打未签名 IPA、推送远端或合入 `main`。
+- **已安装真机（`RCe2027` / `00008160-001C311028434036`，`Release-iphoneos`，基于源码提交 `21f8e57`）**：
+  - 使用共享缓存 `/Users/rayc/Desktop/ccswift/build/DerivedData/Xcode-27` 执行 `Release-iphoneos` 构建（仅命令行临时覆盖 `CODE_SIGN_STYLE=Manual`、`DEVELOPMENT_TEAM=G933USCY46`、`CODE_SIGN_IDENTITY="iPhone Distribution: Nazar Aryan (G933USCY46)"`、`PRODUCT_BUNDLE_IDENTIFIER=app.bamboo2779.brussels691`、`PROVISIONING_PROFILE_SPECIFIER=882865dd-38a8-4ea7-80c7-e1f3072e784b`，未改动仓库签名或发布配置），`** BUILD SUCCEEDED **`，`Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，包内 `CFBundleIdentifier=app.bamboo2779.brussels691`、`CFBundleShortVersionString=1.1.7`、`CFBundleVersion=232`，`bili.app/bili` SHA-256：`21a1bca37373f99acd861df38f03611be702cb0e57a95265f8414d5c54a9df89`。
+  - `xcrun devicectl device install app` 原位更新安装成功（`databaseUUID: 1FE24A23-7577-4CEE-9771-742F7EDAB3D3`，`databaseSequenceNumber: 7056`，`installationURL: file:///private/var/containers/Bundle/Application/8C13426D-CE41-4065-B104-50AC303D2D50/bili.app/`），`devicectl device info apps` 核实版本 `1.1.7 (232)`，并已通过 `xcrun devicectl device process launch` 成功在真机拉起。
+- **真机待验证与待办（明确区分，不推测通过）**：
+  - **真机实测清单（`RCe2027`）**：实测长按默认 `1.5x`、左滑 `1.25x`、右滑 `2.0x`、上滑锁定、点击胶囊恢复（确认自定义与原生播放器均可点击恢复且松手/解锁均不唤醒其他播放控件）以及锁定态切后台/退页自动恢复原倍速；一并复验 Build `231`（外部 URL Scheme 跳转）与 Build `232`（退出所有账号）。
+  - **大屏真机实测与产物**：iPad / iPhone Duo 真机多窗口、分屏、Stage Manager 与折展姿态仍待对应真机验证；`build/release-unsigned-ipa` 仍为 `2026-11-21 18:30` 旧产物（未重打未签名 IPA）。
+  - **分支交付待确认**：`codex/adaptive-ipad-duo` 仍仅在本地提交，待真机实测确认后按指令决定是否推送远端、重打未签名 IPA 或合入 `main`。
