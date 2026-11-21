@@ -339,6 +339,7 @@ private struct DynamicDetailView: View {
                 .padding(.top, 10)
                 .accessibilityIdentifier("dynamic.detail.inlineComments")
             }
+            .adaptiveReadableWidth()
         }
         .defersRemoteImageLoadsDuringFastScroll()
         .accessibilityIdentifier("dynamic.detail.scroll")
@@ -347,7 +348,10 @@ private struct DynamicDetailView: View {
         .nativeBottomScrollEdgeBlur()
         .nativeBottomScrollEdgeBlurVisibility(isHidden: richCommentComposerTarget != nil)
         .onGeometryChange(for: CGFloat.self) { geometry in
-            max(floor(geometry.size.width - detailInset * 2), 0)
+            let maxWidth = libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+                ? min(geometry.size.width, AdaptiveLayoutPolicy.readingColumnMaxWidth)
+                : geometry.size.width
+            return max(floor(maxWidth - detailInset * 2), 0)
         } action: { _, width in
             guard width > 1 else { return }
             detailContentWidth = width

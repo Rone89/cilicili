@@ -426,20 +426,33 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         with transitionCoordinator: UIViewControllerTransitionCoordinator
     ) {
         super.viewWillTransition(to: size, with: transitionCoordinator)
-        let toLandscape = size.width > size.height
+        let toLandscape: Bool
+        if AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
+            containerSize: size,
+            traitCollection: traitCollection,
+            adaptiveEnabled: contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+        ) {
+            toLandscape = rotationCoordinator.isLandscape
+        } else {
+            toLandscape = size.width > size.height
+        }
         rotationGeneration += 1
         let generation = rotationGeneration
         cancelRotationTasks()
-        rotationCoordinator.beginSystemTransition(toLandscape: toLandscape)
+        if toLandscape != rotationCoordinator.isLandscape {
+            rotationCoordinator.beginSystemTransition(toLandscape: toLandscape)
+        }
         // The outer SwiftUI page owns the toolbar. System-driven rotation
         // must notify it too, not just requests from the fullscreen button.
-        setImmersivePlayback(toLandscape || rotationCoordinator.isPortraitFullscreen)
-        contentController.beginSystemRotation(toLandscape: toLandscape)
-        contentController.markRotationStarted(toLandscape: toLandscape)
-        scheduleRotationWatchdog(
-            generation: generation,
-            coordinatorDuration: transitionCoordinator.transitionDuration
-        )
+        setImmersivePlayback(toLandscape || rotationCoordinator.isAnyFullscreen)
+        if toLandscape != rotationCoordinator.isLandscape || rotationCoordinator.isTransitioning {
+            contentController.beginSystemRotation(toLandscape: toLandscape)
+            contentController.markRotationStarted(toLandscape: toLandscape)
+            scheduleRotationWatchdog(
+                generation: generation,
+                coordinatorDuration: transitionCoordinator.transitionDuration
+            )
+        }
         if toLandscape {
             contentController.dismissPlayerMoreControls()
         }
@@ -450,12 +463,16 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             self?.contentController.view.layoutIfNeeded()
         }, completion: { [weak self] _ in
             guard let self, self.rotationGeneration == generation else { return }
-            self.contentController.markSystemTransitionEnded()
-            self.scheduleRotationCompletion(
-                generation: generation,
-                toLandscape: toLandscape,
-                settleDelay: PlaybackDetailRotationTiming.recoverySettleDelay
-            )
+            if self.rotationCoordinator.isTransitioning {
+                self.contentController.markSystemTransitionEnded()
+                self.scheduleRotationCompletion(
+                    generation: generation,
+                    toLandscape: toLandscape,
+                    settleDelay: PlaybackDetailRotationTiming.recoverySettleDelay
+                )
+            } else {
+                self.contentController.recoverStableLayout()
+            }
         })
     }
 
@@ -464,6 +481,18 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             setImmersivePlayback(true)
             rotationCoordinator.setPortraitFullscreen(true)
             updateOrientationLock()
+            setNeedsStatusBarAppearanceUpdate()
+            setNeedsUpdateOfHomeIndicatorAutoHidden()
+            return
+        }
+        if AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
+            containerSize: view.bounds.size,
+            traitCollection: traitCollection,
+            adaptiveEnabled: contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+        ) {
+            setImmersivePlayback(true)
+            rotationCoordinator.setInPlaceFullscreen(true)
+            contentController.recoverStableLayout()
             setNeedsStatusBarAppearanceUpdate()
             setNeedsUpdateOfHomeIndicatorAutoHidden()
             return
@@ -500,6 +529,15 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             setNeedsUpdateOfHomeIndicatorAutoHidden()
             return
         }
+        if rotationCoordinator.isInPlaceFullscreen {
+            rotationCoordinator.setInPlaceFullscreen(false)
+            setImmersivePlayback(false)
+            contentController.recoverStableLayout()
+            updateOrientationLock()
+            setNeedsStatusBarAppearanceUpdate()
+            setNeedsUpdateOfHomeIndicatorAutoHidden()
+            return
+        }
         let scene = view.window?.windowScene
         if scene?.effectiveGeometry.interfaceOrientation.isPortrait == true {
             setImmersivePlayback(false)
@@ -524,12 +562,12 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             isLandscape: landscape,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
         )
-        setImmersivePlayback(landscape || rotationCoordinator.isPortraitFullscreen)
+        setImmersivePlayback(landscape || rotationCoordinator.isAnyFullscreen)
         contentController.recoverStableLayout()
     }
 
     private func handleBackButton() {
-        if rotationCoordinator.isLandscape || rotationCoordinator.isPortraitFullscreen {
+        if rotationCoordinator.isAnyFullscreen {
             requestExitFullscreen()
         } else {
             contentController.recoverStableLayout()
@@ -539,6 +577,13 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
 
     private func updateOrientationLock() {
         guard isViewActive else { return }
+        if AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: view.window) {
+            let mask: UIInterfaceOrientationMask = view.window?.traitCollection.userInterfaceIdiom == .pad
+                ? .all
+                : .allButUpsideDown
+            AppOrientationLock.update(to: mask, in: view.window?.windowScene)
+            return
+        }
         if contentController.viewModel.libraryStore.usesSystemNativePlaybackControlsUI {
             // 系统原生控制栏模式下放开 App 层方向：这是 AVKit 显示系统自带全屏按钮的前提；
             // 「原生底座 + 自绘控件」与纯自绘模式统一走 rotationCoordinator 方向策略。
@@ -681,7 +726,14 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     private var resolvedLandscapeForRecovery: Bool {
-        VideoDetailRotationRecoveryPolicy().resolvesLandscape(
+        if AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
+            containerSize: view.bounds.size,
+            traitCollection: traitCollection,
+            adaptiveEnabled: contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+        ) {
+            return rotationCoordinator.isLandscape
+        }
+        return VideoDetailRotationRecoveryPolicy().resolvesLandscape(
             interfaceOrientation: view.window?.windowScene?.effectiveGeometry.interfaceOrientation,
             fallbackBounds: view.bounds.size
         )
@@ -727,7 +779,7 @@ extension VideoDetailRotationBridgeViewController: VideoDetailRotationBridgeDele
 extension VideoDetailRotationBridgeViewController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard isSystemBackGesture(gestureRecognizer) else { return true }
-        guard !rotationCoordinator.isLandscape else { return false }
+        guard !rotationCoordinator.isAnyFullscreen else { return false }
         guard let navigationController,
               navigationController.viewControllers.count > 1
         else { return false }
@@ -740,7 +792,7 @@ extension VideoDetailRotationBridgeViewController: UIGestureRecognizerDelegate {
         shouldReceive touch: UITouch
     ) -> Bool {
         guard isSystemBackGesture(gestureRecognizer) else { return true }
-        guard !rotationCoordinator.isLandscape else { return false }
+        guard !rotationCoordinator.isAnyFullscreen else { return false }
         return !contentController.playerFrame.contains(touch.location(in: view))
     }
 

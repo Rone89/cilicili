@@ -184,6 +184,7 @@ struct RootTabView: View {
                         }
                     }
                 }
+                .adaptiveRootTabViewStyle(isEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled)
             }
         }
         .toolbarVisibility(visibleRootTabs.count == 1 ? .hidden : .automatic, for: .tabBar)
@@ -476,6 +477,17 @@ struct RootTabView: View {
             return
         }
         await accountMessageViewModel.refreshUnread()
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func adaptiveRootTabViewStyle(isEnabled: Bool) -> some View {
+        if isEnabled {
+            tabViewStyle(.sidebarAdaptable)
+        } else {
+            self
+        }
     }
 }
 

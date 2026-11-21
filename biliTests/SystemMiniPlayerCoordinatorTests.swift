@@ -931,13 +931,13 @@ final class SystemMiniPlayerCoordinatorTests: XCTestCase {
         ActivePlaybackCoordinator.shared.stopActivePlayback()
         defer { ActivePlaybackCoordinator.shared.stopActivePlayback() }
 
+        coordinator.supportsPictureInPicture = { true }
         let videoA = makeVideo(bvid: "BV1PiPOldVideoA", cid: 1001)
         let videoB = makeVideo(bvid: "BV1PiPNewVideoB", cid: 2002)
-        let (_, engineA, playerA) = makePlayingDetailViewModel(video: videoA)
-        let (_, engineB, playerB) = makePlayingDetailViewModel(video: videoB)
+        let (detailVMA, engineA, playerA) = makePlayingDetailViewModel(video: videoA)
         defer {
+            _ = detailVMA
             playerA.stop()
-            playerB.stop()
         }
 
         let stagingHost = SystemMiniPlayerStagingView()
@@ -987,6 +987,11 @@ final class SystemMiniPlayerCoordinatorTests: XCTestCase {
         XCTAssertFalse(engineA.isPictureInPictureActive)
         XCTAssertFalse(stagingHost.surfaceView.isBound(to: playerA))
 
+        let (detailVMB, engineB, playerB) = makePlayingDetailViewModel(video: videoB)
+        defer {
+            _ = detailVMB
+            playerB.stop()
+        }
         let surfaceB = VideoSurfaceContainerView()
         playerB.attachSurface(surfaceB, prefersNativePlaybackControls: false)
         ActivePlaybackCoordinator.shared.activate(playerB)
@@ -1011,11 +1016,13 @@ final class SystemMiniPlayerCoordinatorTests: XCTestCase {
         ActivePlaybackCoordinator.shared.stopActivePlayback()
         defer { ActivePlaybackCoordinator.shared.stopActivePlayback() }
 
+        coordinator.supportsPictureInPicture = { true }
         let videoA = makeVideo(bvid: "BV1AsyncPiPOldA", cid: 3001)
         let videoB = makeVideo(bvid: "BV1AsyncPiPNewB", cid: 3002)
-        let (_, engineA, playerA) = makePlayingDetailViewModel(video: videoA)
+        let (detailVMA, engineA, playerA) = makePlayingDetailViewModel(video: videoA)
         engineA.keepsPictureInPictureActiveOnStopRequest = true
         defer {
+            _ = detailVMA
             playerA.stop()
         }
 
@@ -1113,8 +1120,11 @@ final class SystemMiniPlayerCoordinatorTests: XCTestCase {
         defer { ActivePlaybackCoordinator.shared.stopActivePlayback() }
 
         let video = makeVideo(bvid: "BV1PiPPauseSync", cid: 4001)
-        let (_, engine, player) = makePlayingDetailViewModel(video: video)
-        defer { player.stop() }
+        let (detailVM, engine, player) = makePlayingDetailViewModel(video: video)
+        defer {
+            _ = detailVM
+            player.stop()
+        }
         let surface = VideoSurfaceContainerView()
         player.attachSurface(surface, prefersNativePlaybackControls: false)
         ActivePlaybackCoordinator.shared.activate(player)

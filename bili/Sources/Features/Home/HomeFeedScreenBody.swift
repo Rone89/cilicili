@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeFeedScreenBody: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var viewModel: HomeViewModel
     @ObservedObject var runtimeSettings: HomeRuntimeSettingsStore
     @ObservedObject var libraryStore: LibraryStore
@@ -16,7 +17,9 @@ struct HomeFeedScreenBody: View {
         let layout = effectiveLayout
         let layoutMetrics = viewportState.layoutMetrics(
             for: layout,
-            standardHorizontalInset: libraryStore.standardPageHorizontalInset
+            standardHorizontalInset: libraryStore.standardPageHorizontalInset,
+            horizontalSizeClass: horizontalSizeClass,
+            adaptiveLargeScreenEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
         )
         let imagePrefetchProfile = HomeFeedCoverPrefetchProfile.make(
             layout: layout,

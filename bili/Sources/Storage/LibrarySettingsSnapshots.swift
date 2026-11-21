@@ -5,6 +5,7 @@ struct RootRuntimeSettingsSnapshot: Equatable {
     var appearanceMode: AppAppearanceMode = .system
     var minimizesTabBarOnScroll = true
     var visibleRootTabs: [AppTab] = AppTab.defaultVisibleTabs
+    var adaptiveLargeScreenLayoutExperimentEnabled = true
 }
 
 @MainActor
@@ -16,6 +17,7 @@ final class RootRuntimeSettingsStore: ObservableObject {
     var appearanceMode: AppAppearanceMode { snapshot.appearanceMode }
     var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
     var visibleRootTabs: [AppTab] { snapshot.visibleRootTabs }
+    var adaptiveLargeScreenLayoutExperimentEnabled: Bool { snapshot.adaptiveLargeScreenLayoutExperimentEnabled }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -36,7 +38,8 @@ final class RootRuntimeSettingsStore: ObservableObject {
         let next = RootRuntimeSettingsSnapshot(
             appearanceMode: libraryStore.appearanceMode,
             minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll,
-            visibleRootTabs: libraryStore.visibleRootTabs
+            visibleRootTabs: libraryStore.visibleRootTabs,
+            adaptiveLargeScreenLayoutExperimentEnabled: libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
         )
         guard next != snapshot else { return }
         snapshot = next
@@ -45,6 +48,7 @@ final class RootRuntimeSettingsStore: ObservableObject {
 
 struct HomeRuntimeSettingsSnapshot: Equatable {
     var homeFeedLayout: HomeFeedLayout = LibraryStore.defaultHomeFeedLayout
+    var adaptiveLargeScreenLayoutExperimentEnabled = true
 }
 
 @MainActor
@@ -54,6 +58,7 @@ final class HomeRuntimeSettingsStore: ObservableObject {
     private var cancellable: AnyCancellable?
 
     var homeFeedLayout: HomeFeedLayout { snapshot.homeFeedLayout }
+    var adaptiveLargeScreenLayoutExperimentEnabled: Bool { snapshot.adaptiveLargeScreenLayoutExperimentEnabled }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -72,7 +77,8 @@ final class HomeRuntimeSettingsStore: ObservableObject {
     private func refresh() {
         guard let libraryStore else { return }
         let next = HomeRuntimeSettingsSnapshot(
-            homeFeedLayout: libraryStore.homeFeedLayout
+            homeFeedLayout: libraryStore.homeFeedLayout,
+            adaptiveLargeScreenLayoutExperimentEnabled: libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
         )
         guard next != snapshot else { return }
         snapshot = next
@@ -93,6 +99,7 @@ struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var playbackAutoOptimizationEnabled = true
     var minimizesTabBarOnScroll = true
     var defersVideoDetailSecondaryContent = true
+    var adaptiveLargeScreenLayoutExperimentEnabled = true
 }
 
 @MainActor
@@ -117,6 +124,7 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
     var playbackAutoOptimizationEnabled: Bool { snapshot.playbackAutoOptimizationEnabled }
     var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
     var defersVideoDetailSecondaryContent: Bool { snapshot.defersVideoDetailSecondaryContent }
+    var adaptiveLargeScreenLayoutExperimentEnabled: Bool { snapshot.adaptiveLargeScreenLayoutExperimentEnabled }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -147,7 +155,8 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
             effectivePlaybackCDNPreference: libraryStore.effectivePlaybackCDNPreference,
             playbackAutoOptimizationEnabled: libraryStore.isPlaybackAutoOptimizationEnabled,
             minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll,
-            defersVideoDetailSecondaryContent: true
+            defersVideoDetailSecondaryContent: true,
+            adaptiveLargeScreenLayoutExperimentEnabled: libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
         )
         guard next != snapshot else { return }
         snapshot = next

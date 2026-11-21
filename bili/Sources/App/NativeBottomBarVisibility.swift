@@ -65,6 +65,7 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         }()
         private var hidesRootTabBar: Bool
         private var isDetailPresented: Bool
+        private var didHideSidebarForDetail = false
         private var reconcileTask: Task<Void, Never>?
 
         init(isDetailPresented: Bool, hidesRootTabBar: Bool, onRootTabTap: (() -> Void)?, capturesSelectedTabTap: Bool, isSearchTab: Bool) {
@@ -94,8 +95,32 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
             installRootTabTap()
         }
 
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            enforceHiddenSidebarAndTabBarIfNeeded()
+        }
+
+        override func viewWillTransition(
+            to size: CGSize,
+            with coordinator: UIViewControllerTransitionCoordinator
+        ) {
+            super.viewWillTransition(to: size, with: coordinator)
+            coordinator.animate(alongsideTransition: { [weak self] _ in
+                self?.enforceHiddenSidebarAndTabBarIfNeeded()
+            }, completion: { [weak self] _ in
+                self?.enforceHiddenSidebarAndTabBarIfNeeded()
+            })
+        }
+
         func installRootTabTap() {
-            if onRootTabTap != nil, let tabBar = enclosingTabBarController()?.tabBar, rootTabTap.view !== tabBar {
+            guard onRootTabTap != nil,
+                  let controller = enclosingTabBarController(),
+                  traitCollection.horizontalSizeClass != .regular else {
+                removeRootTabTap()
+                return
+            }
+            let tabBar = controller.tabBar
+            if rootTabTap.view !== tabBar {
                 tabBar.addGestureRecognizer(rootTabTap)
             }
         }
@@ -175,9 +200,32 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         }
 
         private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {
-            guard let tabBarController = enclosingTabBarController(),
-                  tabBarController.isTabBarHidden != hidden else { return }
-            tabBarController.setTabBarHidden(hidden, animated: animated)
+            guard let tabBarController = enclosingTabBarController() else { return }
+            if tabBarController.isTabBarHidden != hidden {
+                tabBarController.setTabBarHidden(hidden, animated: animated)
+            }
+            if hidden {
+                if !tabBarController.sidebar.isHidden {
+                    didHideSidebarForDetail = true
+                    tabBarController.sidebar.isHidden = true
+                }
+            } else if didHideSidebarForDetail {
+                didHideSidebarForDetail = false
+                tabBarController.sidebar.isHidden = false
+            }
+        }
+
+        private func enforceHiddenSidebarAndTabBarIfNeeded() {
+            guard isDetailPresented || hidesRootTabBar,
+                  viewIfLoaded?.window != nil,
+                  let tabBarController = enclosingTabBarController() else { return }
+            if !tabBarController.isTabBarHidden {
+                tabBarController.setTabBarHidden(true, animated: false)
+            }
+            if !tabBarController.sidebar.isHidden {
+                didHideSidebarForDetail = true
+                tabBarController.sidebar.isHidden = true
+            }
         }
 
         private func enclosingTabBarController() -> UITabBarController? {

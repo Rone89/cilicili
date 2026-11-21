@@ -3,6 +3,8 @@ import UIKit
 
 struct LiveRoomContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @EnvironmentObject var libraryStore: LibraryStore
     @ObservedObject var viewModel: LiveRoomViewModel
     @State var fullscreenMode: PlayerFullscreenMode?
     @State var isCompletingFullscreenExit = false
@@ -14,15 +16,12 @@ struct LiveRoomContentView: View {
                 proxySize: proxy.size,
                 fullscreenGeometry: proxy.liveDetailFullscreenContainerGeometry,
                 fullscreenMode: fullscreenMode,
-                isCompletingFullscreenExit: isCompletingFullscreenExit
+                isCompletingFullscreenExit: isCompletingFullscreenExit,
+                horizontalSizeClass: horizontalSizeClass,
+                adaptiveLargeScreenEnabled: libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
             )
 
-            standardPlaybackPage(
-                viewModel,
-                screenSize: layout.screenSize,
-                isLandscape: layout.isLandscape,
-                isInlineFullscreen: layout.isInlineFullscreen
-            )
+            liveStageContent(layout: layout, proxySize: proxy.size)
             .frame(
                 width: layout.frameSize.width,
                 height: layout.frameSize.height
@@ -84,40 +83,68 @@ struct LiveRoomContentView: View {
         .live(roomID: viewModel.roomID, title: viewModel.title)
     }
 
-    private func standardPlaybackPage(
-        _ viewModel: LiveRoomViewModel,
-        screenSize: CGSize,
-        isLandscape: Bool,
-        isInlineFullscreen: Bool
+    private func liveStageContent(
+        layout: LiveRoomContentLayout,
+        proxySize: CGSize
     ) -> some View {
-        let standardPlayerHeight = PlaybackDetailPlayerMetrics.standardHeight(for: screenSize.width)
-        let expandsToFullscreen = isLandscape || isInlineFullscreen
+        let isSplit = layout.isSplitTwoColumn
+        let split = AdaptiveLayoutPolicy.videoDetailSplitColumnWidths(totalWidth: proxySize.width)
+        let standardPlayerHeight = PlaybackDetailPlayerMetrics.standardHeight(for: layout.screenSize.width)
+        let expandsToFullscreen = layout.isLandscape || layout.isInlineFullscreen
+        let splitPlayerHeight = min(max(proxySize.height - 40, 240), (split.playerColumnWidth * 9 / 16).rounded())
 
-        return PlaybackDetailPlayerStage(
-            screenSize: screenSize,
-            showsContent: !isLandscape,
-            contentOpacity: isInlineFullscreen ? 0 : 1,
-            allowsContentHitTesting: !isInlineFullscreen,
-            showsFullscreenBackdrop: expandsToFullscreen,
-            background: VideoDetailTheme.background
-        ) {
-            PlaybackDetailScrollPage(
-                layoutWidth: screenSize.width,
-                topInset: standardPlayerHeight,
-                background: VideoDetailTheme.background
-            ) {
-                detailScrollPage(viewModel, layoutWidth: screenSize.width)
-                    .frame(width: screenSize.width, alignment: .top)
+        let playerWidth: CGFloat? = isSplit
+            ? split.playerColumnWidth
+            : (layout.isLandscape ? layout.screenSize.width : nil)
+        let playerHeight: CGFloat = expandsToFullscreen
+            ? layout.screenSize.height
+            : (isSplit ? splitPlayerHeight : standardPlayerHeight)
+        let playerStageWidth: CGFloat = isSplit ? split.playerColumnWidth : layout.screenSize.width
+        let playerStageHeight: CGFloat = isSplit ? proxySize.height : playerHeight
+        let playerOriginY: CGFloat = isSplit ? max((proxySize.height - playerHeight) / 2, 0) : 0
+
+        let contentWidth: CGFloat = isSplit ? split.contentColumnWidth : layout.screenSize.width
+        let contentHeight: CGFloat = isSplit ? proxySize.height : layout.screenSize.height
+        let contentOriginX: CGFloat = isSplit ? split.playerColumnWidth : 0
+        let contentTopInset: CGFloat = isSplit ? 0 : standardPlayerHeight
+
+        return ZStack(alignment: .topLeading) {
+            if !layout.isLandscape || isSplit {
+                PlaybackDetailScrollPage(
+                    layoutWidth: contentWidth,
+                    topInset: contentTopInset,
+                    background: VideoDetailTheme.background
+                ) {
+                    detailScrollPage(viewModel, layoutWidth: contentWidth)
+                        .frame(width: contentWidth, alignment: .top)
+                }
+                .frame(width: contentWidth, height: contentHeight)
+                .offset(x: contentOriginX, y: 0)
+                .opacity(layout.isInlineFullscreen ? 0 : 1)
+                .allowsHitTesting(!layout.isInlineFullscreen)
             }
-        } player: {
+
+            if expandsToFullscreen {
+                Color.black
+                    .frame(width: layout.screenSize.width, height: layout.screenSize.height)
+                    .allowsHitTesting(false)
+            } else if isSplit {
+                Color.black
+                    .frame(width: playerStageWidth, height: playerStageHeight)
+                    .allowsHitTesting(false)
+            }
+
             playerHero(
                 viewModel,
-                isLandscape: isLandscape,
+                isLandscape: layout.isLandscape,
                 fullscreenMode: fullscreenMode,
-                playerWidth: isLandscape ? screenSize.width : nil,
-                playerHeight: expandsToFullscreen ? screenSize.height : standardPlayerHeight
+                playerWidth: playerWidth,
+                playerHeight: playerHeight
             )
+            .offset(x: 0, y: expandsToFullscreen ? 0 : playerOriginY)
         }
+        .frame(width: layout.screenSize.width, height: layout.screenSize.height, alignment: .topLeading)
+        .background(expandsToFullscreen ? Color.black : VideoDetailTheme.background)
     }
 
     private func playerHero(

@@ -174,10 +174,19 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     func layout(
         in size: CGSize,
         safeAreaTop: CGFloat,
+        safeAreaBottom: CGFloat = 0,
+        horizontalSizeClass: UserInterfaceSizeClass? = nil,
         rotationCoordinator: PlaybackRotationCoordinator
     ) -> VideoDetailShellLayout {
+        let adaptiveEnabled = runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
+        let targetMode = AdaptiveLayoutPolicy.videoDetailMode(
+            containerSize: size,
+            horizontalSizeClass: horizontalSizeClass,
+            isFullscreenActive: rotationCoordinator.layoutLandscape || rotationCoordinator.isPortraitFullscreen,
+            adaptiveEnabled: adaptiveEnabled
+        )
         let effectiveInteractiveOffset =
-            isInteractiveScrollCollapseActive
+            (targetMode == .compactStacked && isInteractiveScrollCollapseActive)
             ? interactiveScrollOffset
             : nil
         let effectivePlayerHeight =
@@ -187,12 +196,15 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         let layout = VideoDetailShellLayout.resolve(
             bounds: CGRect(origin: .zero, size: size),
             safeAreaTop: safeAreaTop,
+            safeAreaBottom: safeAreaBottom,
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: effectivePlayerHeight,
             isPlaybackActive: isPlaybackActiveForLayout,
             isLandscape: rotationCoordinator.layoutLandscape,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen,
-            fullscreenContentFrameSize: lastEmbeddedContentSize
+            fullscreenContentFrameSize: lastEmbeddedContentSize,
+            horizontalSizeClass: horizontalSizeClass,
+            adaptiveLargeScreenEnabled: adaptiveEnabled
         )
         if !layout.usesFullscreenLayout {
             lastEmbeddedContentSize = layout.contentFrame.size
@@ -208,6 +220,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         for layout: VideoDetailShellLayout,
         bounds: CGSize
     ) -> Bool {
+        guard layout.adaptiveMode == .compactStacked else { return false }
         guard !isPlaybackActiveSnapshot else { return false }
         guard isInteractiveScrollCollapseActive else { return isCollapsedChromeActive }
         let standard = VideoDetailShellLayout.standardPlayerHeight(forWidth: bounds.width)
@@ -631,11 +644,13 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
 
 @MainActor
 private struct VideoDetailInteractivePlayerLayer: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var model: VideoDetailSwiftUIContainerModel
     @ObservedObject var rotationCoordinator: PlaybackRotationCoordinator
     let viewModel: VideoDetailViewModel
     let size: CGSize
     let safeAreaTop: CGFloat
+    let safeAreaBottom: CGFloat
     let selectedContentTab: VideoDetailContentTab
     let dependencies: AppDependencies
     let runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -651,6 +666,8 @@ private struct VideoDetailInteractivePlayerLayer: View {
         let layout = model.layout(
             in: size,
             safeAreaTop: safeAreaTop,
+            safeAreaBottom: safeAreaBottom,
+            horizontalSizeClass: horizontalSizeClass,
             rotationCoordinator: rotationCoordinator
         )
         let showsCollapsedChrome = model.shouldShowCollapsedChrome(
@@ -669,11 +686,10 @@ private struct VideoDetailInteractivePlayerLayer: View {
 
         ZStack(alignment: .topLeading) {
             // Keep the player stage opaque while the stable player/surface is
-            // still being created. The content layer uses the light grouped
-            // background, which otherwise flashes through in light mode.
+            // still being created or while centered in two-column split mode.
             Color.black
-                .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
-                .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                .frame(width: layout.playerStageFrame.width, height: layout.playerStageFrame.height)
+                .position(x: layout.playerStageFrame.midX, y: layout.playerStageFrame.midY)
                 .allowsHitTesting(false)
                 .disablingRotationTransaction(suppressesRotationAnimation)
                 .zIndex(1)
@@ -775,6 +791,7 @@ private struct VideoDetailMiniPlayerTransitionSurfaceFallback: View {
 
 @MainActor
 struct VideoDetailSwiftUIContainer: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let viewModel: VideoDetailViewModel
     @ObservedObject var model: VideoDetailSwiftUIContainerModel
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -797,12 +814,24 @@ struct VideoDetailSwiftUIContainer: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let isInteractiveScrollCollapseEnabled = model.isInteractiveScrollCollapseActive
             let layout = model.layout(
                 in: proxy.size,
                 safeAreaTop: model.rootSafeAreaInsets.top,
+                safeAreaBottom: model.rootSafeAreaInsets.bottom,
+                horizontalSizeClass: horizontalSizeClass,
                 rotationCoordinator: rotationCoordinator
             )
+            let isInteractiveScrollCollapseEnabled =
+                layout.adaptiveMode == .compactStacked && model.isInteractiveScrollCollapseActive
+            let contentHorizontalInset = runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
+                ? AdaptiveLayoutPolicy.horizontalInset(
+                    for: layout.contentFrame.width,
+                    horizontalSizeClass: horizontalSizeClass,
+                    containerHeight: layout.contentFrame.height,
+                    adaptiveEnabled: true
+                )
+                : dependencies.libraryStore.standardPageHorizontalInset
+            let contentBounds = layout.contentFrame.size
 
             ZStack(alignment: .topLeading) {
                 VideoDetailShellContentView(
@@ -810,12 +839,14 @@ struct VideoDetailSwiftUIContainer: View {
                     updateGate: model.contentUpdateGate,
                     runtimeSettings: runtimeSettings,
                     state: model.contentState,
-                    layoutWidth: proxy.size.width,
+                    layoutWidth: layout.contentFrame.width,
                     placesTopInsetInScrollContent: true,
-                    standardHorizontalInset: dependencies.libraryStore.standardPageHorizontalInset,
+                    standardHorizontalInset: contentHorizontalInset,
                     // Keep scroll extent and the experimental collapse floor consistent,
                     // without changing either when playback pauses.
-                    interactiveMinimumPlayerHeight: model.interactiveScrollContentMinimumPlayerHeight(forWidth: proxy.size.width),
+                    interactiveMinimumPlayerHeight: layout.adaptiveMode == .twoColumnSplit
+                        ? 0
+                        : model.interactiveScrollContentMinimumPlayerHeight(forWidth: layout.contentFrame.width),
                     selectedContentTab: $selectedContentTab,
                     onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                     onShowFavoriteFolders: onShowFavoriteFolders,
@@ -825,19 +856,19 @@ struct VideoDetailSwiftUIContainer: View {
                     openVideoOwnerRoute: openVideoOwnerRoute,
                     onSelectedTabChange: { tab in
                         if isInteractiveScrollCollapseEnabled {
-                            model.prepareInteractiveTabChange(to: tab, bounds: proxy.size)
+                            model.prepareInteractiveTabChange(to: tab, bounds: contentBounds)
                         }
                         DispatchQueue.main.async {
                             model.handleSelectedTabChange(
                                 tab,
-                                bounds: proxy.size,
+                                bounds: contentBounds,
                                 rotationCoordinator: rotationCoordinator
                             )
                         }
                     },
                     onSelectionWillChange: { tab in
                         guard isInteractiveScrollCollapseEnabled else { return }
-                        model.prepareInteractiveTabChange(to: tab, bounds: proxy.size)
+                        model.prepareInteractiveTabChange(to: tab, bounds: contentBounds)
                     },
                     onScrollOffsetChange: { tab, offset in
                         if isInteractiveScrollCollapseEnabled {
@@ -845,15 +876,15 @@ struct VideoDetailSwiftUIContainer: View {
                                 tab: tab,
                                 offset: offset,
                                 selectedTab: selectedContentTab,
-                                bounds: proxy.size
+                                bounds: contentBounds
                             )
-                        } else {
+                        } else if layout.adaptiveMode == .compactStacked {
                             DispatchQueue.main.async {
                                 model.handleScrollOffset(
                                     tab: tab,
                                     offset: offset,
                                     selectedTab: selectedContentTab,
-                                    bounds: proxy.size,
+                                    bounds: contentBounds,
                                     rotationCoordinator: rotationCoordinator
                                 )
                             }
@@ -888,6 +919,7 @@ struct VideoDetailSwiftUIContainer: View {
                     viewModel: viewModel,
                     size: proxy.size,
                     safeAreaTop: model.rootSafeAreaInsets.top,
+                    safeAreaBottom: model.rootSafeAreaInsets.bottom,
                     selectedContentTab: selectedContentTab,
                     dependencies: dependencies,
                     runtimeSettings: runtimeSettings,
@@ -1119,7 +1151,15 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     }
 
     private var isPortraitContainerBounds: Bool {
-        view.bounds.height >= view.bounds.width && view.bounds.width > 0
+        guard view.bounds.width > 0 else { return false }
+        if view.bounds.height >= view.bounds.width {
+            return true
+        }
+        return AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
+            containerSize: view.bounds.size,
+            traitCollection: traitCollection,
+            adaptiveEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
+        )
     }
 
     private func shouldConsiderSafeAreaInsetsUpdate(

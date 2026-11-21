@@ -3,19 +3,57 @@ import SwiftUI
 struct LiveFeedView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.feedChromeTitleState) private var titleState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: LiveViewModel
     var showsNativeRefreshButton = true
+    @State private var containerSize: CGSize = .zero
+
+    private var adaptiveEnabled: Bool {
+        libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+    }
+
+    private var horizontalInset: CGFloat {
+        adaptiveEnabled
+            ? AdaptiveLayoutPolicy.horizontalInset(
+                for: containerSize.width,
+                horizontalSizeClass: horizontalSizeClass,
+                containerHeight: containerSize.height,
+                adaptiveEnabled: true
+            )
+            : libraryStore.standardPageHorizontalInset
+    }
+
+    private var columnCount: Int {
+        adaptiveEnabled && containerSize.width > 0
+            ? AdaptiveLayoutPolicy.feedGridColumnCount(
+                containerWidth: containerSize.width,
+                containerHeight: containerSize.height,
+                horizontalSizeClass: horizontalSizeClass,
+                horizontalInset: horizontalInset,
+                columnSpacing: 12,
+                adaptiveEnabled: true
+            )
+            : 2
+    }
 
     var body: some View {
-        let horizontalInset = libraryStore.standardPageHorizontalInset
-
         ScrollView {
             VStack(spacing: 0) {
-                LiveFeedContent(viewModel: viewModel)
+                LiveFeedContent(viewModel: viewModel, columnCount: columnCount)
+                    .frame(maxWidth: adaptiveEnabled ? AdaptiveLayoutPolicy.multiColumnFeedMaxWidth : .infinity)
                     .padding(.horizontal, horizontalInset)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 22)
             }
+        }
+        .onGeometryChange(for: CGSize.self) { geometry in
+            geometry.size
+        } action: { _, size in
+            let rounded = CGSize(width: size.width.rounded(.down), height: size.height.rounded(.down))
+            guard abs(rounded.width - containerSize.width) > 0.5
+                    || abs(rounded.height - containerSize.height) > 0.5 else { return }
+            containerSize = rounded
         }
         .rootFloatingTabBarContentPadding()
         .contentMargins(.top, 0, for: .scrollContent)
@@ -66,23 +104,26 @@ private struct LiveTitleScrollSample: Equatable {
 
 private struct LiveFeedContent: View {
     @ObservedObject var viewModel: LiveViewModel
+    let columnCount: Int
 
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.rooms.isEmpty && viewModel.state.isLoading {
-                LiveFeedLoadingState()
+                LiveFeedLoadingState(columnCount: columnCount)
             } else if viewModel.rooms.isEmpty {
                 LiveFeedEmptyState(viewModel: viewModel)
             } else {
-                LiveFeedRoomList(viewModel: viewModel)
+                LiveFeedRoomList(viewModel: viewModel, columnCount: columnCount)
             }
         }
     }
 }
 
 private struct LiveFeedLoadingState: View {
+    let columnCount: Int
+
     var body: some View {
-        LiveFeedSkeletonList()
+        LiveFeedSkeletonList(columnCount: columnCount)
             .allowsHitTesting(false)
     }
 }
@@ -103,11 +144,11 @@ private struct LiveFeedEmptyState: View {
 
 private struct LiveFeedRoomList: View {
     @ObservedObject var viewModel: LiveViewModel
+    let columnCount: Int
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
-    ]
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: max(columnCount, 1))
+    }
 
     var body: some View {
         VStack(spacing: 0) {

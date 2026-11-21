@@ -22,10 +22,15 @@ final class PlaybackRotationCoordinator: ObservableObject {
     @Published private(set) var isSystemRotationTransitioning = false
     @Published private(set) var isLandscape = false
     @Published private(set) var isPortraitFullscreen = false
+    @Published private(set) var isInPlaceFullscreen = false
     @Published private(set) var prewarmLandscape: Bool?
 
     private var requestCoalescer = VideoDetailRotationRequestCoalescer()
     private(set) var isViewActive = false
+
+    var isAnyFullscreen: Bool {
+        isLandscape || isPortraitFullscreen || isInPlaceFullscreen
+    }
 
     var isTransitioning: Bool {
         isSystemRotationTransitioning || requestCoalescer.isTransitioning
@@ -34,6 +39,9 @@ final class PlaybackRotationCoordinator: ObservableObject {
     var chromeLandscape: Bool {
         if let prewarmLandscape {
             return prewarmLandscape
+        }
+        if isInPlaceFullscreen {
+            return true
         }
         switch phase {
         case .preparingLandscape, .landscape:
@@ -46,6 +54,9 @@ final class PlaybackRotationCoordinator: ObservableObject {
     /// 几何布局在系统转场期间使用目标方向；播放器控件树则继续使用
     /// `chromeLandscape`，直到系统完成转场后再切换，避免控件闪烁。
     var layoutLandscape: Bool {
+        if isInPlaceFullscreen {
+            return true
+        }
         switch phase {
         case .preparingLandscape:
             return true
@@ -115,8 +126,19 @@ final class PlaybackRotationCoordinator: ObservableObject {
     func setPortraitFullscreen(_ active: Bool) {
         guard isPortraitFullscreen != active else { return }
         isLandscape = false
+        isInPlaceFullscreen = false
         isPortraitFullscreen = active
         setStablePhase(isLandscape: false, isPortraitFullscreen: active)
+    }
+
+    func setInPlaceFullscreen(_ active: Bool) {
+        guard isInPlaceFullscreen != active else { return }
+        isPortraitFullscreen = false
+        isInPlaceFullscreen = active
+        if !active {
+            isLandscape = false
+        }
+        setStablePhase(isLandscape: isLandscape, isPortraitFullscreen: false)
     }
 
     func beginChromePrewarm(for landscape: Bool) {
@@ -165,6 +187,7 @@ final class PlaybackRotationCoordinator: ObservableObject {
         isSystemRotationTransitioning = false
         isLandscape = false
         isPortraitFullscreen = false
+        isInPlaceFullscreen = false
         prewarmLandscape = nil
         AppOrientationLock.restorePortrait(in: scene)
     }

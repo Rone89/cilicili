@@ -26,6 +26,7 @@ struct DynamicFeedScrollContent: View {
                 )
                 .frame(width: contentWidth, alignment: .leading)
                 .padding(.horizontal, horizontalInset)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.bottom, 18)
             }
             .background {

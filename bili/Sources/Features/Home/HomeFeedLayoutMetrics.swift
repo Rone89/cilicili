@@ -4,9 +4,12 @@ struct HomeFeedLayoutMetrics {
     let mode: HomeFeedLayout
     let doubleColumns: [GridItem]
     let feedColumns: [GridItem]
+    let singleColumnColumns: [GridItem]
+    let singleColumnGridSpacing: CGFloat
     let feedSpacing: CGFloat
     let feedHorizontalPadding: CGFloat
     let singleColumnHorizontalPadding: CGFloat
+    let maxContentWidth: CGFloat?
     let singleColumnFixedCoverSize: CGSize?
     let doubleColumnFixedCoverSize: CGSize?
     let borderedSingleColumnCoverSize: CGSize?
@@ -14,16 +17,91 @@ struct HomeFeedLayoutMetrics {
     init(
         mode: HomeFeedLayout,
         containerWidth: CGFloat,
-        standardHorizontalInset: CGFloat = 20
+        viewportHeight: CGFloat = 900,
+        horizontalSizeClass: UserInterfaceSizeClass? = nil,
+        standardHorizontalInset: CGFloat = 20,
+        adaptiveLargeScreenEnabled: Bool = false
     ) {
         self.mode = mode
+        let effectiveInset = adaptiveLargeScreenEnabled
+            ? AdaptiveLayoutPolicy.horizontalInset(
+                for: containerWidth,
+                horizontalSizeClass: horizontalSizeClass,
+                containerHeight: viewportHeight,
+                adaptiveEnabled: true
+            )
+            : standardHorizontalInset
+
         let doubleColumnSpacing: CGFloat = mode == .borderedDoubleColumn ? 12 : 14
         let doubleColumnCoverHeightRatio: CGFloat = mode == .borderedDoubleColumn ? 10 / 16 : 9 / 16
-        doubleColumns = [
-            GridItem(.flexible(), spacing: doubleColumnSpacing),
-            GridItem(.flexible(), spacing: doubleColumnSpacing)
-        ]
-        singleColumnHorizontalPadding = standardHorizontalInset
+        let doubleColumnCount = adaptiveLargeScreenEnabled
+            ? AdaptiveLayoutPolicy.feedGridColumnCount(
+                containerWidth: containerWidth,
+                containerHeight: viewportHeight,
+                horizontalSizeClass: horizontalSizeClass,
+                horizontalInset: effectiveInset,
+                columnSpacing: doubleColumnSpacing,
+                adaptiveEnabled: true
+            )
+            : 2
+        doubleColumns = Array(
+            repeating: GridItem(.flexible(), spacing: doubleColumnSpacing),
+            count: doubleColumnCount
+        )
+        singleColumnHorizontalPadding = effectiveInset
+
+        let resolvedSingleColumnsCount: Int
+        if adaptiveLargeScreenEnabled {
+            switch mode {
+            case .borderedSingleColumn:
+                resolvedSingleColumnsCount = AdaptiveLayoutPolicy.listCardColumnCount(
+                    containerWidth: containerWidth,
+                    containerHeight: viewportHeight,
+                    horizontalSizeClass: horizontalSizeClass,
+                    adaptiveEnabled: true
+                )
+            case .singleColumn:
+                resolvedSingleColumnsCount = containerWidth >= 920
+                    && AdaptiveLayoutPolicy.widthTier(
+                        containerSize: CGSize(width: containerWidth, height: viewportHeight),
+                        horizontalSizeClass: horizontalSizeClass,
+                        adaptiveEnabled: true
+                    ) >= .expanded
+                    ? 2
+                    : 1
+            case .doubleColumn, .borderedDoubleColumn:
+                resolvedSingleColumnsCount = 1
+            }
+        } else {
+            resolvedSingleColumnsCount = 1
+        }
+
+        let singleGridSpacing: CGFloat = mode == .borderedSingleColumn ? 12 : 18
+        singleColumnGridSpacing = singleGridSpacing
+        singleColumnColumns = Array(
+            repeating: GridItem(.flexible(), spacing: singleGridSpacing),
+            count: resolvedSingleColumnsCount
+        )
+
+        let tier = AdaptiveLayoutPolicy.widthTier(
+            containerSize: CGSize(width: containerWidth, height: viewportHeight),
+            horizontalSizeClass: horizontalSizeClass,
+            adaptiveEnabled: adaptiveLargeScreenEnabled
+        )
+        if adaptiveLargeScreenEnabled, tier != .compact {
+            switch mode {
+            case .doubleColumn, .borderedDoubleColumn:
+                maxContentWidth = AdaptiveLayoutPolicy.multiColumnFeedMaxWidth
+            case .borderedSingleColumn:
+                maxContentWidth = AdaptiveLayoutPolicy.searchResultsMaxWidth
+            case .singleColumn:
+                maxContentWidth = resolvedSingleColumnsCount > 1
+                    ? 1120
+                    : AdaptiveLayoutPolicy.singleColumnFeedMaxWidth
+            }
+        } else {
+            maxContentWidth = nil
+        }
 
         switch mode {
         case .singleColumn, .borderedSingleColumn:
@@ -35,21 +113,28 @@ struct HomeFeedLayoutMetrics {
         case .doubleColumn:
             feedColumns = doubleColumns
             feedSpacing = 22
-            feedHorizontalPadding = standardHorizontalInset
+            feedHorizontalPadding = effectiveInset
         case .borderedDoubleColumn:
             feedColumns = doubleColumns
             feedSpacing = 18
-            feedHorizontalPadding = standardHorizontalInset
+            feedHorizontalPadding = effectiveInset
         }
 
-        let singleWidth = containerWidth - singleColumnHorizontalPadding * 2
+        let effectiveContainerWidth = maxContentWidth.map { min(containerWidth, $0) } ?? containerWidth
+        let singleWidth: CGFloat
+        if resolvedSingleColumnsCount > 1 {
+            singleWidth = (effectiveContainerWidth - singleColumnHorizontalPadding * 2 - singleGridSpacing * CGFloat(resolvedSingleColumnsCount - 1)) / CGFloat(resolvedSingleColumnsCount)
+        } else {
+            singleWidth = effectiveContainerWidth - singleColumnHorizontalPadding * 2
+        }
+
         if singleWidth > 0 {
             singleColumnFixedCoverSize = CGSize(width: singleWidth, height: singleWidth * 9 / 16)
         } else {
             singleColumnFixedCoverSize = nil
         }
 
-        let doubleWidth = (containerWidth - (feedHorizontalPadding * 2) - doubleColumnSpacing) / 2
+        let doubleWidth = (effectiveContainerWidth - (feedHorizontalPadding * 2) - doubleColumnSpacing * CGFloat(max(doubleColumnCount - 1, 0))) / CGFloat(max(doubleColumnCount, 1))
         if doubleWidth > 0 {
             doubleColumnFixedCoverSize = CGSize(width: doubleWidth, height: doubleWidth * doubleColumnCoverHeightRatio)
         } else {

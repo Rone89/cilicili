@@ -772,6 +772,9 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             onNavigateBack: {}
         )
         defer { landscapeBridge.prepareForDismantle(); landscapeModel.stopPlaybackForNavigation() }
+        landscapeBridge.traitOverrides.userInterfaceIdiom = .phone
+        landscapeBridge.traitOverrides.horizontalSizeClass = .compact
+        landscapeBridge.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
         landscapeBridge.loadViewIfNeeded()
 
         landscapeBridge.requestVideoDetailFullscreen()

@@ -41,7 +41,8 @@ struct HomeFeedDoubleColumnContent: View {
                 HomeFeedDoubleColumnLoadingMorePlaceholder(columnCount: metrics.feedColumns.count)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: metrics.maxContentWidth ?? .infinity)
         .padding(.horizontal, metrics.feedHorizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }

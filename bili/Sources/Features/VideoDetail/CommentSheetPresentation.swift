@@ -50,6 +50,7 @@ private struct CommentSheetPresentation: ViewModifier {
     @Environment(\.colorScheme) private var inheritedColorScheme
     @Environment(\.appContentColorScheme) private var appContentColorScheme
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(CommentInteractionSettings.limitsSheetMaxHeightKey)
     private var limitsSheetMaxHeight = CommentInteractionSettings.defaultLimitsSheetMaxHeight
     @State private var selectedDetent: PresentationDetent = .medium
@@ -58,10 +59,11 @@ private struct CommentSheetPresentation: ViewModifier {
 
     func body(content: Content) -> some View {
         let contentColorScheme = appContentColorScheme ?? inheritedColorScheme
-        let shouldLimitHeight = CommentSheetPresentationPolicy.shouldLimitHeight(
-            limitsMaxHeight: limitsSheetMaxHeight,
-            verticalSizeClass: verticalSizeClass
-        )
+        let shouldLimitHeight = horizontalSizeClass != .regular
+            && CommentSheetPresentationPolicy.shouldLimitHeight(
+                limitsMaxHeight: limitsSheetMaxHeight,
+                verticalSizeClass: verticalSizeClass
+            )
         content
             .environment(\.colorScheme, contentColorScheme)
             // The video host can request dark status-bar contrast while its

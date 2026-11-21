@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 /// 详情页播放器和内容区共享的几何模型。
 ///
@@ -10,6 +11,8 @@ import Foundation
 struct VideoDetailShellLayout: Equatable {
     static let collapsedToolbarHeight: CGFloat = 54
 
+    let adaptiveMode: VideoDetailAdaptiveMode
+    let playerStageFrame: CGRect
     let playerFrame: CGRect
     /// Scheduling canvas stays expanded while only the visible player window collapses.
     let danmakuCanvasSize: CGSize
@@ -104,30 +107,29 @@ struct VideoDetailShellLayout: Equatable {
     static func resolve(
         bounds: CGRect,
         safeAreaTop: CGFloat,
+        safeAreaBottom: CGFloat = 0,
         videoAspectRatio: CGFloat,
         currentPlayerHeight: CGFloat?,
         isPlaybackActive: Bool,
         isLandscape: Bool,
         isPortraitFullscreen: Bool,
-        fullscreenContentFrameSize: CGSize? = nil
+        fullscreenContentFrameSize: CGSize? = nil,
+        horizontalSizeClass: UserInterfaceSizeClass? = nil,
+        adaptiveLargeScreenEnabled: Bool = false
     ) -> Self {
         let usesFullscreenLayout = isLandscape || isPortraitFullscreen
-        let canInteractivelyCollapse = supportsInteractiveCollapse(
-            videoAspectRatio: videoAspectRatio,
-            isPlaybackActive: isPlaybackActive
+        let adaptiveMode = AdaptiveLayoutPolicy.videoDetailMode(
+            containerSize: bounds.size,
+            horizontalSizeClass: horizontalSizeClass,
+            isFullscreenActive: usesFullscreenLayout,
+            adaptiveEnabled: adaptiveLargeScreenEnabled
         )
-        let playerHeight =
-            usesFullscreenLayout
-            ? bounds.height
-            : resolvedPlayerHeight(
-                bounds: bounds.size,
-                videoAspectRatio: videoAspectRatio,
-                currentPlayerHeight: currentPlayerHeight,
-                isPlaybackActive: isPlaybackActive
-            )
+
         if usesFullscreenLayout {
             let frozenContentSize = fullscreenContentFrameSize ?? bounds.size
             return Self(
+                adaptiveMode: .fullscreen,
+                playerStageFrame: bounds,
                 playerFrame: bounds,
                 danmakuCanvasSize: bounds.size,
                 contentFrame: CGRect(
@@ -141,13 +143,66 @@ struct VideoDetailShellLayout: Equatable {
             )
         }
 
-        return Self(
-            playerFrame: CGRect(
+        if adaptiveMode == .twoColumnSplit {
+            let split = AdaptiveLayoutPolicy.videoDetailSplitColumnWidths(totalWidth: bounds.width)
+            let topInset = max(0, safeAreaTop)
+            let bottomInset = max(0, safeAreaBottom)
+            let availableStageHeight = max(bounds.height - topInset - bottomInset, 220)
+            let clampedAspect = (videoAspectRatio.isFinite && videoAspectRatio > 0)
+                ? min(max(videoAspectRatio, 0.72), 2.35)
+                : (16.0 / 9.0)
+            let idealPlayerHeight = (split.playerColumnWidth / clampedAspect).rounded()
+            let playerHeight = min(availableStageHeight, max(idealPlayerHeight, 220))
+            let playerY = bounds.minY + topInset + max((availableStageHeight - playerHeight) / 2, 0).rounded()
+            let playerFrame = CGRect(
                 x: bounds.minX,
-                y: bounds.minY + max(0, safeAreaTop),
-                width: bounds.width,
-                height: max(playerHeight, 0)
-            ),
+                y: playerY,
+                width: split.playerColumnWidth,
+                height: playerHeight
+            )
+            let playerStageFrame = CGRect(
+                x: bounds.minX,
+                y: bounds.minY,
+                width: split.playerColumnWidth,
+                height: bounds.height
+            )
+            let contentFrame = CGRect(
+                x: bounds.minX + split.playerColumnWidth,
+                y: bounds.minY + topInset,
+                width: split.contentColumnWidth,
+                height: max(bounds.height - topInset, 0)
+            )
+            return Self(
+                adaptiveMode: .twoColumnSplit,
+                playerStageFrame: playerStageFrame,
+                playerFrame: playerFrame,
+                danmakuCanvasSize: playerFrame.size,
+                contentFrame: contentFrame,
+                contentTopInset: 0,
+                usesFullscreenLayout: false
+            )
+        }
+
+        let canInteractivelyCollapse = supportsInteractiveCollapse(
+            videoAspectRatio: videoAspectRatio,
+            isPlaybackActive: isPlaybackActive
+        )
+        let playerHeight = resolvedPlayerHeight(
+            bounds: bounds.size,
+            videoAspectRatio: videoAspectRatio,
+            currentPlayerHeight: currentPlayerHeight,
+            isPlaybackActive: isPlaybackActive
+        )
+        let playerFrame = CGRect(
+            x: bounds.minX,
+            y: bounds.minY + max(0, safeAreaTop),
+            width: bounds.width,
+            height: max(playerHeight, 0)
+        )
+        return Self(
+            adaptiveMode: .compactStacked,
+            playerStageFrame: playerFrame,
+            playerFrame: playerFrame,
             danmakuCanvasSize: CGSize(
                 width: bounds.width,
                 height: expandedPlayerHeight(bounds: bounds.size, videoAspectRatio: videoAspectRatio)

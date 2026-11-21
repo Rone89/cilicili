@@ -1,15 +1,16 @@
 import SwiftUI
 
 struct LiveFeedSkeletonList: View {
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-    ]
+    var columnCount: Int = 2
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: max(columnCount, 1))
+    }
 
     var body: some View {
         SkeletonLoadingContainer {
             LazyVGrid(columns: columns, spacing: 18) {
-                ForEach(0..<6, id: \.self) { _ in
+                ForEach(0..<max(6, columnCount * 3), id: \.self) { _ in
                     LiveRoomSkeletonCard()
                 }
             }

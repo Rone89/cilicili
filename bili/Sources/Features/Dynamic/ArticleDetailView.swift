@@ -226,6 +226,7 @@ private struct ArticleDetailView: View {
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 28)
+            .adaptiveReadableWidth()
         }
         .defersRemoteImageLoadsDuringFastScroll()
         .scrollIndicators(.hidden)

@@ -2,7 +2,9 @@ import SwiftUI
 
 struct UploaderSpaceContentView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
     let owner: VideoOwner
     @ObservedObject var viewModel: UploaderViewModel
     let allowsPullToRefresh: Bool
@@ -10,9 +12,38 @@ struct UploaderSpaceContentView: View {
     @State private var selectedSection: UploaderSpaceSection = .home
     @State private var contentWidth: CGFloat = 0
 
+    private var adaptiveEnabled: Bool {
+        libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+    }
+
+    private var effectiveHorizontalInset: CGFloat {
+        adaptiveEnabled && contentWidth > 0
+            ? AdaptiveLayoutPolicy.horizontalInset(
+                for: contentWidth,
+                horizontalSizeClass: horizontalSizeClass,
+                adaptiveEnabled: true
+            )
+            : horizontalInset
+    }
+
     private var metrics: HomeFeedLayoutMetrics {
-        HomeFeedLayoutMetrics(mode: .doubleColumn, containerWidth: contentWidth,
-                              standardHorizontalInset: horizontalInset)
+        HomeFeedLayoutMetrics(
+            mode: .doubleColumn,
+            containerWidth: contentWidth,
+            horizontalSizeClass: horizontalSizeClass,
+            standardHorizontalInset: effectiveHorizontalInset,
+            adaptiveLargeScreenEnabled: adaptiveEnabled
+        )
+    }
+
+    private var dynamicsContentWidth: CGFloat {
+        adaptiveEnabled
+            ? AdaptiveLayoutPolicy.centeredContentWidth(
+                containerWidth: contentWidth,
+                maxContentWidth: AdaptiveLayoutPolicy.readingColumnMaxWidth,
+                horizontalInset: effectiveHorizontalInset
+            )
+            : max(contentWidth - effectiveHorizontalInset * 2, 0)
     }
 
     private let visibleBannerHeight: CGFloat = 120
@@ -96,8 +127,9 @@ struct UploaderSpaceContentView: View {
                         .accessibilityHidden(true)
                 }
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    UploaderSpaceHeaderView(owner: owner, viewModel: viewModel, horizontalInset: horizontalInset)
+                    UploaderSpaceHeaderView(owner: owner, viewModel: viewModel, horizontalInset: effectiveHorizontalInset)
                         .padding(.top, backgroundURL == nil ? 12 : 14)
+                        .adaptiveReadableWidth(maxWidth: AdaptiveLayoutPolicy.multiColumnFeedMaxWidth)
                     selectedContent
                 }
                 .padding(.bottom, 24)
@@ -120,12 +152,15 @@ struct UploaderSpaceContentView: View {
             UploaderVideosSection(viewModel: viewModel, metrics: metrics)
         case .dynamics:
             UploaderDynamicsSection(api: dependencies.api, viewModel: viewModel,
-                                   contentWidth: contentWidth,
-                                   horizontalInset: horizontalInset)
+                                   contentWidth: dynamicsContentWidth,
+                                   horizontalInset: effectiveHorizontalInset)
+                .adaptiveReadableWidth()
         case .favorites:
             ownFavoritesContent
+                .adaptiveReadableWidth(maxWidth: AdaptiveLayoutPolicy.multiColumnFeedMaxWidth)
         case .bangumi:
             ownBangumiContent
+                .adaptiveReadableWidth(maxWidth: AdaptiveLayoutPolicy.multiColumnFeedMaxWidth)
         }
     }
 
@@ -153,7 +188,7 @@ struct UploaderSpaceContentView: View {
                 await viewModel.loadOwnSpaceFavorites(force: true, requiresCompleteList: true)
             }
         }
-        .padding(.horizontal, horizontalInset)
+        .padding(.horizontal, effectiveHorizontalInset)
         .task(id: viewModel.ownSpaceFavorites?.items.map { $0.folder.id }) {
             await viewModel.loadFavoriteFolderPreviews(folderIDs: (viewModel.ownSpaceFavorites?.items ?? []).map { $0.folder.id })
         }
@@ -181,7 +216,7 @@ struct UploaderSpaceContentView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, horizontalInset)
+        .padding(.horizontal, effectiveHorizontalInset)
     }
 
     @ViewBuilder private func ownLibraryStatus(

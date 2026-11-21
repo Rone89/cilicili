@@ -51,12 +51,20 @@ extension LiveRoomContentView {
     }
 
     func requestLiveFullscreenGeometry(for mode: PlayerFullscreenMode) {
+        let keyWindow = UIApplication.shared.playbackDetailForegroundKeyWindow
+        guard !AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: keyWindow) else {
+            return
+        }
         if let windowScene = UIApplication.shared.playbackDetailForegroundWindowScene {
             AppOrientationLock.requestPlaybackDetailGeometry(for: mode, in: windowScene)
         }
     }
 
     func requestLivePortraitGeometry() {
+        let keyWindow = UIApplication.shared.playbackDetailForegroundKeyWindow
+        guard !AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: keyWindow) else {
+            return
+        }
         if let windowScene = UIApplication.shared.playbackDetailForegroundWindowScene {
             AppOrientationLock.update(to: .allButUpsideDown, in: windowScene)
             AppOrientationLock.requestGeometryUpdate(to: .portrait, in: windowScene)
@@ -73,6 +81,11 @@ extension LiveRoomContentView {
     }
 
     func updateLiveFullscreenOrientation(_ orientation: UIDeviceOrientation) {
+        let keyWindow = UIApplication.shared.playbackDetailForegroundKeyWindow
+        if libraryStore.adaptiveLargeScreenLayoutExperimentEnabled,
+           AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: keyWindow) {
+            return
+        }
         switch orientation {
         case .landscapeLeft, .landscapeRight:
             guard fullscreenMode?.isLandscape != true else { return }

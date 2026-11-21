@@ -3,12 +3,14 @@ import SwiftUI
 struct SearchListView: View {
     @Environment(\.rootTabScrollRequest) private var rootTabScrollRequest
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
     var titleState: FeedChromeTitleState? = nil
     @State private var scrollPosition = ScrollPosition()
     @State private var isPaginationVisible = false
+    @State private var containerSize: CGSize = .zero
     // Offset samples do not drive UI updates while the user scrolls.
     @State private var scrollOffsets = ScrollOffsets()
 
@@ -17,32 +19,80 @@ struct SearchListView: View {
         var saved: CGFloat?
     }
 
-    private let discoveryColumns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-    ]
+    private var adaptiveEnabled: Bool {
+        libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+    }
+
+    private var horizontalInset: CGFloat {
+        adaptiveEnabled && containerSize.width > 0
+            ? AdaptiveLayoutPolicy.horizontalInset(
+                for: containerSize.width,
+                horizontalSizeClass: horizontalSizeClass,
+                containerHeight: containerSize.height,
+                adaptiveEnabled: true
+            )
+            : libraryStore.standardPageHorizontalInset
+    }
+
+    private var discoveryColumnCount: Int {
+        adaptiveEnabled && containerSize.width > 0
+            ? AdaptiveLayoutPolicy.searchDiscoveryColumnCount(
+                containerWidth: containerSize.width,
+                containerHeight: containerSize.height,
+                horizontalSizeClass: horizontalSizeClass,
+                adaptiveEnabled: true
+            )
+            : 2
+    }
+
+    private var resultColumnCount: Int {
+        adaptiveEnabled && containerSize.width > 0
+            ? AdaptiveLayoutPolicy.listCardColumnCount(
+                containerWidth: containerSize.width,
+                containerHeight: containerSize.height,
+                horizontalSizeClass: horizontalSizeClass,
+                adaptiveEnabled: true
+            )
+            : 1
+    }
+
+    private var discoveryColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 10), count: max(discoveryColumnCount, 1))
+    }
+
+    private var resultColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: max(resultColumnCount, 1))
+    }
 
     var body: some View {
-        let horizontalInset = libraryStore.standardPageHorizontalInset
-
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if !viewModel.showsDiscovery {
-                    SearchScopeBar(viewModel: viewModel)
+                    SearchScopeBar(viewModel: viewModel, horizontalInset: horizontalInset)
                         .padding(.horizontal, -horizontalInset)
                 }
                 if viewModel.showsDiscovery {
                     discoveryContent
                 } else if viewModel.results.isEmpty && viewModel.state.isLoading {
-                    SearchLoadingContent(scope: viewModel.selectedScope)
+                    SearchLoadingContent(scope: viewModel.selectedScope, columnCount: resultColumnCount)
                 } else if viewModel.showsEmptyResults {
                     emptyResultsView
                 } else {
                     resultsContent
                 }
             }
+            .frame(maxWidth: adaptiveEnabled ? AdaptiveLayoutPolicy.searchResultsMaxWidth : .infinity, alignment: .leading)
             .padding(.horizontal, horizontalInset)
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.bottom, 18)
+        }
+        .onGeometryChange(for: CGSize.self) { geometry in
+            geometry.size
+        } action: { _, size in
+            let rounded = CGSize(width: size.width.rounded(.down), height: size.height.rounded(.down))
+            guard abs(rounded.width - containerSize.width) > 0.5
+                    || abs(rounded.height - containerSize.height) > 0.5 else { return }
+            containerSize = rounded
         }
         .accessibilityIdentifier("search.results")
         .scrollPosition($scrollPosition)
@@ -108,7 +158,7 @@ struct SearchListView: View {
             if !showsHotSearches {
                 SearchDiscoveryEmptyCard(title: "开始搜索", message: "输入关键词后搜索内容。")
             } else if viewModel.hotSearchState.isLoading {
-                SearchDiscoveryLoadingCard()
+                SearchDiscoveryLoadingCard(columnCount: discoveryColumnCount)
             } else if viewModel.hotSearches.isEmpty {
                 SearchDiscoveryEmptyCard(title: "暂无热门搜索", message: "输入关键词后搜索。")
             } else {
@@ -127,9 +177,18 @@ struct SearchListView: View {
 
     @ViewBuilder
     private var resultsContent: some View {
-        ForEach(viewModel.results) { result in
-            SearchStructuredResultCard(result: result)
-                .equatable()
+        if resultColumnCount > 1 {
+            LazyVGrid(columns: resultColumns, alignment: .leading, spacing: 12) {
+                ForEach(viewModel.results) { result in
+                    SearchStructuredResultCard(result: result)
+                        .equatable()
+                }
+            }
+        } else {
+            ForEach(viewModel.results) { result in
+                SearchStructuredResultCard(result: result)
+                    .equatable()
+            }
         }
 
         if !viewModel.results.isEmpty {
@@ -147,7 +206,12 @@ struct SearchListView: View {
         }
 
         if viewModel.state.isLoading {
-            SearchLoadingContent(scope: viewModel.selectedScope, count: 4, showsTitle: false)
+            SearchLoadingContent(
+                scope: viewModel.selectedScope,
+                count: max(4, resultColumnCount * 2),
+                showsTitle: false,
+                columnCount: resultColumnCount
+            )
         }
     }
 
@@ -251,14 +315,17 @@ private struct SearchDiscoveryChip: View {
 }
 
 private struct SearchDiscoveryLoadingCard: View {
+    var columnCount: Int = 2
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 10), count: max(columnCount, 1))
+    }
+
     var body: some View {
         SearchContentSection(title: "大家都在搜", systemImage: "flame.fill") {
             SkeletonLoadingContainer {
                 LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(), spacing: 10),
-                        GridItem(.flexible(), spacing: 10),
-                    ],
+                    columns: columns,
                     spacing: 10
                 ) {
                     ForEach(0..<10, id: \.self) { _ in
@@ -306,6 +373,11 @@ struct SearchLoadingContent: View {
     var scope: SearchScope = .video
     var count = 8
     var showsTitle = true
+    var columnCount = 1
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: max(columnCount, 1))
+    }
 
     var body: some View {
         SkeletonLoadingContainer {
@@ -316,8 +388,16 @@ struct SearchLoadingContent: View {
                         .labelStyle(.titleAndIcon)
                 }
 
-                ForEach(0..<count, id: \.self) { _ in
-                    SearchScopedResultSkeletonRow(scope: scope)
+                if columnCount > 1 {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(0..<count, id: \.self) { _ in
+                            SearchScopedResultSkeletonRow(scope: scope)
+                        }
+                    }
+                } else {
+                    ForEach(0..<count, id: \.self) { _ in
+                        SearchScopedResultSkeletonRow(scope: scope)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -423,6 +503,7 @@ private struct SearchNonVideoResultSkeletonRow: View {
 /// Horizontally scrollable category row; the first capsule rests 20pt from the screen edge.
 private struct SearchScopeBar: View {
     @ObservedObject var viewModel: SearchViewModel
+    var horizontalInset: CGFloat = 20
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -454,7 +535,7 @@ private struct SearchScopeBar: View {
                     .accessibilityIdentifier("search.scope.\(scope.rawValue)")
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, horizontalInset)
         }
             .padding(.vertical, 8)
             .background(Color(.systemGroupedBackground))

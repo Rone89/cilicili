@@ -20,16 +20,30 @@ enum AppOrientationLock {
         requestGeometryUpdate(to: orientations, in: targetScenes)
     }
 
+    static func resolvedSupportedOrientations(for window: UIWindow?) -> UIInterfaceOrientationMask {
+        if supportedOrientations != .portrait {
+            return supportedOrientations
+        }
+        if AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: window) {
+            return window?.traitCollection.userInterfaceIdiom == .pad ? .all : .allButUpsideDown
+        }
+        return .portrait
+    }
+
     static func restorePortrait(in scene: UIWindowScene? = nil) {
         let targetScenes = scenes(matching: scene)
-        let needsGeometryUpdate = targetScenes.contains {
+        let compactPortraitScenes = targetScenes.filter { candidateScene in
+            let primaryWindow = candidateScene.windows.first { $0.participatesInAppOrientationChrome }
+            return !AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: primaryWindow)
+        }
+        let needsGeometryUpdate = compactPortraitScenes.contains {
             !$0.effectiveGeometry.interfaceOrientation.isPortrait
         }
         guard supportedOrientations != .portrait || needsGeometryUpdate else { return }
         supportedOrientations = .portrait
         requestInterfaceUpdates(in: targetScenes)
         guard needsGeometryUpdate else { return }
-        requestGeometryUpdate(to: .portrait, in: targetScenes)
+        requestGeometryUpdate(to: .portrait, in: compactPortraitScenes)
     }
 
     static func requestGeometryUpdate(
@@ -273,7 +287,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
-        return AppOrientationLock.supportedOrientations
+        AppOrientationLock.resolvedSupportedOrientations(for: window)
     }
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {

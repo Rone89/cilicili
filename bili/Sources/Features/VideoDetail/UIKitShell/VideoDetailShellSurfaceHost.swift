@@ -455,6 +455,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         return rotationCoordinator.layoutLandscape
             || rotationCoordinator.isLandscape
             || rotationCoordinator.isPortraitFullscreen
+            || rotationCoordinator.isInPlaceFullscreen
     }
 
     private var shouldOverrideInlineFullscreenButton: Bool {
@@ -1367,7 +1368,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     @discardableResult
     private func reconcileFullscreenBoundsIfNeeded() -> Bool {
         guard !rotationCoordinator.isTransitioning else { return false }
-        guard rotationCoordinator.isLandscape || rotationCoordinator.isPortraitFullscreen else {
+        guard rotationCoordinator.isLandscape || rotationCoordinator.isPortraitFullscreen || rotationCoordinator.isInPlaceFullscreen else {
             return false
         }
         guard let window else { return false }
@@ -1378,6 +1379,7 @@ final class VideoDetailShellSurfaceHost: UIView {
             && abs(currentSize.height - windowSize.width) <= 1
             && currentSize != windowSize
         let expectsFullWindow = rotationCoordinator.isPortraitFullscreen
+            || rotationCoordinator.isInPlaceFullscreen
             || (rotationCoordinator.isLandscape && windowSize.width > windowSize.height)
         guard isSwapped || expectsFullWindow else { return false }
         guard let superview else { return false }
@@ -3381,8 +3383,8 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
         switch libraryStore.appearanceMode {
         case .system:
             // 视频页会为状态栏对比度把窗口强制为深色，窗口 trait 不可用；
-            // 屏幕 trait 反映系统外观设置。
-            return UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light
+            // 使用系统全局当前 traitCollection 避免硬编码 UIScreen.main。
+            return UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light
         case .light:
             return .light
         case .dark:

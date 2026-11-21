@@ -6,13 +6,29 @@ struct LiveRoomContentLayout {
     let fullscreenGeometry: PlaybackDetailFullscreenGeometry
     let fullscreenMode: PlayerFullscreenMode?
     let isCompletingFullscreenExit: Bool
+    var horizontalSizeClass: UserInterfaceSizeClass? = nil
+    var adaptiveLargeScreenEnabled: Bool = false
 
     var isInlineFullscreen: Bool {
         fullscreenMode != nil || isCompletingFullscreenExit
     }
 
+    var isSplitTwoColumn: Bool {
+        guard !isInlineFullscreen, adaptiveLargeScreenEnabled else { return false }
+        return AdaptiveLayoutPolicy.videoDetailMode(
+            containerSize: proxySize,
+            horizontalSizeClass: horizontalSizeClass,
+            isFullscreenActive: false,
+            adaptiveEnabled: true
+        ) == .twoColumnSplit
+    }
+
     var isLandscape: Bool {
-        sceneIsLandscape && !isInlineFullscreen
+        guard !isSplitTwoColumn else { return false }
+        if adaptiveLargeScreenEnabled, horizontalSizeClass == .regular {
+            return false
+        }
+        return sceneIsLandscape && !isInlineFullscreen
     }
 
     var shouldHideSystemChrome: Bool {
@@ -24,11 +40,15 @@ struct LiveRoomContentLayout {
     }
 
     var screenSize: CGSize {
-        isLandscape ? fullscreenGeometry.size : layoutSize
+        if isLandscape { return fullscreenGeometry.size }
+        if isSplitTwoColumn { return proxySize }
+        return layoutSize
     }
 
     var frameSize: CGSize {
-        isLandscape ? fullscreenGeometry.size : layoutSize
+        if isLandscape { return fullscreenGeometry.size }
+        if isSplitTwoColumn { return proxySize }
+        return layoutSize
     }
 
     var frameOffset: CGSize {

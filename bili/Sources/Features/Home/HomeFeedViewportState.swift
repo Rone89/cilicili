@@ -22,12 +22,17 @@ struct HomeFeedViewportState: Equatable {
 
     func layoutMetrics(
         for mode: HomeFeedLayout,
-        standardHorizontalInset: CGFloat = 20
+        standardHorizontalInset: CGFloat = 20,
+        horizontalSizeClass: UserInterfaceSizeClass? = nil,
+        adaptiveLargeScreenEnabled: Bool = false
     ) -> HomeFeedLayoutMetrics {
         HomeFeedLayoutMetrics(
             mode: mode,
             containerWidth: feedContainerWidth,
-            standardHorizontalInset: standardHorizontalInset
+            viewportHeight: viewportHeight > 0 ? viewportHeight : 900,
+            horizontalSizeClass: horizontalSizeClass,
+            standardHorizontalInset: standardHorizontalInset,
+            adaptiveLargeScreenEnabled: adaptiveLargeScreenEnabled
         )
     }
 }

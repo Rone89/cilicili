@@ -20,33 +20,67 @@ struct HomeFeedSingleColumnContent: View {
     }
 
     var body: some View {
-        LazyVStack(spacing: 0) {
-            ForEach(cells) { cell in
-                if visibleLastSeenMarkerIndex == cell.index {
-                    HomeFeedLastSeenMarkerCard(
-                        metrics: metrics,
-                        action: actions.onRefreshFromLastSeenMarker
-                    )
-                    .padding(.top, metrics.mode == .borderedSingleColumn ? 6 : 9)
-                    .padding(.bottom, metrics.mode == .borderedSingleColumn ? 6 : 14)
+        Group {
+            if metrics.singleColumnColumns.count > 1 {
+                LazyVGrid(
+                    columns: metrics.singleColumnColumns,
+                    alignment: .leading,
+                    spacing: metrics.singleColumnGridSpacing
+                ) {
+                    ForEach(cells) { cell in
+                        if visibleLastSeenMarkerIndex == cell.index {
+                            HomeFeedLastSeenMarkerCard(
+                                metrics: metrics,
+                                action: actions.onRefreshFromLastSeenMarker
+                            )
+                        }
+
+                        HomeFeedSingleColumnCard(
+                            metrics: metrics,
+                            cell: cell,
+                            isFirstCell: cell.id == cells.first?.id,
+                            loadMoreTriggerCellID: loadMoreTriggerCellID,
+                            actions: actions
+                        )
+                    }
+
+                    if isLoadingMore {
+                        InlineLoadingStateView(title: "正在加载更多")
+                            .padding(.vertical, 8)
+                            .gridCellColumns(metrics.singleColumnColumns.count)
+                    }
                 }
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(cells) { cell in
+                        if visibleLastSeenMarkerIndex == cell.index {
+                            HomeFeedLastSeenMarkerCard(
+                                metrics: metrics,
+                                action: actions.onRefreshFromLastSeenMarker
+                            )
+                            .padding(.top, metrics.mode == .borderedSingleColumn ? 6 : 9)
+                            .padding(.bottom, metrics.mode == .borderedSingleColumn ? 6 : 14)
+                        }
 
-                HomeFeedSingleColumnCard(
-                    metrics: metrics,
-                    cell: cell,
-                    isFirstCell: cell.id == cells.first?.id,
-                    loadMoreTriggerCellID: loadMoreTriggerCellID,
-                    actions: actions
-                )
-            }
+                        HomeFeedSingleColumnCard(
+                            metrics: metrics,
+                            cell: cell,
+                            isFirstCell: cell.id == cells.first?.id,
+                            loadMoreTriggerCellID: loadMoreTriggerCellID,
+                            actions: actions
+                        )
+                    }
 
-            if isLoadingMore {
-                InlineLoadingStateView(title: "正在加载更多")
-                    .padding(.vertical, 8)
+                    if isLoadingMore {
+                        InlineLoadingStateView(title: "正在加载更多")
+                            .padding(.vertical, 8)
+                    }
+                }
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: metrics.maxContentWidth ?? .infinity)
         .padding(.horizontal, metrics.singleColumnHorizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .center)
         .padding(.top, 0)
         .padding(.bottom, 18)
     }
