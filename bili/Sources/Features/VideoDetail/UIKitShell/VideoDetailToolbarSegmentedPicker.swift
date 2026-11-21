@@ -16,7 +16,7 @@ struct VideoDetailToolbarSegmentedPickerView: View {
 }
 
 struct VideoDetailVerticalToolbarTabButton: View {
-    @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let tab: VideoDetailContentTab
     let isSelected: Bool
     let action: () -> Void
@@ -40,13 +40,25 @@ struct VideoDetailVerticalToolbarTabButton: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            if reduceMotion {
+                action()
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    action()
+                }
+            }
+        } label: {
             Image(systemName: symbolName)
-                .symbolVariant(isSelected ? .fill : .none)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(isSelected ? appTintColor : .primary)
+                .font(.system(size: 18, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.72))
+                .frame(width: 38, height: 38)
+                .background {
+                    Circle()
+                        .fill(Color.primary.opacity(isSelected ? 0.11 : 0))
+                }
         }
-        .tint(isSelected ? appTintColor : .primary)
+        .tint(.primary)
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(accessibilityID)
