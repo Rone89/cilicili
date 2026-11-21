@@ -30,6 +30,15 @@ struct VideoDetailVerticalToolbarTabButton: View {
         }
     }
 
+    private var symbolFontSize: CGFloat {
+        switch tab {
+        case .detail:
+            return 18
+        case .comments:
+            return 16
+        }
+    }
+
     private var accessibilityID: String {
         switch tab {
         case .detail:
@@ -50,7 +59,7 @@ struct VideoDetailVerticalToolbarTabButton: View {
             }
         } label: {
             Image(systemName: symbolName)
-                .font(.system(size: 18, weight: isSelected ? .semibold : .medium))
+                .font(.system(size: symbolFontSize, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.72))
                 .frame(width: 38, height: 38)
                 .background {
