@@ -10,6 +10,7 @@ struct BiliPlayerSurfaceGestureLayer<Content: View>: View {
     let onSingleTap: () -> Void
     let onDoubleTap: () -> Void
     let onBeginSpeedBoost: () -> Bool
+    var onUpdateSpeedBoost: (CGFloat, CGFloat) -> Void = { _, _ in }
     let onEndSpeedBoost: (PlayerSpeedBoostEndReason) -> Void
     let onHorizontalSeekStart: (Double) -> Void
     let onHorizontalSeekChanged: (Double, CGFloat) -> Void
@@ -48,6 +49,7 @@ struct BiliPlayerSurfaceGestureLayer<Content: View>: View {
                 onSingleTap: onSingleTap,
                 onDoubleTap: onDoubleTap,
                 onBeginSpeedBoost: onBeginSpeedBoost,
+                onUpdateSpeedBoost: onUpdateSpeedBoost,
                 onEndSpeedBoost: onEndSpeedBoost,
                 onHorizontalSeekStart: onHorizontalSeekStart,
                 onHorizontalSeekChanged: onHorizontalSeekChanged,
@@ -178,6 +180,7 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
     let onSingleTap: () -> Void
     let onDoubleTap: () -> Void
     let onBeginSpeedBoost: () -> Bool
+    var onUpdateSpeedBoost: (CGFloat, CGFloat) -> Void = { _, _ in }
     let onEndSpeedBoost: (PlayerSpeedBoostEndReason) -> Void
     let onHorizontalSeekStart: (Double) -> Void
     let onHorizontalSeekChanged: (Double, CGFloat) -> Void
@@ -247,6 +250,7 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
         private var currentSeekProgress: Double?
         private var isHorizontalSeekCancelPending = false
         private var isSpeedBoostActive = false
+        private var speedBoostStartLocation: CGPoint = .zero
 
         init(parent: BiliPlayerUIKitSurfaceGestureOverlay) {
             self.parent = parent
@@ -335,11 +339,30 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
             switch gesture.state {
             case .began:
                 guard !isSpeedBoostActive, !isPanInteractionActive else { return }
+                if let view = gesture.view {
+                    let location = gesture.location(in: view)
+                    guard PlayerSpeedBoostPolicy.allowsGestureStart(
+                        at: location.x,
+                        containerWidth: view.bounds.width
+                    ) else {
+                        return
+                    }
+                    speedBoostStartLocation = location
+                } else {
+                    speedBoostStartLocation = .zero
+                }
                 let didBegin = parent.onBeginSpeedBoost()
                 isSpeedBoostActive = didBegin
                 if didBegin, case .undecided = panMode {
                     panMode = .ignored
                 }
+            case .changed:
+                guard isSpeedBoostActive, let view = gesture.view else { return }
+                let location = gesture.location(in: view)
+                parent.onUpdateSpeedBoost(
+                    location.x - speedBoostStartLocation.x,
+                    location.y - speedBoostStartLocation.y
+                )
             case .ended:
                 guard isSpeedBoostActive else { return }
                 isSpeedBoostActive = false

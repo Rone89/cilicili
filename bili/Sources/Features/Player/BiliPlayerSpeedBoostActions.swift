@@ -17,6 +17,20 @@ struct BiliPlayerSpeedBoostActions {
         }
     }
 
+    func updateGestureOffset(horizontalOffset: CGFloat, verticalOffset: CGFloat) {
+        speedBoostModel.updateGestureOffset(
+            horizontalOffset: horizontalOffset,
+            verticalOffset: verticalOffset,
+            playerViewModel: viewModel
+        )
+    }
+
+    func unlock() {
+        speedBoostModel.unlock(playerViewModel: viewModel) {
+            visibilityActions.show(scheduleAutoHide: true, animated: false)
+        }
+    }
+
     func end(reason: PlayerSpeedBoostEndReason) {
         speedBoostModel.end(
             reason: reason,

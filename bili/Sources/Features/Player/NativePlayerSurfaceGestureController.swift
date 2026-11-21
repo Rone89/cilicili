@@ -25,7 +25,10 @@ final class NativePlayerSurfaceGestureController: NSObject {
         let controller = UIHostingController(
             rootView: NativePlayerSurfaceGestureHUD(
                 model: hudModel,
-                speedBoostModel: speedBoostModel
+                speedBoostModel: speedBoostModel,
+                onUnlockSpeedBoost: { [weak self] in
+                    self?.unlockSpeedBoost()
+                }
             )
         )
         controller.overrideUserInterfaceStyle = .dark
@@ -49,6 +52,7 @@ final class NativePlayerSurfaceGestureController: NSObject {
     private var lastHorizontalTranslationX: CGFloat = 0
     private var currentSeekProgress: Double?
     private var isSpeedBoostGestureActive = false
+    private var speedBoostStartLocation: CGPoint?
     private var isCustomGestureSuppressingControls = false
     private var didGestureHideVisibleNativeControls = false
     private var directRestoredShowsPlaybackControls: Bool?
@@ -314,10 +318,22 @@ final class NativePlayerSurfaceGestureController: NSObject {
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-        handleLongPressState(gesture.state)
+        if let view = gesture.view {
+            handleLongPressState(
+                gesture.state,
+                location: gesture.location(in: view),
+                containerWidth: view.bounds.width
+            )
+        } else {
+            handleLongPressState(gesture.state)
+        }
     }
 
-    private func handleLongPressState(_ state: UIGestureRecognizer.State) {
+    private func handleLongPressState(
+        _ state: UIGestureRecognizer.State,
+        location: CGPoint? = nil,
+        containerWidth: CGFloat = 0
+    ) {
         guard let viewModel, !viewModel.isTerminated else {
             cancelActiveInteraction(speedBoostReason: .terminated)
             return
@@ -326,6 +342,11 @@ final class NativePlayerSurfaceGestureController: NSObject {
         switch state {
         case .began:
             guard !isSpeedBoostGestureActive, !isPanInteractionActive else { return }
+            if let location, containerWidth > 0,
+               !PlayerSpeedBoostPolicy.allowsGestureStart(at: location.x, containerWidth: containerWidth) {
+                return
+            }
+            speedBoostStartLocation = location
             let isSurfacePlaying = viewModel.isPlaying || (playerViewController?.player?.rate ?? 0) > 0
             let didBegin = speedBoostModel.beginIfNeeded(
                 playerViewModel: viewModel,
@@ -341,12 +362,32 @@ final class NativePlayerSurfaceGestureController: NSObject {
                     panMode = .ignored
                 }
             }
+        case .changed:
+            guard isSpeedBoostGestureActive,
+                  let location,
+                  let start = speedBoostStartLocation
+            else { return }
+            speedBoostModel.updateGestureOffset(
+                horizontalOffset: location.x - start.x,
+                verticalOffset: location.y - start.y,
+                playerViewModel: viewModel
+            )
         case .ended:
+            speedBoostStartLocation = nil
             endSpeedBoostIfActive(reason: .gestureEnded)
         case .cancelled, .failed:
+            speedBoostStartLocation = nil
             endSpeedBoostIfActive(reason: .systemInterrupted)
         default:
             break
+        }
+    }
+
+    private func unlockSpeedBoost() {
+        guard let viewModel else { return }
+        speedBoostModel.unlock(playerViewModel: viewModel) {}
+        if !isPanInteractionActive {
+            endCustomGestureControlsSuppressionIfNeeded()
         }
     }
 
@@ -687,40 +728,47 @@ private final class NativePlayerSurfaceGestureHUDModel: ObservableObject {
 private struct NativePlayerSurfaceGestureHUD: View {
     @ObservedObject var model: NativePlayerSurfaceGestureHUDModel
     @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
+    let onUnlockSpeedBoost: () -> Void
 
     var body: some View {
         ZStack {
-            switch model.presentation {
-            case let .seek(progress, duration):
-                PlayerSeekPreviewOverlay(
-                    presentation: PlayerSeekPreviewPresentation(
-                        progress: progress,
-                        duration: duration,
-                        image: nil,
-                        imageAspectRatio: nil,
-                        isLoading: false,
-                        isCancelPending: false
+            Group {
+                switch model.presentation {
+                case let .seek(progress, duration):
+                    PlayerSeekPreviewOverlay(
+                        presentation: PlayerSeekPreviewPresentation(
+                            progress: progress,
+                            duration: duration,
+                            image: nil,
+                            imageAspectRatio: nil,
+                            isLoading: false,
+                            isCancelPending: false
+                        )
                     )
-                )
-            case let .adjustment(target, value):
-                PlayerSurfaceVerticalAdjustmentIndicator(target: target, value: value)
-            case nil:
-                EmptyView()
+                case let .adjustment(target, value):
+                    PlayerSurfaceVerticalAdjustmentIndicator(target: target, value: value)
+                case nil:
+                    EmptyView()
+                }
             }
+            .allowsHitTesting(false)
 
             if speedBoostModel.isIndicatorVisible {
                 PlayerSpeedBoostIndicator(
                     phase: speedBoostModel.phase,
-                    displayedRate: speedBoostModel.displayedRate
+                    displayedRate: speedBoostModel.displayedRate,
+                    displayedRateTitle: speedBoostModel.displayedRateTitle,
+                    isLockTargetHighlighted: speedBoostModel.isLockTargetHighlighted,
+                    onUnlock: onUnlockSpeedBoost
                 )
                 .padding(.top, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .accessibilityIdentifier("ui.player.nativeSpeedBoostIndicator")
+                .allowsHitTesting(speedBoostModel.phase == .locked)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.colorScheme, .dark)
-        .allowsHitTesting(false)
     }
 }

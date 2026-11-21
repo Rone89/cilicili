@@ -2056,7 +2056,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                         BiliPlayerSurfaceOverlayLayer(
                             state: chromeState,
                             speedBoostModel: renderContext.speedBoostModel,
-                            seekPreviewModel: renderContext.seekPreviewModel
+                            seekPreviewModel: renderContext.seekPreviewModel,
+                            onUnlockSpeedBoost: speedActions.unlock
                         )
                             .zIndex(2)
 

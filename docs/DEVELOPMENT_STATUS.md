@@ -2978,3 +2978,16 @@
   - **iPad 真机多窗口 Scene、Stage Manager 拖拽缩放、外接显示器、字体放大与真机视频渲染/PiP 音画交互未验证**（未连接对应真机设备）。
 - **真机验收待办**：
   - 在真机 iPad（分屏 / Stage Manager / 连续缩窄再拉宽 / 外接显示器）与 iPhone Duo（外屏闭合、展开内屏、折叠半折、视频播放中/暂停态/Seek 后折展）上按验收清单实测。
+
+### 2026-11-22（长按倍速滑动切档与上滑锁定手势增强）
+
+- **已实现改动（`codex/adaptive-ipad-duo`）**：
+  - [PlayerStateViewModel.swift](bili/Sources/Features/Player/PlayerStateViewModel.swift)：新增 `setTemporaryPlaybackRate(_ rawRate: Double)`，在不污染常规倍速菜单 `BiliPlaybackRate.allCases` 的前提下支持 `1.5x / 2.0x / 3.0x / 4.0x` 临时倍速调节。
+  - [PlayerSpeedBoostModel.swift](bili/Sources/Features/Player/PlayerSpeedBoostModel.swift)：新增 `PlayerSpeedBoostPolicy` 左右边缘防误触判定（`allowsGestureStart`）、横向滑动多档切换与迟滞防抖（`resolvedBoostRate`）、上滑锁定判定（`isLockTargetHighlighted`，触发阈值 `-52pt`、回退 `-36pt`），以及 `.locked` 相位和 `unlock` 恢复长按前真实倍速逻辑，切档与锁定均附带轻量触觉反馈。
+  - [BiliPlayerSpeedBoostActions.swift](bili/Sources/Features/Player/BiliPlayerSpeedBoostActions.swift)、[BiliPlayerSurfaceGestureActions.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureActions.swift)、[BiliPlayerSurfaceGestureLayerHost.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayerHost.swift)、[BiliPlayerSurfaceGestureLayer.swift](bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift)、[NativePlayerSurfaceGestureController.swift](bili/Sources/Features/Player/NativePlayerSurfaceGestureController.swift) 与 [VideoDetailShellSurfaceHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift)：打通自定义播放器层与原生全屏控制器的长按偏移跟踪及锁定点击解除通路。
+  - [PlayerSpeedBoostIndicator.swift](bili/Sources/Features/Player/PlayerSpeedBoostIndicator.swift) & [BiliPlayerSurfaceOverlayLayer.swift](bili/Sources/Features/Player/BiliPlayerSurfaceOverlayLayer.swift)：加速态展示当前倍速与「左右滑调速 · 上滑锁定 / 松手锁定倍速」提示；锁定态显示可点击的「已锁定 · 点击恢复」胶囊，非锁定态保持完全透传不阻挡手势。
+  - [PlayerSpeedBoostPolicyTests.swift](biliTests/PlayerSpeedBoostPolicyTests.swift)：补充边缘防误触、横向多档滑动迟滞、上滑锁定及点击恢复原倍速 3 项单元测试。
+- **已验证（于最后一次代码改动后执行）**：
+  - `PlayerSpeedBoostPolicyTests`（9/9）与 `AdaptiveLayoutAndPlayerIdentityTests`（5/5）在 `iPhone 18 Pro Max`（iOS 27.0）全部通过，**14/14 通过（0 失败，0 跳过）**。
+- **真机待办**：
+  - 在真机上实测单指长按 `2x` 后左右滑切换 `1.5x / 2x / 3x / 4x` 及上滑锁定、点击浮标恢复的手感与触觉反馈；如需重新打包带该功能的未签名 IPA，可再次执行 `Scripts/build-release-unsigned-ipa.sh`。

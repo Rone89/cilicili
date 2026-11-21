@@ -4064,9 +4064,19 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     func setTemporaryPlaybackRate(_ rate: BiliPlaybackRate) {
         guard !isTerminated else { return }
-        guard playbackRate != rate else { return }
-        playbackRate = rate
+        if playbackRate != rate {
+            playbackRate = rate
+        }
         engine.setTemporaryPlaybackRate(rate.rawValue)
+        rescheduleTimeObserverIfNeeded()
+    }
+
+    func setTemporaryPlaybackRate(_ rawRate: Double) {
+        guard !isTerminated else { return }
+        if let matched = BiliPlaybackRate(rawValue: rawRate), playbackRate != matched {
+            playbackRate = matched
+        }
+        engine.setTemporaryPlaybackRate(rawRate)
         rescheduleTimeObserverIfNeeded()
     }
 

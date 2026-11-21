@@ -6,80 +6,86 @@ struct BiliPlayerSurfaceOverlayLayer: View {
     let state: BiliPlayerSurfaceChromeState
     let speedBoostModel: PlayerSpeedBoostModel
     let seekPreviewModel: PlayerSeekPreviewModel
+    var onUnlockSpeedBoost: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
-            if let surfaceOverlay = state.surfaceOverlay {
-                surfaceOverlay
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .zIndex(1)
-            }
+            Group {
+                if let surfaceOverlay = state.surfaceOverlay {
+                    surfaceOverlay
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .zIndex(1)
+                }
 
-            if state.showsPlayerLoadingChrome {
-                PlayerStartupLoadingChrome(isBuffering: state.isBuffering)
-                    .padding(state.presentation == .embedded ? 12 : 16)
-                    .zIndex(2)
-            }
+                if state.showsPlayerLoadingChrome {
+                    PlayerStartupLoadingChrome(isBuffering: state.isBuffering)
+                        .padding(state.presentation == .embedded ? 12 : 16)
+                        .zIndex(2)
+                }
 
-            if let errorMessage = state.errorMessage {
-                PlayerPlaybackErrorChrome(message: errorMessage)
-                    .padding(state.presentation == .embedded ? 10 : 16)
-                    .zIndex(3)
-            }
+                if let errorMessage = state.errorMessage {
+                    PlayerPlaybackErrorChrome(message: errorMessage)
+                        .padding(state.presentation == .embedded ? 10 : 16)
+                        .zIndex(3)
+                }
 
-            if state.showsSeekSnapshot {
-                PlayerRotationTransitionSnapshotView(
-                    snapshot: state.seekSnapshot,
-                    fallbackCoverURL: nil,
-                    constrainsToVideoAspect: false
-                )
-                .background(Color.black)
-                .opacity(state.seekSnapshotDisplayOpacity)
-                .zIndex(5)
-            }
+                if state.showsSeekSnapshot {
+                    PlayerRotationTransitionSnapshotView(
+                        snapshot: state.seekSnapshot,
+                        fallbackCoverURL: nil,
+                        constrainsToVideoAspect: false
+                    )
+                    .background(Color.black)
+                    .opacity(state.seekSnapshotDisplayOpacity)
+                    .zIndex(5)
+                }
 
-            if state.showsAppBackgroundRecoverySnapshot {
-                PlayerRotationTransitionSnapshotView(
-                    snapshot: state.appBackgroundRecoverySnapshot,
-                    fallbackCoverURL: nil,
-                    constrainsToVideoAspect: state.constrainsRotationSnapshotToVideoAspect
-                )
-                .background(Color.black)
-                .opacity(state.appBackgroundRecoverySnapshotOpacity)
-                .zIndex(6)
-            }
+                if state.showsAppBackgroundRecoverySnapshot {
+                    PlayerRotationTransitionSnapshotView(
+                        snapshot: state.appBackgroundRecoverySnapshot,
+                        fallbackCoverURL: nil,
+                        constrainsToVideoAspect: state.constrainsRotationSnapshotToVideoAspect
+                    )
+                    .background(Color.black)
+                    .opacity(state.appBackgroundRecoverySnapshotOpacity)
+                    .zIndex(6)
+                }
 
-            if state.showsRotationSnapshot {
-                PlayerRotationTransitionSnapshotView(
-                    snapshot: state.rotationSnapshot,
-                    fallbackCoverURL: state.rotationFallbackCoverURL,
-                    constrainsToVideoAspect: state.constrainsRotationSnapshotToVideoAspect
-                )
-                .background(Color.black)
-                .opacity(state.rotationSnapshotOpacity)
-                .zIndex(7)
+                if state.showsRotationSnapshot {
+                    PlayerRotationTransitionSnapshotView(
+                        snapshot: state.rotationSnapshot,
+                        fallbackCoverURL: state.rotationFallbackCoverURL,
+                        constrainsToVideoAspect: state.constrainsRotationSnapshotToVideoAspect
+                    )
+                    .background(Color.black)
+                    .opacity(state.rotationSnapshotOpacity)
+                    .zIndex(7)
+                }
+
+                let topAccessoryPadding = max(0, state.contentInsets.top) + (state.presentation == .embedded ? 10 : 16)
+                if state.showsInlineLoadingProgress, !state.isUserSeeking, !networkUnavailable {
+                    PlayerInlineLoadingIndicator(message: "正在缓冲")
+                    .padding(.top, topAccessoryPadding)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .zIndex(6)
+                }
+
+                PlayerSeekPreviewOverlayHost(seekPreviewModel: seekPreviewModel)
+                    .zIndex(6)
             }
+            .allowsHitTesting(false)
 
             let topAccessoryPadding = max(0, state.contentInsets.top) + (state.presentation == .embedded ? 10 : 16)
-            if state.showsInlineLoadingProgress, !state.isUserSeeking, !networkUnavailable {
-                PlayerInlineLoadingIndicator(message: "正在缓冲")
-                .padding(.top, topAccessoryPadding)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                .zIndex(6)
-            }
-
             PlayerSpeedBoostOverlayHost(
                 speedBoostModel: speedBoostModel,
-                topAccessoryPadding: topAccessoryPadding
+                topAccessoryPadding: topAccessoryPadding,
+                onUnlockSpeedBoost: onUnlockSpeedBoost
             )
-            .zIndex(6)
-
-            PlayerSeekPreviewOverlayHost(seekPreviewModel: seekPreviewModel)
-                .zIndex(6)
+            .allowsHitTesting(speedBoostModel.phase == .locked && onUnlockSpeedBoost != nil)
+            .zIndex(8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(false)
         .onAppear { updateNetworkStatus() }
         .onReceive(NotificationCenter.default.publisher(for: .biliPlaybackConnectivityDidChange)) { _ in
             updateNetworkStatus()
@@ -104,12 +110,16 @@ struct BiliPlayerSurfaceOverlayLayer: View {
 private struct PlayerSpeedBoostOverlayHost: View {
     @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
     let topAccessoryPadding: CGFloat
+    let onUnlockSpeedBoost: (() -> Void)?
 
     var body: some View {
         if speedBoostModel.isIndicatorVisible {
             PlayerSpeedBoostIndicator(
                 phase: speedBoostModel.phase,
-                displayedRate: speedBoostModel.displayedRate
+                displayedRate: speedBoostModel.displayedRate,
+                displayedRateTitle: speedBoostModel.displayedRateTitle,
+                isLockTargetHighlighted: speedBoostModel.isLockTargetHighlighted,
+                onUnlock: onUnlockSpeedBoost
             )
             .padding(.top, topAccessoryPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

@@ -6,11 +6,13 @@ import UIKit
 enum PlayerSpeedBoostPhase: Equatable {
     case idle
     case boosting
+    case locked
     case restoring
 }
 
 enum PlayerSpeedBoostEndReason: String {
     case gestureEnded
+    case lockTapped
     case supersededBySeek
     case systemInterrupted
     case background
@@ -19,11 +21,11 @@ enum PlayerSpeedBoostEndReason: String {
     case terminated
 
     var isInterruption: Bool {
-        self != .gestureEnded
+        self != .gestureEnded && self != .lockTapped
     }
 
     var shouldShowPlaybackControls: Bool {
-        self == .gestureEnded
+        self == .gestureEnded || self == .lockTapped
     }
 }
 
@@ -34,6 +36,12 @@ nonisolated enum PlayerSpeedBoostPolicy {
         case paused
         case alreadyAtMaximumRate
     }
+
+    static let defaultBoostRate: Double = 2.0
+    static let stepHorizontalDistance: CGFloat = 48
+    static let hysteresisMargin: CGFloat = 8
+    static let lockTriggerVerticalOffset: CGFloat = -52
+    static let lockReleaseVerticalOffset: CGFloat = -36
 
     static func rejectionReason(
         isTerminated: Bool,
@@ -47,12 +55,87 @@ nonisolated enum PlayerSpeedBoostPolicy {
         if currentRate == .x20 { return .alreadyAtMaximumRate }
         return nil
     }
+
+    static func allowsGestureStart(at locationX: CGFloat, containerWidth: CGFloat) -> Bool {
+        guard containerWidth > 0 else { return true }
+        let edgeGuard = min(max(containerWidth * 0.05, 14), 24)
+        return locationX >= edgeGuard && locationX <= containerWidth - edgeGuard
+    }
+
+    static func availableBoostRates(for baselineRate: BiliPlaybackRate) -> [Double] {
+        if baselineRate.rawValue >= 1.5 {
+            return [2.0, 3.0, 4.0]
+        }
+        return [1.5, 2.0, 3.0, 4.0]
+    }
+
+    static func resolvedBoostRate(
+        forHorizontalOffset deltaX: CGFloat,
+        baselineRate: BiliPlaybackRate,
+        currentRate: Double
+    ) -> Double {
+        let tiers = availableBoostRates(for: baselineRate)
+        guard let defaultIndex = tiers.firstIndex(of: defaultBoostRate) else {
+            return defaultBoostRate
+        }
+        let currentIndex = tiers.firstIndex(of: currentRate) ?? defaultIndex
+        let rawStep = Int((deltaX / stepHorizontalDistance).rounded(.towardZero))
+        let unclampedTarget = defaultIndex + rawStep
+        let targetIndex = min(max(unclampedTarget, 0), tiers.count - 1)
+
+        if targetIndex == currentIndex {
+            return currentRate
+        }
+
+        // Apply deadband hysteresis around tier boundaries to avoid jitter.
+        if targetIndex > currentIndex {
+            let boundary = CGFloat(currentIndex + 1 - defaultIndex) * stepHorizontalDistance
+            if deltaX < boundary + hysteresisMargin && deltaX >= boundary - stepHorizontalDistance {
+                if currentIndex < defaultIndex && deltaX < 0 {
+                    // Moving back toward default 2.0x from 1.5x requires passing -step + margin
+                    let lowerBoundary = CGFloat(currentIndex - defaultIndex) * stepHorizontalDistance + stepHorizontalDistance
+                    if deltaX < lowerBoundary + hysteresisMargin {
+                        return currentRate
+                    }
+                } else if deltaX < boundary + hysteresisMargin {
+                    return currentRate
+                }
+            }
+        } else {
+            let boundary = CGFloat(currentIndex - defaultIndex) * stepHorizontalDistance
+            if deltaX > boundary - hysteresisMargin {
+                return currentRate
+            }
+        }
+
+        return tiers[targetIndex]
+    }
+
+    static func isLockTargetHighlighted(
+        forVerticalOffset deltaY: CGFloat,
+        currentlyHighlighted: Bool
+    ) -> Bool {
+        if currentlyHighlighted {
+            return deltaY <= lockReleaseVerticalOffset
+        }
+        return deltaY <= lockTriggerVerticalOffset
+    }
+
+    static func formattedRateTitle(_ rate: Double) -> String {
+        "\(rate.formatted(.number.precision(.fractionLength(0...2))))x"
+    }
 }
 
 @MainActor
 final class PlayerSpeedBoostModel: ObservableObject {
     @Published private(set) var phase: PlayerSpeedBoostPhase = .idle
     @Published private(set) var displayedRate: BiliPlaybackRate = .x20
+    @Published private(set) var displayedRateValue: Double = PlayerSpeedBoostPolicy.defaultBoostRate
+    @Published private(set) var isLockTargetHighlighted = false
+
+    var displayedRateTitle: String {
+        PlayerSpeedBoostPolicy.formattedRateTitle(displayedRateValue)
+    }
 
     private var state: PlayerSpeedBoostState?
     private weak var boostedPlayerViewModel: PlayerStateViewModel?
@@ -70,7 +153,38 @@ final class PlayerSpeedBoostModel: ObservableObject {
         isSurfacePlaying: Bool,
         hidePlaybackControls: () -> Void
     ) -> Bool {
-        guard state == nil else { return phase == .boosting }
+        if let existingState = state {
+            guard phase == .locked else { return phase == .boosting }
+            restoreTransitionTask?.cancel()
+            restoreTransitionTask = nil
+            restoreTransitionGeneration &+= 1
+            let isPlaying = isSurfacePlaying || playerViewModel.isPlaying
+            if let rejection = PlayerSpeedBoostPolicy.rejectionReason(
+                isTerminated: playerViewModel.isTerminated,
+                isLiveStream: playerViewModel.isLiveStream,
+                isPlaying: isPlaying,
+                currentRate: existingState.restoredRate
+            ) {
+                playerViewModel.recordSpeedBoostMetric("event=ignored reason=\(rejection.rawValue)")
+                return false
+            }
+            let beganAt = CACurrentMediaTime()
+            state = PlayerSpeedBoostState(
+                restoredRate: existingState.restoredRate,
+                beganAt: beganAt,
+                activeBoostRate: PlayerSpeedBoostPolicy.defaultBoostRate
+            )
+            boostedPlayerViewModel = playerViewModel
+            displayedRate = .x20
+            displayedRateValue = PlayerSpeedBoostPolicy.defaultBoostRate
+            isLockTargetHighlighted = false
+            setPhase(.boosting)
+            Haptics.medium()
+            hidePlaybackControls()
+            playerViewModel.setTemporaryPlaybackRate(PlayerSpeedBoostPolicy.defaultBoostRate)
+            return true
+        }
+
         let isPlaying = isSurfacePlaying || playerViewModel.isPlaying
         if let rejection = PlayerSpeedBoostPolicy.rejectionReason(
             isTerminated: playerViewModel.isTerminated,
@@ -87,21 +201,75 @@ final class PlayerSpeedBoostModel: ObservableObject {
         restoreTransitionGeneration &+= 1
         let previousRate = playerViewModel.playbackRate
         let beganAt = CACurrentMediaTime()
+        let initialBoostRate = PlayerSpeedBoostPolicy.defaultBoostRate
         state = PlayerSpeedBoostState(
             restoredRate: previousRate,
-            beganAt: beganAt
+            beganAt: beganAt,
+            activeBoostRate: initialBoostRate
         )
         boostedPlayerViewModel = playerViewModel
         displayedRate = .x20
+        displayedRateValue = initialBoostRate
+        isLockTargetHighlighted = false
         setPhase(.boosting)
         Haptics.medium()
         hidePlaybackControls()
-        playerViewModel.setTemporaryPlaybackRate(.x20)
+        playerViewModel.setTemporaryPlaybackRate(initialBoostRate)
         let rateElapsed = PlayerMetricsLog.elapsedMilliseconds(since: beganAt)
         playerViewModel.recordSpeedBoostMetric(
             "event=begin phase=boosting restore=\(previousRate.title) beginToRate=\(String(format: "%.0fms", rateElapsed))"
         )
         return true
+    }
+
+    func updateGestureOffset(
+        horizontalOffset: CGFloat,
+        verticalOffset: CGFloat,
+        playerViewModel: PlayerStateViewModel
+    ) {
+        guard phase == .boosting, var currentState = state else { return }
+        let targetPlayer = boostedPlayerViewModel ?? playerViewModel
+        guard !targetPlayer.isTerminated else { return }
+
+        let nextLockHighlighted = PlayerSpeedBoostPolicy.isLockTargetHighlighted(
+            forVerticalOffset: verticalOffset,
+            currentlyHighlighted: isLockTargetHighlighted
+        )
+        if nextLockHighlighted != isLockTargetHighlighted {
+            isLockTargetHighlighted = nextLockHighlighted
+            Haptics.light()
+        }
+
+        let nextRate = PlayerSpeedBoostPolicy.resolvedBoostRate(
+            forHorizontalOffset: horizontalOffset,
+            baselineRate: currentState.restoredRate,
+            currentRate: currentState.activeBoostRate
+        )
+        if nextRate != currentState.activeBoostRate {
+            currentState.activeBoostRate = nextRate
+            state = currentState
+            displayedRateValue = nextRate
+            if let matched = BiliPlaybackRate(rawValue: nextRate) {
+                displayedRate = matched
+            }
+            targetPlayer.setTemporaryPlaybackRate(nextRate)
+            Haptics.light()
+            targetPlayer.recordSpeedBoostMetric(
+                "event=tierChange rate=\(PlayerSpeedBoostPolicy.formattedRateTitle(nextRate))"
+            )
+        }
+    }
+
+    func unlock(
+        playerViewModel: PlayerStateViewModel,
+        showPlaybackControls: () -> Void
+    ) {
+        guard phase == .locked else { return }
+        end(
+            reason: .lockTapped,
+            playerViewModel: playerViewModel,
+            showPlaybackControls: showPlaybackControls
+        )
     }
 
     func end(
@@ -110,12 +278,32 @@ final class PlayerSpeedBoostModel: ObservableObject {
         showPlaybackControls: () -> Void
     ) {
         guard let state else { return }
+
+        if phase == .boosting,
+           reason == .gestureEnded,
+           isLockTargetHighlighted {
+            isLockTargetHighlighted = false
+            setPhase(.locked)
+            Haptics.success()
+            let targetPlayer = boostedPlayerViewModel ?? playerViewModel
+            targetPlayer.recordSpeedBoostMetric(
+                "event=lock phase=locked rate=\(PlayerSpeedBoostPolicy.formattedRateTitle(state.activeBoostRate))"
+            )
+            return
+        }
+
+        if phase == .locked, reason == .supersededBySeek {
+            return
+        }
+
         self.state = nil
+        isLockTargetHighlighted = false
         let boostedPlayerViewModel = self.boostedPlayerViewModel ?? playerViewModel
         self.boostedPlayerViewModel = nil
         let releasedAt = CACurrentMediaTime()
         let holdElapsed = PlayerMetricsLog.elapsedMilliseconds(since: state.beganAt)
         displayedRate = state.restoredRate
+        displayedRateValue = state.restoredRate.rawValue
         setPhase(.restoring)
 
         guard !boostedPlayerViewModel.isTerminated else {
@@ -167,4 +355,5 @@ final class PlayerSpeedBoostModel: ObservableObject {
 private struct PlayerSpeedBoostState: Equatable {
     let restoredRate: BiliPlaybackRate
     let beganAt: CFTimeInterval
+    var activeBoostRate: Double
 }

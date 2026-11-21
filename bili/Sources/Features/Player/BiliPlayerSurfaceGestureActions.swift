@@ -23,6 +23,13 @@ struct BiliPlayerSurfaceGestureActions {
         speedBoostActions.beginIfNeeded()
     }
 
+    func updateSpeedBoost(horizontalOffset: CGFloat, verticalOffset: CGFloat) {
+        speedBoostActions.updateGestureOffset(
+            horizontalOffset: horizontalOffset,
+            verticalOffset: verticalOffset
+        )
+    }
+
     func endSpeedBoost(reason: PlayerSpeedBoostEndReason) {
         speedBoostActions.end(reason: reason)
     }
