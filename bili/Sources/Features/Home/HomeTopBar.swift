@@ -201,9 +201,14 @@ private struct HomeTopBarProfileButtonWithUnread: View {
 private struct HomeTopBarProfileButtonContent: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @EnvironmentObject private var sessionStore: SessionStore
+    @State private var usesHorizontalBarOpticalOffset = true
     let hasUnread: Bool
     let action: () -> Void
     let onOpenMessages: () -> Void
+
+    private var horizontalOpticalOffset: CGFloat {
+        usesHorizontalBarOpticalOffset ? 5 : 0
+    }
 
     var body: some View {
         let showsUnread = sessionStore.isLoggedIn && hasUnread
@@ -213,6 +218,17 @@ private struct HomeTopBarProfileButtonContent: View {
         } label: {
             avatar
                 .overlay(alignment: .topLeading) { unreadDot(showsUnread: showsUnread) }
+                .offset(x: horizontalOpticalOffset)
+                .onGeometryChange(for: Bool.self) { proxy in
+                    // Regular top navigation bars (iPhone, iPad, Duo inner screen)
+                    // place toolbar items near the top edge (minY < 130pt), whereas
+                    // iPhone Duo's outer cover screen moves them into a vertical
+                    // right rail below the top status area (minY > 180pt) where
+                    // the circular avatar is already concentric with the end cap.
+                    proxy.frame(in: .global).minY < 130
+                } action: { isInTopHorizontalBar in
+                    usesHorizontalBarOpticalOffset = isInTopHorizontalBar
+                }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("个人空间与消息")
