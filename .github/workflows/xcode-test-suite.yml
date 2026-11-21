@@ -144,7 +144,7 @@ jobs:
 
       - name: Upload readable failure diagnostics
         if: ${{ !cancelled() && (steps.tests.outcome == 'failure' || steps.tests.outputs.had_test_failures == 'true') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ios-test-readable-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/readable-tests
@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload photo preflight diagnostics
         if: ${{ !cancelled() && inputs.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure' || steps.photo_fixture.outputs.had_test_failures == 'true') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: photo-preflight-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: |
@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload coverage report
         if: ${{ !cancelled() && steps.tests.outputs.has_coverage == 'true' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-coverage-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/coverage.txt
@@ -173,7 +173,7 @@ jobs:
 
       - name: Upload test result bundle
         if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-test-results-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bili-tests.xcresult
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload build and test log
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-test-log-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bili-tests.log
