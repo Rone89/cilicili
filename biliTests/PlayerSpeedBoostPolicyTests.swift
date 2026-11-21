@@ -168,13 +168,27 @@ final class PlayerSpeedBoostPolicyTests: XCTestCase {
         model.end(reason: .supersededBySeek, playerViewModel: player, showPlaybackControls: {})
         XCTAssertEqual(model.phase, .locked)
 
-        // Tapping locked pill restores exact baseline (1.0x)
+        // Tapping locked pill restores exact baseline (1.0x) without waking playback controls
         var didShowControls = false
         model.unlock(playerViewModel: player) {
             didShowControls = true
         }
         XCTAssertEqual(model.phase, .restoring)
         XCTAssertEqual(player.playbackRate, .x10)
-        XCTAssertTrue(didShowControls)
+        XCTAssertFalse(didShowControls)
+
+        // Normal long-press release also keeps playback controls hidden
+        XCTAssertTrue(
+            model.beginIfNeeded(
+                playerViewModel: player,
+                isSurfacePlaying: true,
+                hidePlaybackControls: {}
+            )
+        )
+        model.end(reason: .gestureEnded, playerViewModel: player) {
+            didShowControls = true
+        }
+        XCTAssertEqual(player.playbackRate, .x10)
+        XCTAssertFalse(didShowControls)
     }
 }

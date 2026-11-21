@@ -25,7 +25,7 @@ enum PlayerSpeedBoostEndReason: String {
     }
 
     var shouldShowPlaybackControls: Bool {
-        self == .gestureEnded || self == .lockTapped
+        false
     }
 }
 
