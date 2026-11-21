@@ -3528,6 +3528,27 @@ nonisolated struct SearchArticleItem: Identifiable, Decodable, Hashable, Sendabl
         guard articleID > 0 else { return nil }
         return URL(string: "https://www.bilibili.com/read/cv\(articleID)")
     }
+
+    var articleRoute: ArticleRoute? {
+        let source: ArticleRoute.Source
+        if articleID > 0 {
+            source = .cv(id: articleID)
+        } else if let destinationURL {
+            source = ArticleRoute.parseSource(from: destinationURL)
+        } else {
+            return nil
+        }
+        let coverURL = imageURLs.first.flatMap { URL(string: $0) }
+        return ArticleRoute(
+            source: source,
+            title: title,
+            coverURL: coverURL,
+            authorName: author,
+            commentOID: articleID > 0 ? String(articleID) : nil,
+            commentType: articleID > 0 ? 12 : nil,
+            webURL: destinationURL
+        )
+    }
 }
 
 nonisolated struct SearchSuggestResponse: Decodable, Sendable {

@@ -264,7 +264,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationProtectedDataWillBecomeUnavailable(_ application: UIApplication) {
         print("[AppLifecycle] protectedDataWillBecomeUnavailable")
-        ActivePlaybackCoordinator.shared.pauseActivePlaybackForAppBackground()
+        ActivePlaybackCoordinator.shared.pauseActivePlaybackForAppBackground(
+            pausesActivePictureInPicture: true
+        )
     }
 
     func application(

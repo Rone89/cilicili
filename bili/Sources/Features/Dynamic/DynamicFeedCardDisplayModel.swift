@@ -83,7 +83,8 @@ struct DynamicFeedCardDisplayModel {
             isForward: item.isForward || item.original != nil,
             hasVideo: video != nil || pgc != nil,
             hasLive: live != nil,
-            hasPaidContent: paidContent != nil
+            hasPaidContent: paidContent != nil,
+            hasArticle: item.article != nil
         )
         self.initialLikeCount = item.likeCount ?? 0
         self.commentTitle = Self.statTitle(count: item.replyCount, fallback: "评论")
@@ -104,9 +105,14 @@ struct DynamicFeedCardDisplayModel {
         isForward: Bool,
         hasVideo: Bool,
         hasLive: Bool,
-        hasPaidContent: Bool
+        hasPaidContent: Bool,
+        hasArticle: Bool = false
     ) -> Bool {
         if isForward {
+            return true
+        }
+
+        if hasArticle && !hasVideo && !hasLive && !hasPaidContent {
             return true
         }
 
@@ -117,13 +123,16 @@ struct DynamicFeedCardDisplayModel {
     }
 
     static func supportsDetailNavigation(original: DynamicOriginalItem) -> Bool {
-        supportsDetailNavigation(
+        let hasOriginalArticle = original.modules?.moduleDynamic?.major?.article != nil
+            || original.modules?.moduleDynamic?.major?.opus != nil
+        return supportsDetailNavigation(
             hasTopLevelText: DynamicTextSegment.displayText(from: original.textSegments)?.isEmpty == false,
             imageCount: original.imageItems.count,
             isForward: original.type == "DYNAMIC_TYPE_FORWARD",
             hasVideo: original.archive != nil,
             hasLive: original.live != nil,
-            hasPaidContent: original.paidContent != nil
+            hasPaidContent: original.paidContent != nil,
+            hasArticle: hasOriginalArticle
         )
     }
 

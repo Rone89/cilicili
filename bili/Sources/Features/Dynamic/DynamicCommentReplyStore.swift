@@ -10,14 +10,25 @@ final class DynamicCommentReplyStore: ObservableObject {
     private var replyLoadGenerations: [Int: Int] = [:]
     private var dialogLoadGenerations: [String: Int] = [:]
 
-    private let item: DynamicFeedItem
+    private let commentOID: String?
+    private let commentType: Int?
     private let api: BiliAPIClient
     private var blocksGoodsComments: Bool
 
-    init(item: DynamicFeedItem, api: BiliAPIClient, blocksGoodsComments: Bool) {
-        self.item = item
+    init(commentOID: String?, commentType: Int?, api: BiliAPIClient, blocksGoodsComments: Bool) {
+        self.commentOID = commentOID
+        self.commentType = commentType
         self.api = api
         self.blocksGoodsComments = blocksGoodsComments
+    }
+
+    convenience init(item: DynamicFeedItem, api: BiliAPIClient, blocksGoodsComments: Bool) {
+        self.init(
+            commentOID: item.commentOID,
+            commentType: item.commentType,
+            api: api,
+            blocksGoodsComments: blocksGoodsComments
+        )
     }
 
     private func updateSnapshot(_ transform: (inout DynamicCommentReplyStoreSnapshot) -> Void) {
@@ -166,14 +177,6 @@ final class DynamicCommentReplyStore: ObservableObject {
         let key = dialogKey(root: root, reply: reply)
         let generation = nextDialogLoadGeneration(for: key)
         await loadDialogPage(for: root, reply: reply, generation: generation)
-    }
-
-    private var commentOID: String? {
-        item.commentOID
-    }
-
-    private var commentType: Int? {
-        item.commentType
     }
 
     private func nextReplyLoadGeneration(for commentID: Int) -> Int {

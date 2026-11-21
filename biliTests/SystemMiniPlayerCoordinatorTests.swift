@@ -1074,6 +1074,72 @@ final class SystemMiniPlayerCoordinatorTests: XCTestCase {
         XCTAssertFalse(stagingHost.surfaceView.isBound(to: playerA))
     }
 
+    func testExternalPauseDuringActivePiPSyncsPausedIntentWithoutAutoResuming() async throws {
+        XCTAssertTrue(
+            AVPlayerHLSBridgeEngine.shouldTreatExternalPauseAsPausedIntent(
+                wantsPlayback: true,
+                hasObservedActivePlayback: true,
+                isPerformingSeek: false,
+                isAwaitingAudioSessionActivation: false,
+                isAudioSessionDeactivating: false,
+                lastPlaybackState: .playing,
+                itemStatus: .readyToPlay
+            )
+        )
+        XCTAssertFalse(
+            AVPlayerHLSBridgeEngine.shouldTreatExternalPauseAsPausedIntent(
+                wantsPlayback: true,
+                hasObservedActivePlayback: false,
+                isPerformingSeek: false,
+                isAwaitingAudioSessionActivation: false,
+                isAudioSessionDeactivating: false,
+                lastPlaybackState: .buffering,
+                itemStatus: .readyToPlay
+            )
+        )
+        XCTAssertFalse(
+            AVPlayerHLSBridgeEngine.shouldTreatExternalPauseAsPausedIntent(
+                wantsPlayback: true,
+                hasObservedActivePlayback: true,
+                isPerformingSeek: true,
+                isAwaitingAudioSessionActivation: false,
+                isAudioSessionDeactivating: false,
+                lastPlaybackState: .playing,
+                itemStatus: .readyToPlay
+            )
+        )
+
+        ActivePlaybackCoordinator.shared.stopActivePlayback()
+        defer { ActivePlaybackCoordinator.shared.stopActivePlayback() }
+
+        let video = makeVideo(bvid: "BV1PiPPauseSync", cid: 4001)
+        let (_, engine, player) = makePlayingDetailViewModel(video: video)
+        defer { player.stop() }
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        ActivePlaybackCoordinator.shared.activate(player)
+        player.play()
+        engine.isPictureInPictureActive = true
+
+        let playCountBeforePiPPause = engine.playCallCount
+        engine.simulateExternalPause()
+
+        XCTAssertFalse(player.wantsAutoplay)
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.playbackPhase, .paused)
+
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(engine.playCallCount, playCountBeforePiPPause)
+        XCTAssertFalse(player.wantsAutoplay)
+        XCTAssertFalse(player.isPlaying)
+
+        player.play()
+        XCTAssertTrue(player.wantsAutoplay)
+        player.beginSurfaceMigrationHold()
+        engine.simulateExternalPause()
+        XCTAssertTrue(player.wantsAutoplay)
+    }
+
     private func makeVideo(bvid: String, cid: Int) -> VideoItem {
         VideoItem(
             bvid: bvid,
@@ -1154,6 +1220,7 @@ final class SystemMiniPlayerCoordinatorTests: XCTestCase {
 private final class StubMiniPlayerRenderingEngine: PlayerRenderingEngine {
     private(set) var hasMedia = true
     private(set) var isPlaying = false
+    private(set) var playCallCount = 0
     private(set) var stopCallCount = 0
     private(set) var pauseCallCount = 0
     var playbackErrorMessage: String? { nil }
@@ -1187,10 +1254,17 @@ private final class StubMiniPlayerRenderingEngine: PlayerRenderingEngine {
     }
 
     func play() {
+        playCallCount += 1
         isPlaying = true
         onPlaybackIntentChange?(true)
         onPlaybackStateChange?(.playing)
         onFirstFrame?(12)
+    }
+
+    func simulateExternalPause() {
+        isPlaying = false
+        onPlaybackIntentChange?(false)
+        onPlaybackStateChange?(.paused)
     }
 
     func pause() {

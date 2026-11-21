@@ -13,10 +13,17 @@ extension EnvironmentValues {
 
 struct DynamicArticlePreview: View {
     let article: DynamicArticle
+    var item: DynamicFeedItem? = nil
 
     var body: some View {
         Group {
-            if let url = article.url {
+            if let route = article.route(from: item), route.supportsNativeReader {
+                NavigationLink(value: route) {
+                    content
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("打开专栏全文")
+            } else if let url = article.url {
                 AppLinkButton(url: url) { content }
                     .accessibilityHint("打开专栏全文")
             } else {

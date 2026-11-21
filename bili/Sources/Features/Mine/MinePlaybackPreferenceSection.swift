@@ -26,6 +26,7 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
                 cellularPreferredVideoQualityPicker
                 videoCodecPreferenceLink
                 forceHardwareDecodeToggle
+                threeZoneVerticalGestureToggle
                 defaultPlaybackRatePicker
                 subtitlePreferencePicker
             } header: {
@@ -201,6 +202,16 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
         )) {
             MineSettingsLabel("硬解优先", systemImage: "cpu")
         }
+    }
+
+    private var threeZoneVerticalGestureToggle: some View {
+        Toggle(isOn: Binding(
+            get: { libraryStore.playerThreeZoneVerticalGestureEnabled },
+            set: { libraryStore.setPlayerThreeZoneVerticalGestureEnabled($0) }
+        )) {
+            MineSettingsLabel("视频三分手势", systemImage: "rectangle.split.3x1")
+        }
+        .accessibilityIdentifier("mine.settings.playback.threeZoneVerticalGesture")
     }
 
     private var playbackStreamSourcePicker: some View {

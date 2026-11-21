@@ -21,7 +21,8 @@ final class DynamicCommentsViewModel: ObservableObject {
     @Published private(set) var displayedReplyCount: Int?
     let replyStore: DynamicCommentReplyStore
 
-    private let item: DynamicFeedItem
+    private let commentOID: String?
+    private let commentType: Int?
     private let api: BiliAPIClient
     private var blocksGoodsComments = true
     private var cursor = ""
@@ -37,12 +38,27 @@ final class DynamicCommentsViewModel: ObservableObject {
         !commentsEnd
     }
 
-    init(item: DynamicFeedItem, api: BiliAPIClient) {
-        self.item = item
+    init(commentOID: String?, commentType: Int?, replyCount: Int?, api: BiliAPIClient) {
+        self.commentOID = commentOID
+        self.commentType = commentType
         self.api = api
         self.blocksGoodsComments = api.libraryStore.blocksGoodsComments
-        self.displayedReplyCount = item.replyCount
-        self.replyStore = DynamicCommentReplyStore(item: item, api: api, blocksGoodsComments: blocksGoodsComments)
+        self.displayedReplyCount = replyCount
+        self.replyStore = DynamicCommentReplyStore(
+            commentOID: commentOID,
+            commentType: commentType,
+            api: api,
+            blocksGoodsComments: blocksGoodsComments
+        )
+    }
+
+    convenience init(item: DynamicFeedItem, api: BiliAPIClient) {
+        self.init(
+            commentOID: item.commentOID,
+            commentType: item.commentType,
+            replyCount: item.replyCount,
+            api: api
+        )
     }
 
     func setBlocksGoodsComments(_ isEnabled: Bool) {
@@ -110,14 +126,6 @@ final class DynamicCommentsViewModel: ObservableObject {
 
     func registerSubmittedComment() {
         displayedReplyCount = max(0, (displayedReplyCount ?? comments.count) + 1)
-    }
-
-    private var commentOID: String? {
-        item.commentOID
-    }
-
-    private var commentType: Int? {
-        item.commentType
     }
 
     private func loadPage(

@@ -56,7 +56,12 @@ private struct SearchArticleRouteRow: View {
     let article: SearchArticleItem
 
     var body: some View {
-        if let url = article.destinationURL {
+        if let route = article.articleRoute, route.supportsNativeReader {
+            NavigationLink(value: route) {
+                SearchArticleResultRow(article: article)
+            }
+            .buttonStyle(.plain)
+        } else if let url = article.destinationURL {
             AppLinkButton(url: url) {
                 SearchArticleResultRow(article: article)
             }

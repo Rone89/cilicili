@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct BiliPlayerSurfaceGestureLayerHost<Content: View>: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
+
     let content: Content
     let visibilityActions: BiliPlayerPlaybackControlsVisibilityActions
     let speedBoostActions: BiliPlayerSpeedBoostActions
@@ -12,6 +14,9 @@ struct BiliPlayerSurfaceGestureLayerHost<Content: View>: View {
     let holdCurrentFrameForSeek: () -> Void
     let prepareUserSeekWarmup: (Double, Bool) -> Void
     let resetPreparedScrubProgress: () -> Void
+    var isFullscreenActive: Bool = false
+    var onRequestFullscreen: (() -> Void)? = nil
+    var onExitFullscreen: (() -> Void)? = nil
 
     private var gestureActions: BiliPlayerSurfaceGestureActions {
         BiliPlayerSurfaceGestureActions(
@@ -59,7 +64,11 @@ struct BiliPlayerSurfaceGestureLayerHost<Content: View>: View {
             },
             onHorizontalSeekCancelPendingChanged: { isPending in
                 seekPreviewModel.setCancellationPending(isPending)
-            }
+            },
+            threeZoneVerticalGestureEnabled: libraryStore.playerThreeZoneVerticalGestureEnabled,
+            isFullscreenActive: isFullscreenActive,
+            onRequestFullscreen: onRequestFullscreen,
+            onExitFullscreen: onExitFullscreen
         )
         .id(ObjectIdentifier(viewModel))
         .onDisappear {

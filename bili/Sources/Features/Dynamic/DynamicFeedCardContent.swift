@@ -43,7 +43,7 @@ struct DynamicStandardFeedCardContent: View {
                         DynamicPaidContentPreview(content: paidContent, style: .large)
                     }
                 } else if let article {
-                    DynamicArticlePreview(article: article)
+                    DynamicArticlePreview(article: article, item: item)
                         .padding(.horizontal, horizontalContentInset)
                 } else if let video = display.video {
                     VideoRouteLink(video) {

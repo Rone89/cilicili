@@ -58,6 +58,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var retainedAssets: [AVAsset] = []
     private var currentRate: Float = 1
     private var wantsPlayback = false
+    private var hasObservedActivePlaybackForCurrentIntent = false
     private var audioSessionActivationGeneration = 0
     private var isAwaitingAudioSessionActivation = false
     private var didReportFirstFrame = false
@@ -768,6 +769,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = true
+        hasObservedActivePlaybackForCurrentIntent = player.rate > 0 || player.timeControlStatus == .playing
         configureAudioSession()
         audioSessionFinishedAt = CACurrentMediaTime()
         applyTargetAudioState()
@@ -810,6 +812,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
+        hasObservedActivePlaybackForCurrentIntent = false
         cancelTerminalStallWatchdog()
         player.pause()
         if deactivatesAudioSession {
@@ -830,6 +833,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
+        hasObservedActivePlaybackForCurrentIntent = false
         cancelTerminalStallWatchdog()
         player.rate = 0
         player.pause()
@@ -846,6 +850,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
+        hasObservedActivePlaybackForCurrentIntent = false
         cancelTerminalStallWatchdog()
         player.rate = 0
         player.pause()
@@ -864,6 +869,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
+        hasObservedActivePlaybackForCurrentIntent = false
         cancelTerminalStallWatchdog()
         silencePlayerImmediately()
         player.currentItem?.cancelPendingSeeks()
@@ -883,6 +889,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         isVideoSurfaceSuspendedForBackgroundPlayback = false
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
+        hasObservedActivePlaybackForCurrentIntent = false
         cancelTerminalStallWatchdog()
         pendingSurfaceDetachTask?.cancel()
         pendingSurfaceDetachTask = nil
@@ -1971,6 +1978,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     let timeControlStatus = player.timeControlStatus
                     let currentSeconds = player.currentTime().seconds
                     if rate > 0 {
+                        self.hasObservedActivePlaybackForCurrentIntent = true
                         self.cancelTerminalStallWatchdog()
                         self.updatePlaybackIntent(true)
                         self.publishPlaybackState(.playing)
@@ -1980,12 +1988,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                         self.maybeReleaseSeekProtectionIfReady(reason: "rate")
                     } else if timeControlStatus == .paused,
                               itemStatus == .readyToPlay {
-                        if self.isPerformingSeek || self.wantsPlayback {
-                            self.publishPlaybackState(.buffering)
-                        } else {
-                            self.updatePlaybackIntent(false)
-                            self.publishPlaybackState(.paused)
-                        }
+                        self.handlePausedTimeControlStatus(itemStatus: itemStatus)
                     } else if self.wantsPlayback,
                               itemStatus == .readyToPlay,
                               timeControlStatus == .waitingToPlayAtSpecifiedRate {
@@ -2092,6 +2095,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 guard let self, self.isCurrentPlayerItem(item) else { return }
                 self.cancelTerminalStallWatchdog()
                 self.wantsPlayback = false
+                self.hasObservedActivePlaybackForCurrentIntent = false
                 self.publishPlaybackState(.ended)
             }
         }
@@ -2927,10 +2931,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard !isStopped, player.currentItem != nil else { return }
         switch status {
         case .paused:
-            publishPlaybackState((wantsPlayback || isPerformingSeek) ? .buffering : .paused)
-            if !(wantsPlayback || isPerformingSeek) {
-                cancelTerminalStallWatchdog()
-            }
+            handlePausedTimeControlStatus(itemStatus: player.currentItem?.status)
         case .waitingToPlayAtSpecifiedRate:
             if wantsPlayback || isPerformingSeek {
                 publishPlaybackState(.buffering)
@@ -2938,6 +2939,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             }
         case .playing:
             guard player.rate > 0 else { return }
+            hasObservedActivePlaybackForCurrentIntent = true
             cancelTerminalStallWatchdog()
             updatePlaybackIntent(true)
             publishPlaybackState(.playing)
@@ -2946,6 +2948,49 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         @unknown default:
             break
         }
+    }
+
+    private func handlePausedTimeControlStatus(itemStatus: AVPlayerItem.Status?) {
+        if Self.shouldTreatExternalPauseAsPausedIntent(
+            wantsPlayback: wantsPlayback,
+            hasObservedActivePlayback: hasObservedActivePlaybackForCurrentIntent,
+            isPerformingSeek: isPerformingSeek,
+            isAwaitingAudioSessionActivation: isAwaitingAudioSessionActivation,
+            isAudioSessionDeactivating: audioSession.isDeactivating,
+            lastPlaybackState: lastPlaybackState,
+            itemStatus: itemStatus
+        ) {
+            hasObservedActivePlaybackForCurrentIntent = false
+            cancelTerminalStallWatchdog()
+            updatePlaybackIntent(false)
+            publishPlaybackState(.paused)
+            return
+        }
+        if isPerformingSeek || wantsPlayback {
+            publishPlaybackState(.buffering)
+        } else {
+            cancelTerminalStallWatchdog()
+            updatePlaybackIntent(false)
+            publishPlaybackState(.paused)
+        }
+    }
+
+    nonisolated static func shouldTreatExternalPauseAsPausedIntent(
+        wantsPlayback: Bool,
+        hasObservedActivePlayback: Bool,
+        isPerformingSeek: Bool,
+        isAwaitingAudioSessionActivation: Bool,
+        isAudioSessionDeactivating: Bool,
+        lastPlaybackState: PlayerEnginePlaybackState,
+        itemStatus: AVPlayerItem.Status?
+    ) -> Bool {
+        wantsPlayback
+            && hasObservedActivePlayback
+            && !isPerformingSeek
+            && !isAwaitingAudioSessionActivation
+            && !isAudioSessionDeactivating
+            && lastPlaybackState != .ended
+            && itemStatus == .readyToPlay
     }
 
     private func updatePlaybackIntent(_ wantsPlayback: Bool) {

@@ -137,4 +137,62 @@ final class PlayerSurfaceVerticalAdjustmentPolicyTests: XCTestCase {
             )
         )
     }
+
+    func testThreeZoneActionSplitsWidthIntoThirdsWhenEnabled() {
+        XCTAssertEqual(
+            PlayerSurfaceVerticalAdjustmentPolicy.zoneAction(startLocationX: 50, width: 300, threeZoneEnabled: true),
+            .brightness
+        )
+        XCTAssertEqual(
+            PlayerSurfaceVerticalAdjustmentPolicy.zoneAction(startLocationX: 150, width: 300, threeZoneEnabled: true),
+            .fullscreenToggle
+        )
+        XCTAssertEqual(
+            PlayerSurfaceVerticalAdjustmentPolicy.zoneAction(startLocationX: 250, width: 300, threeZoneEnabled: true),
+            .volume
+        )
+        XCTAssertEqual(
+            PlayerSurfaceVerticalAdjustmentPolicy.zoneAction(startLocationX: 140, width: 300, threeZoneEnabled: false),
+            .brightness
+        )
+        XCTAssertEqual(
+            PlayerSurfaceVerticalAdjustmentPolicy.zoneAction(startLocationX: 160, width: 300, threeZoneEnabled: false),
+            .volume
+        )
+    }
+
+    func testFullscreenSwipeDirectionRespectsFullscreenStateAndThreshold() {
+        XCTAssertEqual(
+            PlayerSurfaceVerticalAdjustmentPolicy.fullscreenSwipeDirection(
+                verticalTranslation: -40,
+                isFullscreenActive: false
+            ),
+            .enterFullscreen
+        )
+        XCTAssertNil(
+            PlayerSurfaceVerticalAdjustmentPolicy.fullscreenSwipeDirection(
+                verticalTranslation: 40,
+                isFullscreenActive: false
+            )
+        )
+        XCTAssertEqual(
+            PlayerSurfaceVerticalAdjustmentPolicy.fullscreenSwipeDirection(
+                verticalTranslation: 40,
+                isFullscreenActive: true
+            ),
+            .exitFullscreen
+        )
+        XCTAssertNil(
+            PlayerSurfaceVerticalAdjustmentPolicy.fullscreenSwipeDirection(
+                verticalTranslation: -40,
+                isFullscreenActive: true
+            )
+        )
+        XCTAssertNil(
+            PlayerSurfaceVerticalAdjustmentPolicy.fullscreenSwipeDirection(
+                verticalTranslation: -20,
+                isFullscreenActive: false
+            )
+        )
+    }
 }

@@ -13,10 +13,11 @@ EXPORT_DIR="$ROOT_DIR/build/release-unsigned-ipa"
 LOG_DIR="$ROOT_DIR/build/logs"
 LOG_PATH="$LOG_DIR/release-unsigned-ipa.log"
 IPA_PATH="$EXPORT_DIR/bili-release-unsigned.ipa"
+BUNDLE_IDENTIFIER="${UNSIGNED_IPA_BUNDLE_IDENTIFIER:-com.rayc.cilicili}"
 
 mkdir -p "$EXPORT_DIR" "$LOG_DIR"
 
-echo "Building Release (unsigned, device) ..."
+echo "Building Release (unsigned, device, bundle ID: $BUNDLE_IDENTIFIER) ..."
 if ! xcodebuild build \
     -project "$ROOT_DIR/bili.xcodeproj" \
     -scheme bili \
@@ -24,6 +25,7 @@ if ! xcodebuild build \
     -sdk iphoneos \
     -destination "generic/platform=iOS" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
+    PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_IDENTIFIER" \
     CODE_SIGN_IDENTITY="" \
     CODE_SIGNING_REQUIRED=NO \
     CODE_SIGNING_ALLOWED=NO \
@@ -64,15 +66,16 @@ with info_path.open("rb") as handle:
     info = plistlib.load(handle)
 version = str(info["CFBundleShortVersionString"])
 build = str(info["CFBundleVersion"])
+bundle_id = str(info["CFBundleIdentifier"])
 digest = hashlib.sha256(ipa_path.read_bytes()).hexdigest()
-metadata = {"version": version, "build": build, "sha256": digest,
+metadata = {"bundle_id": bundle_id, "version": version, "build": build, "sha256": digest,
             "commit": os.environ.get("GITHUB_SHA"), "signed": False}
 ipa_path.with_suffix(".ipa.sha256").write_text(f"{digest}  {ipa_path.name}\n")
 (ipa_path.parent / "build-info.json").write_text(json.dumps(metadata, indent=2) + "\n")
 if output_path := os.environ.get("GITHUB_OUTPUT"):
     with open(output_path, "a") as handle:
-        handle.write(f"version={version}\nbuild={build}\n")
-print(f"Packaged version {version} build {build}; SHA-256 {digest}")
+        handle.write(f"bundle_id={bundle_id}\nversion={version}\nbuild={build}\n")
+print(f"Packaged {bundle_id} version {version} build {build}; SHA-256 {digest}")
 PY
 
 echo "Unsigned Release IPA: $IPA_PATH"

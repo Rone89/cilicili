@@ -39,10 +39,65 @@ nonisolated enum PlayerSurfaceGestureAxisPolicy {
     }
 }
 
+nonisolated enum PlayerSurfaceVerticalZoneAction: Equatable {
+    case brightness
+    case volume
+    case fullscreenToggle
+
+    var adjustmentTarget: PlayerSurfaceVerticalAdjustmentTarget? {
+        switch self {
+        case .brightness:
+            return .brightness
+        case .volume:
+            return .volume
+        case .fullscreenToggle:
+            return nil
+        }
+    }
+}
+
+nonisolated enum PlayerSurfaceFullscreenSwipeDirection: Equatable {
+    case enterFullscreen
+    case exitFullscreen
+}
+
 nonisolated enum PlayerSurfaceVerticalAdjustmentPolicy {
     static func target(startLocationX: CGFloat, width: CGFloat) -> PlayerSurfaceVerticalAdjustmentTarget? {
         guard width > 0, startLocationX >= 0, startLocationX <= width else { return nil }
         return startLocationX < width / 2 ? .brightness : .volume
+    }
+
+    static func zoneAction(
+        startLocationX: CGFloat,
+        width: CGFloat,
+        threeZoneEnabled: Bool
+    ) -> PlayerSurfaceVerticalZoneAction? {
+        guard width > 0, startLocationX >= 0, startLocationX <= width else { return nil }
+        guard threeZoneEnabled else {
+            return startLocationX < width / 2 ? .brightness : .volume
+        }
+        let thirdWidth = width / 3
+        if startLocationX < thirdWidth {
+            return .brightness
+        } else if startLocationX < thirdWidth * 2 {
+            return .fullscreenToggle
+        } else {
+            return .volume
+        }
+    }
+
+    static func fullscreenSwipeDirection(
+        verticalTranslation: CGFloat,
+        isFullscreenActive: Bool,
+        threshold: CGFloat = 36
+    ) -> PlayerSurfaceFullscreenSwipeDirection? {
+        if !isFullscreenActive && verticalTranslation <= -threshold {
+            return .enterFullscreen
+        }
+        if isFullscreenActive && verticalTranslation >= threshold {
+            return .exitFullscreen
+        }
+        return nil
     }
 
     static func shouldBegin(

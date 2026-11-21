@@ -110,6 +110,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var playbackStreamSourcePreference: PlaybackStreamSourcePreference
     @Published private(set) var videoCodecPreference: VideoCodecPreference
     @Published private(set) var forceHardwareDecodeEnabled: Bool
+    @Published private(set) var playerThreeZoneVerticalGestureEnabled: Bool
     @Published private(set) var playbackCDNPreference: PlaybackCDNPreference
     @Published private(set) var playbackCustomCDNHost: String?
     @Published private(set) var playbackCDNProbeRefreshPolicy: PlaybackCDNProbeRefreshPolicy
@@ -189,6 +190,7 @@ final class LibraryStore: ObservableObject {
     private static let playbackStreamSourcePreferenceKey = "cc.bili.playback.streamSourcePreference.v1"
     private static let videoCodecPreferenceKey = VideoCodecPreference.storageKey
     private static let forceHardwareDecodeKey = PlaybackHardwareDecodePolicy.storageKey
+    private static let playerThreeZoneVerticalGestureKey = "cc.bili.playback.threeZoneVerticalGesture.v1"
     private static let playbackCDNPreferenceKey = "cc.bili.playback.cdnPreference.v1"
     private static let playbackCustomCDNHostKey = PlaybackCDNPreference.customHostStorageKey
     private static let playbackCDNProbeRefreshPolicyKey = "cc.bili.playback.cdnProbeRefreshPolicy.v1"
@@ -555,6 +557,7 @@ final class LibraryStore: ObservableObject {
             ) ?? Self.defaultPlaybackStreamSourcePreference
         self.videoCodecPreference = VideoCodecPreference.stored(in: userDefaults)
         self.forceHardwareDecodeEnabled = PlaybackHardwareDecodePolicy.stored(in: userDefaults)
+        self.playerThreeZoneVerticalGestureEnabled = userDefaults.bool(forKey: Self.playerThreeZoneVerticalGestureKey)
         self.playbackCDNPreference =
             PlaybackCDNPreference(
                 rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
@@ -892,6 +895,11 @@ final class LibraryStore: ObservableObject {
         forceHardwareDecodeEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.forceHardwareDecodeKey)
         PlayerSettings.shared.reload()
+    }
+
+    func setPlayerThreeZoneVerticalGestureEnabled(_ isEnabled: Bool) {
+        playerThreeZoneVerticalGestureEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.playerThreeZoneVerticalGestureKey)
     }
 
     func setHomeRecommendFeedSourcePreference(_ preference: HomeRecommendFeedSourcePreference) {

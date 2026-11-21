@@ -92,6 +92,13 @@ struct DynamicFeedCard: View {
               let detailNavigationPath,
               display.supportsDetailNavigation
         else { return nil }
+        if !item.isForward,
+           item.original == nil,
+           let article = item.article,
+           let route = article.route(from: item),
+           route.supportsNativeReader {
+            return { detailNavigationPath.wrappedValue.append(route) }
+        }
         return { detailNavigationPath.wrappedValue.append(DynamicDetailTarget.loaded(item)) }
     }
 
@@ -105,6 +112,28 @@ struct DynamicFeedCard: View {
                   original.hasDisplayableContent,
                   DynamicFeedCardDisplayModel.supportsDetailNavigation(original: original)
             else { return }
+            let major = original.modules?.moduleDynamic?.major
+            let originalArticle = major?.article
+                ?? major?.opus.map { DynamicArticle(opus: $0, dynamicID: original.idStr) }
+            if let originalArticle,
+               let route = originalArticle.route(from: nil),
+               route.supportsNativeReader {
+                let enrichedRoute = ArticleRoute(
+                    source: route.source,
+                    title: route.title,
+                    coverURL: route.coverURL,
+                    authorName: original.author?.name ?? route.authorName,
+                    authorMID: original.author?.mid ?? route.authorMID,
+                    authorAvatarURL: original.author?.face.map { $0.normalizedBiliURL() }.flatMap(URL.init(string:))
+                        ?? route.authorAvatarURL,
+                    commentOID: route.commentOID,
+                    commentType: route.commentType,
+                    webURL: route.webURL,
+                    dynamicID: original.idStr
+                )
+                detailNavigationPath.wrappedValue.append(enrichedRoute)
+                return
+            }
             if let preloadedItem = preloadedOriginalDynamicDetails[original.idStr] {
                 detailNavigationPath.wrappedValue.append(DynamicDetailTarget.loaded(preloadedItem))
             } else {

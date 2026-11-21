@@ -2044,7 +2044,10 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                             seekPreviewContext: renderContext.seekPreviewContext,
                             holdCurrentFrameForSeek: holdCurrentFrameForSeek,
                             prepareUserSeekWarmup: prepareUserSeekWarmupIfNeeded,
-                            resetPreparedScrubProgress: { lastPreparedScrubProgress = -1 }
+                            resetPreparedScrubProgress: { lastPreparedScrubProgress = -1 },
+                            isFullscreenActive: isPortraitFullscreen ? true : renderContext.configuration.isFullscreenActive,
+                            onRequestFullscreen: renderContext.configuration.onRequestFullscreen,
+                            onExitFullscreen: renderContext.configuration.onExitFullscreen
                         )
                         .zIndex(1)
 

@@ -122,6 +122,41 @@ final class ActivePlaybackCoordinatorTests: XCTestCase {
         XCTAssertTrue(player.wantsAutoplay)
     }
 
+    func testScreenLockPausesActivePictureInPictureWhenBackgroundPlaybackDisabled() {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        defer { coordinator.stopActivePlayback() }
+
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        engine.supportsPictureInPicture = true
+        engine.isPictureInPictureActive = true
+        let player = PlayerStateViewModel(
+            videoURL: nil,
+            audioURL: nil,
+            title: "锁屏暂停画中画测试",
+            referer: "https://www.bilibili.com",
+            engine: engine
+        )
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        coordinator.activate(player)
+        player.setPictureInPictureEnabled(true)
+        player.setBackgroundPlaybackEnabled(false)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+
+        let appDelegate = AppDelegate()
+        // Normal backgrounding keeps active PiP playing on the Home Screen.
+        appDelegate.applicationDidEnterBackground(UIApplication.shared)
+        XCTAssertEqual(engine.backgroundPauseCallCount, 0)
+        XCTAssertTrue(player.wantsAutoplay)
+
+        // Device lock pauses active PiP unless background playback is enabled.
+        appDelegate.applicationProtectedDataWillBecomeUnavailable(UIApplication.shared)
+        XCTAssertEqual(engine.backgroundPauseCallCount, 1)
+        XCTAssertFalse(player.wantsAutoplay)
+    }
+
     func testAppDelegateSceneLifecycleFilteringIgnoresSecondaryAndMismatchedScenes() {
         XCTAssertFalse(
             AppDelegate.shouldPauseActivePlaybackForSceneDidEnterBackground(

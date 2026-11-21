@@ -47,7 +47,7 @@ extension BiliAPIClient {
         return response.payload?.list ?? []
     }
 
-    private func requireInteractionCSRFContext() async throws -> (
+    func requireInteractionCSRFContext() async throws -> (
         csrf: String,
         context: InteractionRequestContext
     ) {

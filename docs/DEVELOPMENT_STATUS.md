@@ -2777,3 +2777,142 @@
 - **真机与本地待办**：
   - 请在 `RCe2027`（Build `224`）实测从视频退出进入小窗后再点开新视频时，旧小窗关闭与新视频起播速度是否明显改善。
   - 在非沙箱环境复跑定向模拟器单测，真机确认满意并获授权后再提交推送至 GitHub `main`。
+
+### 2026-11-21（Build 225 修复应用内画中画点击暂停后仍自动续播）
+
+- **当前分支与基线**：基于 `main` @ `8b5bcfb`（本地未提交改动，Build 已递增至 `225` / `1.1.6 (225)`）。
+- **问题根因**：
+  - 系统画中画小窗直接控制 `AVPlayer` 暂停（`rate -> 0`、`timeControlStatus -> .paused`）时，[AVPlayerHLSBridgeEngine.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift#L1989-L1991) 的 `rate` KVO 与 `handleTimeControlStatus` 因 `wantsPlayback == true`，把外部暂停误判为 `.buffering` 且未同步 `updatePlaybackIntent(false)`；随后 [PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift#L5106-L5112) 的 `timeObserver` 检测到 `wantsAutoplay && !snapshot.isPlaying` 便自动调用 `engine.play()` 恢复播放。
+- **已实现修复与测试（Build `225`，未提交）**：
+  - [AVPlayerHLSBridgeEngine.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/AVPlayerHLSBridgeEngine.swift#L2936-L2992)：记录当前播放意图下是否已观测到真实起播（`hasObservedActivePlaybackForCurrentIntent`）；当 `!isPerformingSeek && !isAwaitingAudioSessionActivation && !audioSession.isDeactivating && lastPlaybackState != .ended && itemStatus == .readyToPlay` 且已实际起播过时，将外部 `.paused`（`rate == 0`）通过 `shouldTreatExternalPauseAsPausedIntent` 统一同步为 `updatePlaybackIntent(false)` 与 `publishPlaybackState(.paused)`。
+  - [PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift#L5833-L5839)：在 `handleEnginePlaybackIntentChange` 补充 `isSurfaceMigrating` 守卫，确保表面迁移期间短暂 `rate == 0` 不会误清 `wantsAutoplay`。
+  - [SystemMiniPlayerCoordinatorTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/SystemMiniPlayerCoordinatorTests.swift#L1077-L1141)：新增 `testExternalPauseDuringActivePiPSyncsPausedIntentWithoutAutoResuming`，验证外部暂停规则判断、PiP 暂停后不自动续播以及迁移守卫。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `224` 递增至 `225`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（`bili`、`biliTests`、`biliUITests`）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (225)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=225`，`bili.app/bili` SHA-256：`d6b533b28f48ef892f198ac2ab689a8fadb5ab37838b1785486384c5520b98d7`。
+  - 真机安装启动（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 成功（`databaseSequenceNumber: 6788`，`installationURL: file:///private/var/containers/Bundle/Application/529AC3ED-8503-4B4A-91BB-8433DA019DEC/bili.app/`），`xcrun devicectl device process launch` 已成功拉起。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221`–`225` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `225`）实测：应用内画中画播放时点击小窗暂停是否稳定保持暂停、再点播放可正常恢复，以及退出进入小窗与切新视频均保持正常。
+  - 在非沙箱环境复跑定向模拟器单测，真机确认后按需提交推送至 GitHub `main`。
+
+### 2026-11-21（Build 226 修复应用内画中画播放时锁屏未暂停）
+
+- **当前分支与基线**：基于 `main` @ `8b5bcfb`（含 Build `225` 本地未提交改动，Build 已递增至 `226` / `1.1.6 (226)`）。
+- **问题根因**：
+  - 设备锁屏触发 [AppOrientationLock.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/AppOrientationLock.swift#L265-L270) 的 `applicationProtectedDataWillBecomeUnavailable(_:)` 调用 `pauseActivePlaybackForAppBackground()`，但 [PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift#L1802) 原先使用 `guard !isPictureInPictureActive else { return false }`，在画中画激活期间无条件跳过暂停，导致未开启后台播放（`backgroundPlaybackEnabled == false`）时锁屏后仍继续出声。
+- **已实现修复与测试（Build `226`，未提交）**：
+  - [PlayerStateViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerStateViewModel.swift#L1790-L1805) & [ActivePlaybackCoordinator.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/ActivePlaybackCoordinator.swift#L57-L62)：为 `pauseForAppBackground` 与 `pauseActivePlaybackForAppBackground` 新增 `pausesActivePictureInPicture: Bool = false` 参数；普通退后台切回桌面/其他 App 仍默认保持 `false`（小窗继续播放）。
+  - [AppOrientationLock.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/AppOrientationLock.swift#L265-L270)：在 `applicationProtectedDataWillBecomeUnavailable(_:)` 传入 `pausesActivePictureInPicture: true`，锁屏时若未开启后台播放则立即暂停活跃小窗播放并停用音频会话（若已开启 `backgroundPlaybackEnabled` 或纯音频模式，仍由 `continuesPlaybackInBackground` 保留续播）。
+  - [ActivePlaybackCoordinatorTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/ActivePlaybackCoordinatorTests.swift#L126-L157)：新增 `testScreenLockPausesActivePictureInPictureWhenBackgroundPlaybackDisabled`，覆盖普通切后台保活小窗与锁屏暂停小窗分支。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `225` 递增至 `226`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（`bili`、`biliTests`、`biliUITests`）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (226)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=226`，`bili.app/bili` SHA-256：`795f36d37d7fa8b099b37d6a7df9d67788e6244916370406dd553d44eeaf1ecb`。
+  - 真机安装启动（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 成功（`databaseSequenceNumber: 6804`，`installationURL: file:///private/var/containers/Bundle/Application/113308BB-18B4-4929-BEA9-9CE4571EECE1/bili.app/`），`xcrun devicectl device process launch` 已成功拉起。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221`–`226` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `226`）实测：应用内画中画播放时（`backgroundPlaybackEnabled` 关闭）锁屏是否立即暂停、回到桌面仍保持小窗播放，同时复验 Build `225` 的小窗点暂停不自动续播。
+  - 在非沙箱环境复跑定向模拟器单测，真机确认后按需提交推送至 GitHub `main`。
+
+### 2026-11-21（Build 227 原生专栏阅读页与动态/搜索原生路由）
+
+- **当前分支与基线**：基于 `main` @ `8b5bcfb`（含 Build `225`–`226` 本地未提交改动；用户已真机确认 Build `226` 锁屏暂停问题已解决，当前 Build 已递增至 `227` / `1.1.6 (227)`）。
+- **已实现功能与测试（Build `227`，未提交）**：
+  - [ArticleDetailModels.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/ArticleDetailModels.swift)：定义 `ArticleRoute`（支持 `.cv(id:)`、`.opus(id:)` 与 `.url(URL)`，含 `/read/(?:mobile/)?cv(\d+)` 与 `/opus/(\d+)` 解析及 `supportsNativeReader`）、`ArticleBlock`（标题、富文本段落、引用、有序/无序列表、代码块、图片、分隔线、外链卡片）、`ArticleStats` 与 `ArticleDetail`。
+  - [ArticleContentParser.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/ArticleContentParser.swift)：实现 Opus 段落（`[DynamicJSONValue]`）与传统 CV HTML 正文双模式纯 Swift 解析器（支持 `h1`–`h4`、`strong`/`em`/`del`/`code`/`a`、`figure`/`img` `data-src` + `figcaption`、`blockquote`、`pre`、`ul`/`ol`、`hr` 与 HTML 实体解码）。
+  - [BiliAPIClient+Article.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Services/BiliAPIClient+Article.swift)：新增 `fetchArticleDetail(for:)`，支持 `/x/article/view`（优先 WBI 签名，失败回退未签名；兼容 `type == 3` Opus 段落与 HTML）以及 `/x/polymer/web-dynamic/v1/opus/detail`（失败回退 `fetchDynamicDetail(id:)`）。
+  - [ArticleDetailView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/ArticleDetailView.swift)：实现原生专栏详情页（封面、标题、分类/时间/字数、可点击跳转 `UploaderView` 的作者栏、统计栏、富文本/图片/代码块渲染、点击全屏缩放看图 `ZoomyFullScreenImageViewer`、内联评论区与回复弹窗 `DynamicCommentRepliesSheet`，以及顶部「分享」和「在浏览器中打开」兜底；严格遵守根 `TabBar` 所有权规则，未添加 `.toolbarVisibility(.hidden, for: .tabBar)`）。
+  - [DynamicCommentsViewModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicCommentsViewModel.swift) & [DynamicCommentReplyStore.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicCommentReplyStore.swift)：支持直接传入 `commentOID` / `commentType` / `replyCount` 初始化（保留原有 `item: DynamicFeedItem` 便捷构造），实现专栏评论与楼中楼回复复用。
+  - 路由接入：[DynamicArticle.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicArticle.swift)、[DynamicArticlePreview.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicArticlePreview.swift)、[DynamicFeedCardContent.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicFeedCardContent.swift)、[BiliModels.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Models/BiliModels.swift)（`SearchArticleItem.articleRoute`）、[SearchRouteRows.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Search/SearchRouteRows.swift) 与 [RootTabSupport.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/App/RootTabSupport.swift)（`.navigationDestination(for: ArticleRoute.self)`）。
+  - [ArticleDetailTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/ArticleDetailTests.swift)：新增单元测试覆盖 `ArticleRoute.parseSource`、`parseHTML`、`parseOpusParagraphs` 与 `DynamicArticle.route(from:)`。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `226` 递增至 `227`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（`bili`、`biliTests`、`biliUITests`，exit 0）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (227)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=227`，`bili.app/bili` SHA-256：`ecc04503ff3011bb8a6bbbcbc82508d66d9e860839a82db68fedc62e19b79452`。
+  - 真机安装启动（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 成功（`databaseSequenceNumber: 6828`，`installationURL: file:///private/var/containers/Bundle/Application/6D4BA2CA-10E8-4E64-B830-E588A1EB6023/bili.app/`），`xcrun devicectl device process launch` 已成功拉起。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221`–`227` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `227`）实测动态页点击 `专栏`（含传统 `/read/cv...` 与新式 `/opus/...`）是否原生推入专栏阅读页、图文排版/缩放看图/作者跳转/内联评论/右上角分享与浏览器兜底是否正常。
+  - 在非沙箱环境复跑定向模拟器单测（含 `ArticleDetailTests`），真机确认后按需提交推送至 GitHub `main`。
+
+### 2026-11-21（Build 228 动态专栏整卡直达与工具栏作者头像/配色优化）
+
+- **当前分支与基线**：基于 `main` @ `8b5bcfb`（含 Build `225`–`227` 本地未提交改动，Build 已递增至 `228` / `1.1.6 (228)`）。
+- **已实现改动（Build `228`，未提交）**：
+  - [DynamicFeedCardDisplayModel.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicFeedCardDisplayModel.swift#L80-L132) & [DynamicFeedCard.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicFeedCard.swift#L90-L138)：为 `supportsDetailNavigation` 增加 `hasArticle` 支持，并在 `openDetailAction` 与 `openOriginalDetailAction` 中优先解析可原生阅读的 `ArticleRoute` 直接推入专栏详情页，不再先进入动态详情页。
+  - [ArticleDetailView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/ArticleDetailView.swift#L44-L98)：在专栏详情页右上角新增独立 `ToolbarItem(placement: .topBarTrailing)` 放置作者头像按钮（`VideoOwnerRouteLink` 跳转 `UploaderView`），使系统为其分配独立液态玻璃容器；将 `ShareLink` 与更多 `Menu` 按钮调整为 `.primary` 前景色/tint，不再使用应用主题色。
+  - [ArticleDetailTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/ArticleDetailTests.swift#L172-L184)：新增 `testDynamicFeedSupportsDetailNavigationForArticleWithoutTopLevelTextOrImages`。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `227` 递增至 `228`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（exit 0）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (228)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=228`，`bili.app/bili` SHA-256：`18d2da5fe710a416104932f37d0b7e7d77ba0da248a5da629dc3aa2e9f34930a`。
+  - 真机安装（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 成功（`databaseSequenceNumber: 6852`，`installationURL: file:///private/var/containers/Bundle/Application/33900EEF-4319-4818-89D0-E0FFB623CBF0/bili.app/`）；`xcrun devicectl device process launch` 因设备处于锁屏状态返回 `Locked`（未拉起前台，需解锁后手动打开）。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221`–`228` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请解锁 `RCe2027` 后打开 Build `228` 实测：动态页点击专栏卡片任意区域是否直接打开专栏页、右上角作者头像是否为独立液态玻璃容器且可跳转主页、分享与更多按钮是否为非主题色系统前景色。
+
+### 2026-11-21（Build 229 专栏详情页底部交互栏与右上角精简）
+
+- **当前分支与基线**：基于 `main` @ `8b5bcfb`（含 Build `225`–`228` 本地未提交改动，Build 已递增至 `229` / `1.1.6 (229)`）。
+- **已实现改动（Build `229`，未提交）**：
+  - [ArticleDetailModels.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/ArticleDetailModels.swift)、[DynamicArticle.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicArticle.swift)、[DynamicFeedCard.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/DynamicFeedCard.swift)：补充透传 `dynamicID`、`initialIsLiked`、`initialLikeCount` 与 `cvID`。
+  - [BiliAPIClient+Interactions.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Services/BiliAPIClient+Interactions.swift#L50) & [BiliAPIClient+Article.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Services/BiliAPIClient+Article.swift#L332-L349)：新增 `setArticleLike(cvID:liked:)`（POST `/x/article/like`）以支持无 `dynamicID` 的传统 CV 专栏点赞。
+  - [ArticleDetailView.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Dynamic/ArticleDetailView.swift)：
+    - 右上角工具栏精简为仅保留作者头像 `ToolbarItem(placement: .topBarTrailing)` 按钮（移除分享与更多按钮）。
+    - 新增 `ArticleDetailBottomInteractionBar`，在底部工具栏实现与动态详情页一致的「点赞、点击发送电波（评论）、分享」三键交互，并接入 `RichCommentComposerPresenter` 支持直接发评与楼层回复。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `228` 递增至 `229`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（exit 0）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (229)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=229`，`bili.app/bili` SHA-256：`0f956c08c3c60836201d7c4fd9666e539af8bc3a90abedf6419025ea1bceccf8`。
+  - 真机安装启动（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 成功（`databaseSequenceNumber: 6868`，`installationURL: file:///private/var/containers/Bundle/Application/472AD86F-F0AF-4E3B-961F-13147FCC86D0/bili.app/`），`xcrun devicectl device process launch` 已成功拉起。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221`–`229` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请在 `RCe2027`（Build `229`）实测专栏详情页右上角是否仅保留作者头像按钮，底部点赞、评论（「点击发送电波」发评及楼层回复）和分享交互是否与动态详情页一致。
+
+### 2026-11-21（Build 230 视频三分手势控制：亮度 / 全屏切换 / 音量）
+
+- **当前分支与基线**：基于 `main` @ `8b5bcfb`（含 Build `225`–`229` 本地未提交改动，Build 已递增至 `230` / `1.1.6 (230)`）。
+- **已实现功能与测试（Build `230`，未提交）**：
+  - [LibraryStore.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Storage/LibraryStore.swift) & [MinePlaybackPreferenceSection.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Mine/MinePlaybackPreferenceSection.swift)：在「我的 → 播放设置 → 播放体验」新增开关「视频三分手势」（持久化键 `cc.bili.playback.threeZoneVerticalGesture.v1`，默认关闭）。
+  - [PlayerSurfaceVerticalAdjustmentPolicy.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/PlayerSurfaceVerticalAdjustmentPolicy.swift)：新增 `zoneAction(startLocationX:width:threeZoneEnabled:)` 与 `fullscreenSwipeDirection(verticalTranslation:isFullscreenActive:threshold:)`；开启开关后，视频区域水平三等分（左 `1/3` 调节亮度、中 `1/3` 上滑进入全屏/全屏下滑退出全屏、右 `1/3` 调节音量），关闭开关则保持原有左右二分调节。
+  - [BiliPlayerSurfaceGestureLayer.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayer.swift)、[BiliPlayerSurfaceGestureLayerHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/Player/BiliPlayerSurfaceGestureLayerHost.swift) & [VideoDetailShellSurfaceHost.swift](file:///Users/rayc/Desktop/ccswift/bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift)：透传 `playerThreeZoneVerticalGestureEnabled`、`isFullscreenActive`、`onRequestFullscreen` 与 `onExitFullscreen`，天然适配横屏视频（竖屏上滑转横屏全屏、横屏下滑退回竖屏）与竖屏视频（上滑进入竖屏全屏、全屏下滑退出全屏）。
+  - [PlayerSurfaceVerticalAdjustmentPolicyTests.swift](file:///Users/rayc/Desktop/ccswift/biliTests/PlayerSurfaceVerticalAdjustmentPolicyTests.swift#L142-L197)：新增 `testThreeZoneActionSplitsWidthIntoThirdsWhenEnabled` 与 `testFullscreenSwipeDirectionRespectsFullscreenStateAndThreshold`。
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `CURRENT_PROJECT_VERSION` 从 `229` 递增至 `230`。
+- **已验证（本地编译、签名校验与真机安装，于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `python3 Scripts/build-cache.py run -- xcodebuild build-for-testing -project bili.xcodeproj -scheme bili -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO`：`** TEST BUILD SUCCEEDED **`（exit 0）。
+  - `Release-iphoneos` 真机构建与签名（`1.1.6 (230)`，仅命令行临时覆盖 `G933USCY46` / `app.bamboo2779.brussels691`）：`** BUILD SUCCEEDED **`，`zsh Scripts/remove-empty-frameworks.sh` 移除 `0` 个空 framework，`codesign --verify --deep --strict` 通过，`CFBundleVersion=230`，`bili.app/bili` SHA-256：`d136d01a412d9ea4508ba125b021ce20a59e1dfba277c1142976bd32eda3c078`。
+  - 真机安装（`RCe2027` / `00008160-001C311028434036`）：`xcrun devicectl device install app` 成功（`databaseSequenceNumber: 6884`，`installationURL: file:///private/var/containers/Bundle/Application/E8551CB1-7C08-4749-9A91-F5C20BA0F946/bili.app/`）；`xcrun devicectl device process launch` 因设备处于锁屏状态返回 `Locked`。
+- **未完成与环境阻塞（当前沙箱限制）**：
+  - Build `221`–`230` 改动后**尚未实际运行**模拟器单元测试（沙箱阻断 `CoreSimulatorService` XPC）。
+- **真机与本地待办**：
+  - 请解锁 `RCe2027` 后打开 Build `230`，在「我的 → 播放设置」开启「视频三分手势」，分别测试横屏视频（左亮度 / 竖屏中上滑横屏全屏 / 横屏中下滑回竖屏 / 右音量）与竖屏视频（中上滑进入竖屏全屏 / 全屏中下滑退出）。
+
+### 2026-11-21（未签名 IPA 固定 Bundle ID 为 `com.rayc.cilicili`）
+
+- **已实现改动（未提交）**：
+  - [build-release-unsigned-ipa.sh](file:///Users/rayc/Desktop/ccswift/Scripts/build-release-unsigned-ipa.sh)：为未签名 Release IPA 构建默认指定 `PRODUCT_BUNDLE_IDENTIFIER="${UNSIGNED_IPA_BUNDLE_IDENTIFIER:-com.rayc.cilicili}"`，并将 `bundle_id` 写入 `build-info.json` 与 `GITHUB_OUTPUT`。因为 [.github/workflows/unsigned-ipa.yml](file:///Users/rayc/Desktop/ccswift/.github/workflows/unsigned-ipa.yml#L30) 与 [.github/workflows/ci.yml](file:///Users/rayc/Desktop/ccswift/.github/workflows/ci.yml#L78) 均直接调用该脚本，后续本地与 GitHub Actions 产出的未签名 IPA 将统一固定使用 `com.rayc.cilicili`（同时保留本地真机调试时的 CLI 临时签名覆盖互不干扰）。
+- **已验证（于最后一次脚本改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - `zsh Scripts/build-release-unsigned-ipa.sh`：构建成功，生成 `/Users/rayc/Desktop/ccswift/build/release-unsigned-ipa/bili-release-unsigned.ipa`（`1.1.6 (230)`，`signed: false`，SHA-256：`195200384540ab9e550361235d6fa776d62e8329620ed43b173dd4e12d47bd51`）。
+  - 解包核验 `Payload/bili.app/Info.plist`：`CFBundleIdentifier` 为 `com.rayc.cilicili`，`build-info.json` 的 `bundle_id` 为 `com.rayc.cilicili`。
+
+### 2026-11-21（版本号升级至 `1.1.7 (230)` 并生成 Release 说明）
+
+- **已实现改动（未提交）**：
+  - [project.pbxproj](file:///Users/rayc/Desktop/ccswift/bili.xcodeproj/project.pbxproj)：将全部 6 个构建配置的 `MARKETING_VERSION` 从 `1.1.6` 升级至 `1.1.7`（`CURRENT_PROJECT_VERSION` 保持 `230`）。
+  - 对比 `v1.1.6`（`18976de`）整理完成 `1.1.7` GitHub Release 更新说明，覆盖应用内画中画体验与稳定性修复、原生专栏阅读页（含整卡直达、底部点赞/评论/分享栏及右上角作者头像独立容器）、视频三分手势控制，以及未签名 IPA 固定 Bundle ID（`com.rayc.cilicili`）。
+- **已验证**：
+  - `git diff --check`：通过（exit 0）。

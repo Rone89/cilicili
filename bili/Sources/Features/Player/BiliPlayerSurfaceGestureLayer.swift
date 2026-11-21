@@ -16,6 +16,10 @@ struct BiliPlayerSurfaceGestureLayer<Content: View>: View {
     let onHorizontalSeekEnded: (Double) -> Void
     let onHorizontalSeekCancelled: () -> Void
     let onHorizontalSeekCancelPendingChanged: (Bool) -> Void
+    var threeZoneVerticalGestureEnabled: Bool = false
+    var isFullscreenActive: Bool = false
+    var onRequestFullscreen: (() -> Void)? = nil
+    var onExitFullscreen: (() -> Void)? = nil
 
     @StateObject private var systemControlsController = PlayerSystemControlsController()
     @State private var verticalAdjustmentTarget: PlayerSurfaceVerticalAdjustmentTarget?
@@ -50,6 +54,10 @@ struct BiliPlayerSurfaceGestureLayer<Content: View>: View {
                 onHorizontalSeekEnded: onHorizontalSeekEnded,
                 onHorizontalSeekCancelled: onHorizontalSeekCancelled,
                 onHorizontalSeekCancelPendingChanged: onHorizontalSeekCancelPendingChanged,
+                threeZoneVerticalGestureEnabled: threeZoneVerticalGestureEnabled,
+                isFullscreenActive: isFullscreenActive,
+                onRequestFullscreen: onRequestFullscreen,
+                onExitFullscreen: onExitFullscreen,
                 systemValueProvider: { target in
                     systemValue(for: target)
                 },
@@ -176,6 +184,10 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
     let onHorizontalSeekEnded: (Double) -> Void
     let onHorizontalSeekCancelled: () -> Void
     let onHorizontalSeekCancelPendingChanged: (Bool) -> Void
+    var threeZoneVerticalGestureEnabled: Bool = false
+    var isFullscreenActive: Bool = false
+    var onRequestFullscreen: (() -> Void)? = nil
+    var onExitFullscreen: (() -> Void)? = nil
     let systemValueProvider: (PlayerSurfaceVerticalAdjustmentTarget) -> Float?
     let onVerticalAdjustmentBegan: (PlayerSurfaceVerticalAdjustmentTarget, Float) -> Void
     let onVerticalAdjustmentChanged: (PlayerSurfaceVerticalAdjustmentTarget, Float) -> Void
@@ -208,6 +220,7 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
             case ignored
             case seeking(duration: TimeInterval)
             case adjusting(target: PlayerSurfaceVerticalAdjustmentTarget, initialValue: Float)
+            case fullscreenToggle(didTrigger: Bool)
         }
 
         private var parent: BiliPlayerUIKitSurfaceGestureOverlay
@@ -383,7 +396,7 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
 
         private var isPanInteractionActive: Bool {
             switch panMode {
-            case .seeking, .adjusting:
+            case .seeking, .adjusting, .fullscreenToggle:
                 return true
             case .undecided, .ignored:
                 return false
@@ -423,17 +436,34 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
                 parent.onHorizontalSeekStart(startProgress)
                 parent.onHorizontalSeekCancelPendingChanged(isHorizontalSeekCancelPending)
             case .vertical:
-                guard let target = PlayerSurfaceVerticalAdjustmentPolicy.target(
+                guard let action = PlayerSurfaceVerticalAdjustmentPolicy.zoneAction(
                     startLocationX: panStartLocation.x,
-                    width: size.width
-                ),
-                let initialValue = parent.systemValueProvider(target)
-                else {
+                    width: size.width,
+                    threeZoneEnabled: parent.threeZoneVerticalGestureEnabled
+                ) else {
                     panMode = .ignored
                     return
                 }
-                panMode = .adjusting(target: target, initialValue: initialValue)
-                parent.onVerticalAdjustmentBegan(target, initialValue)
+                switch action {
+                case .brightness, .volume:
+                    guard let target = action.adjustmentTarget,
+                          let initialValue = parent.systemValueProvider(target)
+                    else {
+                        panMode = .ignored
+                        return
+                    }
+                    panMode = .adjusting(target: target, initialValue: initialValue)
+                    parent.onVerticalAdjustmentBegan(target, initialValue)
+                case .fullscreenToggle:
+                    let canTrigger = parent.isFullscreenActive
+                        ? (parent.onExitFullscreen != nil)
+                        : (parent.onRequestFullscreen != nil)
+                    guard canTrigger else {
+                        panMode = .ignored
+                        return
+                    }
+                    panMode = .fullscreenToggle(didTrigger: false)
+                }
             }
         }
 
@@ -470,6 +500,21 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
                     height: size.height
                 )
                 parent.onVerticalAdjustmentChanged(target, value)
+            case let .fullscreenToggle(didTrigger):
+                guard !didTrigger else { return }
+                if let direction = PlayerSurfaceVerticalAdjustmentPolicy.fullscreenSwipeDirection(
+                    verticalTranslation: translation.y,
+                    isFullscreenActive: parent.isFullscreenActive
+                ) {
+                    panMode = .fullscreenToggle(didTrigger: true)
+                    Haptics.light()
+                    switch direction {
+                    case .enterFullscreen:
+                        parent.onRequestFullscreen?()
+                    case .exitFullscreen:
+                        parent.onExitFullscreen?()
+                    }
+                }
             case .undecided, .ignored:
                 break
             }
@@ -499,6 +544,8 @@ private struct BiliPlayerUIKitSurfaceGestureOverlay: UIViewRepresentable {
                 }
             case .adjusting:
                 parent.onVerticalAdjustmentEnded()
+            case .fullscreenToggle:
+                break
             case .undecided, .ignored:
                 break
             }

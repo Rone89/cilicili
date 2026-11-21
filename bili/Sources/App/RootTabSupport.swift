@@ -55,6 +55,12 @@ extension View {
             LiveRoomDetailView(seedRoom: room, usesTransparentNavigationBar: usesTransparentNavigationBar)
                 .navigationHistoryTitle(room.title)
         }
+        .navigationDestination(for: ArticleRoute.self) { route in
+            ArticleDetailDestination(route: route)
+                .navigationHistoryTitle(route.title)
+                .toolbar(.visible, for: .navigationBar)
+                .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
+        }
     }
 }
 

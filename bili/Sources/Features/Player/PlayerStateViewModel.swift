@@ -1788,7 +1788,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     @discardableResult
-    func pauseForAppBackground() -> Bool {
+    func pauseForAppBackground(pausesActivePictureInPicture: Bool = false) -> Bool {
         recoveryTestRunnerStorage?.cancel(reason: "播放页面离开或播放器停止", pausePlayback: false)
         manualResumeRecoveryTiming = nil
         #if DEBUG
@@ -1800,7 +1800,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isNativeFullScreenPresented else { return false }
         guard ActivePlaybackCoordinator.shared.isActive(self) else { return false }
         syncPictureInPictureState()
-        guard !isPictureInPictureActive else { return false }
+        if isPictureInPictureActive, !pausesActivePictureInPicture {
+            return false
+        }
         if continuesPlaybackInBackground {
             // Audio-only playback and opted-in recorded-video playback stay active.
             // Detach video presentation sinks immediately unless auto-inline PiP will
@@ -5830,7 +5832,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if isUserSeeking {
             return
         }
-        if !wantsPlayback, shouldPreservePlaybackDuringTransientSystemOverlay {
+        if !wantsPlayback, (shouldPreservePlaybackDuringTransientSystemOverlay || isSurfaceMigrating) {
             wantsAutoplay = true
             if engine.hasMedia {
                 engine.play()
