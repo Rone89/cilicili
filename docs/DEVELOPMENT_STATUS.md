@@ -3309,4 +3309,20 @@
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
     - `VideoRecommendationFilterTests`（5/5）、`DynamicVideoFilterTests`（3/3）、`DynamicFeedCategoriesTests`（4/4）（`/tmp/charging-video-filter-unit.xcresult`，`** TEST SUCCEEDED **`）——合计 **12/12 通过（0 失败，0 跳过）**。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 本轮改动尚未重新打包未签名 IPA 或重新安装至 `iPhone Duo` / 真机 `RCe2027`（当前未签名 IPA 为 `5cfa45f`，真机 `RCe2027` 为 `967f44e`）；线上真实 B 站充电视频在各接口的过滤效果待真机/实景验收；尚未推送远端或合入 `main`。
+  - 按用户指令已通过共享 `Xcode-27` 缓存及命令行本地签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`，不改动项目签名配置）构建 `30032b9` 的 Release 真机包，`codesign --verify --deep --strict` 通过，并原位更新安装及启动至真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）；线上真实 B 站充电视频在首页推荐、相关推荐、动态和搜索中的过滤效果待真机实景验收。未签名 IPA 仍停留在 `5cfa45f`、`iPhone Duo` 模拟器仍停留在 `5cfa45f`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（补全动态页充电视频识别：`MAJOR_TYPE_BLOCKED`、`archive.type == 2` 与 `pub_action`）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `30032b9` 提交本轮修复，未推送远端、未合入 `main`）。
+- **根因与已实现改动**：
+  - [BiliModels.swift](bili/Sources/Models/BiliModels.swift)：
+    1. `DynamicFeedItem.isChargingVideo` 此前要求 `paidContent.kind == .video`，导致未充电锁定的 `MAJOR_TYPE_BLOCKED` 卡片（无 `bvid`，`kind == .unknown`）漏网；现改为 `paidContent.isChargeExclusive && !paidContent.isChargeArticleLike && kind != .article && kind != .course`（同时覆盖转发原动态）。
+    2. `DynamicArchive` 补齐 `type == 2`（B 站动态归档接口的充电专属类型）识别。
+    3. `DynamicAuthor` 补齐 `pub_action` 解析（如「投稿了充电专属视频」），并纳入 `DynamicFeedItem.isChargingVideo`。
+  - [VideoRecommendationFilterTests.swift](biliTests/VideoRecommendationFilterTests.swift)：补充 4 组动态 JSON 单元测试（`MAJOR_TYPE_BLOCKED`、`archive.type == 2`、`pub_action` 及普通「手机充电测评」视频防误杀）。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`VideoRecommendationFilterTests`（`/tmp/charging-dynamic-fix-unit.xcresult`）**5/5 通过（0 失败，0 跳过）**。
+  - Release 真机编译与 `codesign --verify --deep --strict`：通过。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 已原位更新安装并启动至真机 `RCe2027`（`app.bamboo2779.brussels691`），动态页充电视频屏蔽效果待用户在真机下拉刷新复测；未签名 IPA 与 `iPhone Duo` 模拟器仍停留在 `5cfa45f`；尚未推送远端或合入 `main`。

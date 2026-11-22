@@ -5362,16 +5362,30 @@ nonisolated struct DynamicFeedItem: Identifiable, Decodable, Hashable {
     }
 
     var isChargingVideo: Bool {
-        if let paidContent, paidContent.isChargeExclusive, paidContent.kind == .video {
+        if let paidContent,
+           paidContent.isChargeExclusive,
+           !paidContent.isChargeArticleLike,
+           paidContent.kind != .article,
+           paidContent.kind != .course {
             return true
         }
         if archive?.isChargingExclusive == true {
             return true
         }
-        if let originalPaid = original?.paidContent, originalPaid.isChargeExclusive, originalPaid.kind == .video {
+        if VideoItem.isChargingBadgeText(author?.pubAction) {
             return true
         }
-        return original?.archive?.isChargingExclusive == true
+        if let originalPaid = original?.paidContent,
+           originalPaid.isChargeExclusive,
+           !originalPaid.isChargeArticleLike,
+           originalPaid.kind != .article,
+           originalPaid.kind != .course {
+            return true
+        }
+        if original?.archive?.isChargingExclusive == true {
+            return true
+        }
+        return VideoItem.isChargingBadgeText(original?.author?.pubAction)
     }
 
     var replyCount: Int? {
@@ -5607,11 +5621,13 @@ nonisolated struct DynamicAuthor: Decodable, Hashable {
     let face: String?
     let pubTime: String?
     let pubTS: Int?
+    let pubAction: String?
 
     enum CodingKeys: String, CodingKey {
         case mid, name, face
         case pubTime = "pub_time"
         case pubTS = "pub_ts"
+        case pubAction = "pub_action"
     }
 
     init(from decoder: Decoder) throws {
@@ -5621,6 +5637,7 @@ nonisolated struct DynamicAuthor: Decodable, Hashable {
         face = try container.decodeIfPresent(String.self, forKey: .face)
         pubTime = try container.decodeIfPresent(String.self, forKey: .pubTime)
         pubTS = container.decodeLossyIntIfPresent(forKey: .pubTS)
+        pubAction = try container.decodeIfPresent(String.self, forKey: .pubAction)
     }
 
     var owner: VideoOwner {
@@ -7037,7 +7054,7 @@ nonisolated struct DynamicArchive: Decodable, Hashable {
     let isChargingExclusive: Bool
 
     enum CodingKeys: String, CodingKey {
-        case aid, bvid, title, cover, desc, stat, duration, length, badge
+        case aid, bvid, title, cover, desc, stat, duration, length, badge, type
         case badgeText = "badge_text"
         case isUpowerExclusive = "is_upower_exclusive"
         case isUpowerPlay = "is_upower_play"
@@ -7093,6 +7110,7 @@ nonisolated struct DynamicArchive: Decodable, Hashable {
             || VideoItem.decodeTruthyFlag(from: container, forKey: .isChargeVideo)
             || VideoItem.decodeTruthyFlag(from: container, forKey: .chargingPay)
             || (container.decodeLossyIntIfPresent(forKey: .elecArcType) ?? 0) > 0
+            || container.decodeLossyIntIfPresent(forKey: .type) == 2
             || VideoItem.isChargingBadgeText(badgeStr)
     }
 
@@ -7166,6 +7184,7 @@ nonisolated struct DynamicArchive: Decodable, Hashable {
             || (object["is_charge_video"]?.intValueForDynamicParsing ?? 0) > 0
             || (object["charging_pay"]?.intValueForDynamicParsing ?? 0) > 0
             || (object["elec_arc_type"]?.intValueForDynamicParsing ?? 0) > 0
+            || object["type"]?.intValueForDynamicParsing == 2
             || VideoItem.isChargingBadgeText(badgeStr)
     }
 

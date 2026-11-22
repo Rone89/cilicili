@@ -164,6 +164,80 @@ final class VideoRecommendationFilterTests: XCTestCase {
         """.data(using: .utf8)!
         let decodedRelated = try JSONDecoder().decode(VideoItem.self, from: relatedJSON)
         XCTAssertTrue(decodedRelated.isChargingExclusive)
+
+        // Dynamic feed: locked MAJOR_TYPE_BLOCKED (no bvid), archive type == 2,
+        // archive badge "充电专属", and author pub_action "投稿了充电专属视频".
+        let dynamicBlockedJSON = """
+        {
+          "id_str": "dyn-blocked-1",
+          "type": "DYNAMIC_TYPE_AV",
+          "modules": {
+            "module_author": {"mid": 1, "name": "UP", "pub_action": "投稿了视频"},
+            "module_dynamic": {
+              "major": {
+                "type": "MAJOR_TYPE_BLOCKED",
+                "blocked": {"hint_message": "充电专属视频，充电后即可观看"}
+              }
+            }
+          }
+        }
+        """.data(using: .utf8)!
+        let dynamicBlocked = try JSONDecoder().decode(DynamicFeedItem.self, from: dynamicBlockedJSON)
+        XCTAssertTrue(dynamicBlocked.isChargingVideo)
+
+        let dynamicArchiveType2JSON = """
+        {
+          "id_str": "dyn-arc-type2",
+          "type": "DYNAMIC_TYPE_AV",
+          "modules": {
+            "module_author": {"mid": 1, "name": "UP", "pub_action": "投稿了视频"},
+            "module_dynamic": {
+              "major": {
+                "type": "MAJOR_TYPE_ARCHIVE",
+                "archive": {"bvid": "BV1arc2", "title": "专属回放", "type": 2, "badge": {"text": "投稿视频"}}
+              }
+            }
+          }
+        }
+        """.data(using: .utf8)!
+        let dynamicArchiveType2 = try JSONDecoder().decode(DynamicFeedItem.self, from: dynamicArchiveType2JSON)
+        XCTAssertTrue(dynamicArchiveType2.isChargingVideo)
+
+        let dynamicPubActionJSON = """
+        {
+          "id_str": "dyn-pub-action",
+          "type": "DYNAMIC_TYPE_AV",
+          "modules": {
+            "module_author": {"mid": 1, "name": "UP", "pub_action": "投稿了充电专属视频"},
+            "module_dynamic": {
+              "major": {
+                "type": "MAJOR_TYPE_ARCHIVE",
+                "archive": {"bvid": "BV1pub1", "title": "普通标题", "type": 1}
+              }
+            }
+          }
+        }
+        """.data(using: .utf8)!
+        let dynamicPubAction = try JSONDecoder().decode(DynamicFeedItem.self, from: dynamicPubActionJSON)
+        XCTAssertTrue(dynamicPubAction.isChargingVideo)
+
+        let dynamicNormalJSON = """
+        {
+          "id_str": "dyn-normal",
+          "type": "DYNAMIC_TYPE_AV",
+          "modules": {
+            "module_author": {"mid": 1, "name": "UP", "pub_action": "投稿了视频"},
+            "module_dynamic": {
+              "major": {
+                "type": "MAJOR_TYPE_ARCHIVE",
+                "archive": {"bvid": "BV1norm", "title": "百瓦快充手机充电测评", "type": 1, "badge": {"text": "投稿视频"}}
+              }
+            }
+          }
+        }
+        """.data(using: .utf8)!
+        let dynamicNormal = try JSONDecoder().decode(DynamicFeedItem.self, from: dynamicNormalJSON)
+        XCTAssertFalse(dynamicNormal.isChargingVideo)
     }
 
     private func video(
