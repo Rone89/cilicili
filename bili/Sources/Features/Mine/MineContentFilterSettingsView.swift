@@ -29,6 +29,14 @@ struct MineContentFilterSettingsView: View {
                     MineSettingsLabel("屏蔽带货评论", systemImage: "text.bubble.badge.minus")
                 }
 
+                Toggle(isOn: Binding(
+                    get: { libraryStore.blocksChargingVideos },
+                    set: { libraryStore.setBlocksChargingVideos($0) }
+                )) {
+                    MineSettingsLabel("屏蔽充电视频", systemImage: "bolt.slash")
+                }
+                .accessibilityIdentifier("mine.contentFilter.blocksChargingVideos")
+
                 NavigationLink {
                     DynamicKeywordFilterSettingsView(libraryStore: libraryStore)
                 } label: {
@@ -38,7 +46,7 @@ struct MineContentFilterSettingsView: View {
                     )
                 }
 
-                Text("广告动态会按常见推广关键词过滤；带货动态会按 B 站商品组件和商品元数据过滤；自定义关键词会匹配动态正文、标题和转发内容。")
+                Text("广告动态会按常见推广关键词过滤；带货动态会按 B 站商品组件和商品元数据过滤；屏蔽充电视频会在首页推荐、相关推荐、动态和搜索结果中隐藏充电专属视频；自定义关键词会匹配动态正文、标题和转发内容。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

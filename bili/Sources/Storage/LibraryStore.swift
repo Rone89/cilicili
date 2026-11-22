@@ -146,6 +146,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blocksAdDynamics: Bool
     @Published private(set) var blocksGoodsDynamics: Bool
     @Published private(set) var blocksGoodsComments: Bool
+    @Published private(set) var blocksChargingVideos: Bool
     @Published private(set) var blockedDynamicKeywords: [String]
     @Published private(set) var recommendMinimumDurationSeconds: Int
     @Published private(set) var recommendMinimumViewCount: Int
@@ -230,6 +231,7 @@ final class LibraryStore: ObservableObject {
     private static let blocksAdDynamicsKey = "cc.bili.content.blocksAdDynamics.v1"
     private static let blocksGoodsDynamicsKey = "cc.bili.content.blocksGoodsDynamics.v1"
     private static let blocksGoodsCommentsKey = "cc.bili.content.blocksGoodsComments.v1"
+    private static let blocksChargingVideosKey = "cc.bili.content.blocksChargingVideos.v1"
     private static let blockedDynamicKeywordsKey = "cc.bili.content.blockedDynamicKeywords.v1"
     private static let recommendMinimumDurationSecondsKey = "cc.bili.content.recommendMinimumDurationSeconds.v1"
     private static let recommendMinimumViewCountKey = "cc.bili.content.recommendMinimumViewCount.v1"
@@ -634,6 +636,7 @@ final class LibraryStore: ObservableObject {
         self.blocksAdDynamics = userDefaults.object(forKey: Self.blocksAdDynamicsKey) as? Bool ?? true
         self.blocksGoodsDynamics = userDefaults.object(forKey: Self.blocksGoodsDynamicsKey) as? Bool ?? true
         self.blocksGoodsComments = userDefaults.object(forKey: Self.blocksGoodsCommentsKey) as? Bool ?? true
+        self.blocksChargingVideos = userDefaults.object(forKey: Self.blocksChargingVideosKey) as? Bool ?? false
         self.blockedDynamicKeywords = Self.normalizedBlockedDynamicKeywords(
             userDefaults.stringArray(forKey: Self.blockedDynamicKeywordsKey) ?? []
         )
@@ -1150,6 +1153,11 @@ final class LibraryStore: ObservableObject {
     func setBlocksGoodsComments(_ isEnabled: Bool) {
         blocksGoodsComments = isEnabled
         userDefaults.set(isEnabled, forKey: Self.blocksGoodsCommentsKey)
+    }
+
+    func setBlocksChargingVideos(_ isEnabled: Bool) {
+        blocksChargingVideos = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.blocksChargingVideosKey)
     }
 
     func setBlockedDynamicKeywords(_ keywords: [String]) {

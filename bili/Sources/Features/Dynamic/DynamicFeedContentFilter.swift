@@ -37,6 +37,9 @@ struct DynamicFeedContentFilter {
         if libraryStore.blocksGoodsDynamics {
             filteredItems = filteredItems.filter { !$0.containsGoodsPromotion }
         }
+        if libraryStore.blocksChargingVideos {
+            filteredItems = filteredItems.filter { !$0.isChargingVideo }
+        }
         let blockedKeywords = libraryStore.blockedDynamicKeywords
         if !blockedKeywords.isEmpty {
             filteredItems = filteredItems.filter { !$0.matchesBlockedDynamicKeywords(blockedKeywords) }

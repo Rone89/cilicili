@@ -8,10 +8,12 @@ extension BiliAPIClient {
             page: page,
             order: order
         )
+        let blocksChargingVideos = await MainActor.run { libraryStore.blocksChargingVideos }
         return
             results
             .filter { !$0.bvid.isEmpty }
             .map { $0.asVideoItem() }
+            .filter { !blocksChargingVideos || !$0.isChargingExclusive }
     }
 
     func searchUsers(keyword: String, page: Int = 1) async throws -> [SearchUserItem] {

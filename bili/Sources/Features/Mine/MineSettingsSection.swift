@@ -145,7 +145,10 @@ struct MineSettingsSection: View {
 
     private var contentFilterSummary: String {
         var parts = ["动态 \(libraryStore.blockedDynamicKeywords.count) 个关键词"]
-        if libraryStore.videoRecommendationFilterConfiguration.isActive {
+        if libraryStore.blocksChargingVideos {
+            parts.append("屏蔽充电视频")
+        }
+        if libraryStore.videoRecommendationFilterConfiguration.isRecommendRuleActive {
             parts.append("推荐过滤开启")
         }
         return parts.joined(separator: "，")

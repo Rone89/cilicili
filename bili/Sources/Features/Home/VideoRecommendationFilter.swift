@@ -11,12 +11,33 @@ nonisolated struct VideoRecommendationFilterConfiguration: Equatable, Sendable {
     let minimumLikeRatioPercent: Int
     let blockedKeywords: [String]
     let appliesToRelatedVideos: Bool
+    let blocksChargingVideos: Bool
 
-    var isActive: Bool {
+    init(
+        minimumDurationSeconds: Int,
+        minimumViewCount: Int,
+        minimumLikeRatioPercent: Int,
+        blockedKeywords: [String],
+        appliesToRelatedVideos: Bool,
+        blocksChargingVideos: Bool = false
+    ) {
+        self.minimumDurationSeconds = minimumDurationSeconds
+        self.minimumViewCount = minimumViewCount
+        self.minimumLikeRatioPercent = minimumLikeRatioPercent
+        self.blockedKeywords = blockedKeywords
+        self.appliesToRelatedVideos = appliesToRelatedVideos
+        self.blocksChargingVideos = blocksChargingVideos
+    }
+
+    var isRecommendRuleActive: Bool {
         minimumDurationSeconds > 0
             || minimumViewCount > 0
             || minimumLikeRatioPercent > 0
             || !blockedKeywords.isEmpty
+    }
+
+    var isActive: Bool {
+        isRecommendRuleActive || blocksChargingVideos
     }
 }
 
@@ -27,14 +48,27 @@ nonisolated enum VideoRecommendationFilter {
         context: VideoRecommendationFilterContext
     ) -> [VideoItem] {
         guard configuration.isActive else { return videos }
-        guard context == .feed || configuration.appliesToRelatedVideos else { return videos }
-        return videos.filter { includes($0, configuration: configuration) }
+        let appliesRecommendRules = configuration.isRecommendRuleActive
+            && (context == .feed || configuration.appliesToRelatedVideos)
+        guard appliesRecommendRules || configuration.blocksChargingVideos else { return videos }
+        return videos.filter { video in
+            if configuration.blocksChargingVideos, video.isChargingExclusive {
+                return false
+            }
+            if appliesRecommendRules {
+                return includes(video, configuration: configuration)
+            }
+            return true
+        }
     }
 
     static func includes(
         _ video: VideoItem,
         configuration: VideoRecommendationFilterConfiguration
     ) -> Bool {
+        if configuration.blocksChargingVideos, video.isChargingExclusive {
+            return false
+        }
         if configuration.minimumDurationSeconds > 0,
            let duration = video.duration,
            duration > 0,
@@ -86,7 +120,8 @@ extension LibraryStore {
             minimumViewCount: recommendMinimumViewCount,
             minimumLikeRatioPercent: recommendMinimumLikeRatioPercent,
             blockedKeywords: blockedRecommendKeywords,
-            appliesToRelatedVideos: appliesRecommendFiltersToRelatedVideos
+            appliesToRelatedVideos: appliesRecommendFiltersToRelatedVideos,
+            blocksChargingVideos: blocksChargingVideos
         )
     }
 }

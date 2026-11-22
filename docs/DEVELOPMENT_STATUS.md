@@ -3287,3 +3287,26 @@
     - `AdaptiveLayoutAndPlayerIdentityTests`（`/tmp/duo-mine-margins-unit.xcresult`，`** TEST SUCCEEDED **`）：**16/16 通过（0 失败，0 跳过）**。
 - **未验证与待办（明确区分，不推测通过）**：
   - 已更新构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `61469`）；「我的」页与各设置页在 Duo 折叠态上的实景显示待用户确认。真机 `RCe2027` 当前停留在 `967f44e`；尚未推送远端或合入 `main`。
+  - 已按用户指令基于 `5cfa45f` 通过共享 `Xcode-27` 缓存生成本地未签名 Release IPA：`build/release-unsigned-ipa/bili-release-unsigned.ipa`（`com.rayc.cilicili`，版本 `1.1.7` / Build `232`，大小 `24M`，SHA-256 `1888651e66a3fd636ca8ae62ec5ed34a96a8f44e0a2b4d8eabc0646f3ebefac8`，已校验无 `_CodeSignature` 与 `embedded.mobileprovision`）。
+
+### 2026-11-22（新增「屏蔽充电视频」内容过滤开关，默认关闭）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `5cfa45f` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **持久化开关（默认关闭）与设置入口**：
+     - [LibraryStore.swift](bili/Sources/Storage/LibraryStore.swift)：新增 `blocksChargingVideos`（`cc.bili.content.blocksChargingVideos.v1`，默认 `false`）及 `setBlocksChargingVideos(_:)`。
+     - [MineContentFilterSettingsView.swift](bili/Sources/Features/Mine/MineContentFilterSettingsView.swift)、[MineSearchCatalog.swift](bili/Sources/Features/Mine/MineSearchCatalog.swift) & [MineSettingsSection.swift](bili/Sources/Features/Mine/MineSettingsSection.swift)：在「我的 → 内容过滤」新增「屏蔽充电视频」开关与说明，并同步接入设置页搜索关键词和摘要展示。
+  2. **结构化充电专属视频识别（避免误伤标题含「充电」的普通视频）**：
+     - [BiliModels.swift](bili/Sources/Models/BiliModels.swift)：为 `VideoItem`、`RecommendFeedItem`、`SearchVideoItem`、`UploaderAppArchiveItem`、`UploaderVideoItem`、`DynamicPaidContent` 与 `DynamicArchive` 统一补齐 `isChargingExclusive` 解析（识别 `is_upower_exclusive` / `is_upower_play` / `is_upower_preview` / `is_charge_video` / `is_charging_arc` / `charging_pay` / `elec_arc_type > 0` 及结构化「充电专属 / 充电视频 / 需充电 / upower」角标），并在 `DynamicFeedItem` 新增 `isChargingVideo`。
+  3. **多端内容过滤链路**：
+     - [VideoRecommendationFilter.swift](bili/Sources/Features/Home/VideoRecommendationFilter.swift)：首页推荐与视频详情页相关推荐在开关开启时过滤 `isChargingExclusive` 视频。
+     - [DynamicFeedContentFilter.swift](bili/Sources/Features/Dynamic/DynamicFeedContentFilter.swift) & [DynamicViewModel.swift](bili/Sources/Features/Dynamic/DynamicViewModel.swift)：动态流过滤充电专属视频动态，并监听开关变更即时重过滤。
+     - [BiliAPIClient+Search.swift](bili/Sources/Services/BiliAPIClient+Search.swift)：搜索视频结果在开关开启时过滤充电专属视频。
+  4. **单元测试**：
+     - [VideoRecommendationFilterTests.swift](biliTests/VideoRecommendationFilterTests.swift)：新增 `testBlocksChargingVideosDefaultsToFalseAndPersists` 与 `testBlocksChargingVideosFiltersFeedAndRelatedWithoutFalsePositives`，验证默认关闭、持久化、首页/相关推荐过滤及多接口 JSON 解析（含普通「快充手机充电测评」视频不被误杀）。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - `VideoRecommendationFilterTests`（5/5）、`DynamicVideoFilterTests`（3/3）、`DynamicFeedCategoriesTests`（4/4）（`/tmp/charging-video-filter-unit.xcresult`，`** TEST SUCCEEDED **`）——合计 **12/12 通过（0 失败，0 跳过）**。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 本轮改动尚未重新打包未签名 IPA 或重新安装至 `iPhone Duo` / 真机 `RCe2027`（当前未签名 IPA 为 `5cfa45f`，真机 `RCe2027` 为 `967f44e`）；线上真实 B 站充电视频在各接口的过滤效果待真机/实景验收；尚未推送远端或合入 `main`。

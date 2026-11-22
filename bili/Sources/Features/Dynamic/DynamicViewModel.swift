@@ -50,11 +50,12 @@ final class DynamicViewModel: ObservableObject {
             hostMID: query.hostMID
         )
         filterCancellable = libraryStore.$blocksAdDynamics
-            .combineLatest(libraryStore.$blocksGoodsDynamics)
+            .combineLatest(libraryStore.$blocksGoodsDynamics, libraryStore.$blocksChargingVideos)
             .combineLatest(libraryStore.$blockedDynamicKeywords)
             .removeDuplicates { lhs, rhs in
                 lhs.0.0 == rhs.0.0
                     && lhs.0.1 == rhs.0.1
+                    && lhs.0.2 == rhs.0.2
                     && lhs.1 == rhs.1
             }
             .dropFirst()

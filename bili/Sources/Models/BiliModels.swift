@@ -146,11 +146,55 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
     let pgcSeasonID: Int?
     let pgcEpisodeID: Int?
     let ugcSeason: UgcSeason?
+    let isChargingExclusive: Bool
 
     enum CodingKeys: String, CodingKey {
         case bvid, aid, title, pic, desc, duration, pubdate, owner, stat, cid, pages, dimension
         case historyResumeTime, historyCID, recommendReason, recommendationFeedback, pgcSeasonID, pgcEpisodeID
         case ugcSeason = "ugc_season"
+        case isChargingExclusive
+        case isUpowerExclusive = "is_upower_exclusive"
+        case isUpowerPlay = "is_upower_play"
+        case isUpowerPreview = "is_upower_preview"
+        case isChargeVideo = "is_charge_video"
+        case isChargingArc = "is_charging_arc"
+        case chargingPay = "charging_pay"
+        case elecArcType = "elec_arc_type"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bvid = try container.decode(String.self, forKey: .bvid)
+        aid = try container.decodeIfPresent(Int.self, forKey: .aid)
+        title = try container.decode(String.self, forKey: .title)
+        pic = try container.decodeIfPresent(String.self, forKey: .pic)
+        desc = try container.decodeIfPresent(String.self, forKey: .desc)
+        duration = try container.decodeIfPresent(Int.self, forKey: .duration)
+        pubdate = try container.decodeIfPresent(Int.self, forKey: .pubdate)
+        owner = try container.decodeIfPresent(VideoOwner.self, forKey: .owner)
+        stat = try container.decodeIfPresent(VideoStat.self, forKey: .stat)
+        cid = try container.decodeIfPresent(Int.self, forKey: .cid)
+        pages = try container.decodeIfPresent([VideoPage].self, forKey: .pages)
+        dimension = try container.decodeIfPresent(VideoDimension.self, forKey: .dimension)
+        historyResumeTime = try container.decodeIfPresent(TimeInterval.self, forKey: .historyResumeTime)
+        historyCID = try container.decodeIfPresent(Int.self, forKey: .historyCID)
+        recommendReason = try container.decodeIfPresent(String.self, forKey: .recommendReason)
+        recommendationFeedback = try container.decodeIfPresent(
+            HomeRecommendationFeedbackMetadata.self,
+            forKey: .recommendationFeedback
+        )
+        pgcSeasonID = try container.decodeIfPresent(Int.self, forKey: .pgcSeasonID)
+        pgcEpisodeID = try container.decodeIfPresent(Int.self, forKey: .pgcEpisodeID)
+        ugcSeason = try container.decodeIfPresent(UgcSeason.self, forKey: .ugcSeason)
+        isChargingExclusive = Self.decodeTruthyFlag(from: container, forKey: .isChargingExclusive)
+            || Self.decodeTruthyFlag(from: container, forKey: .isUpowerExclusive)
+            || Self.decodeTruthyFlag(from: container, forKey: .isUpowerPlay)
+            || Self.decodeTruthyFlag(from: container, forKey: .isUpowerPreview)
+            || Self.decodeTruthyFlag(from: container, forKey: .isChargeVideo)
+            || Self.decodeTruthyFlag(from: container, forKey: .isChargingArc)
+            || Self.decodeTruthyFlag(from: container, forKey: .chargingPay)
+            || (container.decodeLossyIntIfPresent(forKey: .elecArcType) ?? 0) > 0
+            || Self.isChargingBadgeText(recommendReason)
     }
 
     init(
@@ -172,7 +216,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         recommendationFeedback: HomeRecommendationFeedbackMetadata? = nil,
         pgcSeasonID: Int? = nil,
         pgcEpisodeID: Int? = nil,
-        ugcSeason: UgcSeason? = nil
+        ugcSeason: UgcSeason? = nil,
+        isChargingExclusive: Bool = false
     ) {
         self.bvid = bvid
         self.aid = aid
@@ -193,6 +238,36 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         self.pgcSeasonID = pgcSeasonID
         self.pgcEpisodeID = pgcEpisodeID
         self.ugcSeason = ugcSeason
+        self.isChargingExclusive = isChargingExclusive
+    }
+
+    nonisolated static func decodeTruthyFlag<Key: CodingKey>(
+        from container: KeyedDecodingContainer<Key>,
+        forKey key: Key
+    ) -> Bool {
+        if let flag = try? container.decodeIfPresent(Bool.self, forKey: key), flag {
+            return true
+        }
+        if let intValue = container.decodeLossyIntIfPresent(forKey: key), intValue > 0 {
+            return true
+        }
+        if let stringValue = try? container.decodeIfPresent(String.self, forKey: key) {
+            let normalized = stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return normalized == "true" || normalized == "1" || normalized == "yes"
+        }
+        return false
+    }
+
+    nonisolated static func isChargingBadgeText(_ value: String?) -> Bool {
+        guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return false
+        }
+        let lower = raw.lowercased()
+        return lower.contains("充电专属")
+            || lower.contains("充电视频")
+            || lower.contains("需充电")
+            || lower.contains("upower")
+            || lower == "充电"
     }
 
     nonisolated func mergingFilledValues(from fullDetail: VideoItem) -> VideoItem {
@@ -231,7 +306,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
             recommendationFeedback: recommendationFeedback ?? fullDetail.recommendationFeedback,
             pgcSeasonID: pgcSeasonID ?? fullDetail.pgcSeasonID,
             pgcEpisodeID: pgcEpisodeID ?? fullDetail.pgcEpisodeID,
-            ugcSeason: fullDetail.ugcSeason ?? ugcSeason
+            ugcSeason: fullDetail.ugcSeason ?? ugcSeason,
+            isChargingExclusive: isChargingExclusive || fullDetail.isChargingExclusive
         )
     }
 
@@ -987,11 +1063,18 @@ nonisolated struct UploaderAppArchiveItem: Decodable, Hashable {
     let play: Int?
     let danmaku: Int?
     let pubdate: Int?
+    let isChargingExclusive: Bool
 
     enum CodingKeys: String, CodingKey {
-        case title, cover, param, uri, bvid, duration, length, author, play, danmaku, ctime, pubdate
+        case title, cover, param, uri, bvid, duration, length, author, play, danmaku, ctime, pubdate, badge
         case cid = "first_cid"
         case publishTime = "publish_time"
+        case isUpowerExclusive = "is_upower_exclusive"
+        case isUpowerPlay = "is_upower_play"
+        case isChargeVideo = "is_charge_video"
+        case isChargingArc = "is_charging_arc"
+        case chargingPay = "charging_pay"
+        case elecArcType = "elec_arc_type"
     }
 
     init(from decoder: Decoder) throws {
@@ -1011,6 +1094,14 @@ nonisolated struct UploaderAppArchiveItem: Decodable, Hashable {
         pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
             ?? container.decodeLossyIntIfPresent(forKey: .publishTime)
             ?? container.decodeLossyIntIfPresent(forKey: .ctime)
+        let badgeText = container.decodeLossyStringIfPresent(forKey: .badge)
+        isChargingExclusive = VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerExclusive)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerPlay)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isChargeVideo)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isChargingArc)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .chargingPay)
+            || (container.decodeLossyIntIfPresent(forKey: .elecArcType) ?? 0) > 0
+            || VideoItem.isChargingBadgeText(badgeText)
     }
 
     func asVideoItem(defaultMID: Int) -> VideoItem? {
@@ -1029,7 +1120,8 @@ nonisolated struct UploaderAppArchiveItem: Decodable, Hashable {
             stat: VideoStat(view: play, reply: nil, like: nil, coin: nil, favorite: nil),
             cid: cid,
             pages: nil,
-            dimension: nil
+            dimension: nil,
+            isChargingExclusive: isChargingExclusive
         )
     }
 
@@ -1069,9 +1161,15 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
     let pubdate: Int?
     let play: Int?
     let comment: Int?
+    let isChargingExclusive: Bool
 
     enum CodingKeys: String, CodingKey {
-        case bvid, aid, author, mid, title, pic, description, length, pubdate, created, ctime, play, comment
+        case bvid, aid, author, mid, title, pic, description, length, pubdate, created, ctime, play, comment, badge
+        case isChargingArc = "is_charging_arc"
+        case isUpowerExclusive = "is_upower_exclusive"
+        case isChargeVideo = "is_charge_video"
+        case chargingPay = "charging_pay"
+        case elecArcType = "elec_arc_type"
     }
 
     init(from decoder: Decoder) throws {
@@ -1089,6 +1187,13 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
             ?? container.decodeLossyIntIfPresent(forKey: .ctime)
         play = container.decodeLossyIntIfPresent(forKey: .play)
         comment = container.decodeLossyIntIfPresent(forKey: .comment)
+        let badgeText = container.decodeLossyStringIfPresent(forKey: .badge)
+        isChargingExclusive = VideoItem.decodeTruthyFlag(from: container, forKey: .isChargingArc)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerExclusive)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isChargeVideo)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .chargingPay)
+            || (container.decodeLossyIntIfPresent(forKey: .elecArcType) ?? 0) > 0
+            || VideoItem.isChargingBadgeText(badgeText)
     }
 
     func asVideoItem(defaultMID: Int) -> VideoItem {
@@ -1104,7 +1209,8 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
             stat: VideoStat(view: play, reply: comment, like: nil, coin: nil, favorite: nil),
             cid: nil,
             pages: nil,
-            dimension: nil
+            dimension: nil,
+            isChargingExclusive: isChargingExclusive
         )
     }
 
@@ -1253,6 +1359,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     let stat: VideoStat?
     let dimension: VideoDimension?
     let threePointV2: [RecommendationThreePoint]?
+    let isChargingExclusive: Bool
 
     nonisolated var resolvedCardKind: String {
         goto ?? cardGoto ?? "-"
@@ -1264,7 +1371,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     }
 
     enum CodingKeys: String, CodingKey {
-        case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, desc, stat, dimension
+        case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, desc, stat, dimension, badge
         case threePointV2 = "three_point_v2"
         case idValue = "id"
         case cardGoto = "card_goto"
@@ -1276,6 +1383,17 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
         case recommendReasonStyle = "rcmd_reason_style"
         case bottomRecommendReasonStyle = "bottom_rcmd_reason_style"
         case topRecommendReasonStyle = "top_rcmd_reason_style"
+        case badgeStyle = "badge_style"
+        case coverBadge = "cover_badge"
+        case coverLeftBadge = "cover_left_badge"
+        case coverRightBadge = "cover_right_badge"
+        case isUpowerExclusive = "is_upower_exclusive"
+        case isUpowerPlay = "is_upower_play"
+        case isUpowerPreview = "is_upower_preview"
+        case isChargeVideo = "is_charge_video"
+        case isChargingArc = "is_charging_arc"
+        case chargingPay = "charging_pay"
+        case elecArcType = "elec_arc_type"
         case pubDate = "pub_date"
         case publishTime = "publish_time"
         case coverLeftText1 = "cover_left_text_1"
@@ -1288,6 +1406,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
         case aid
         case cid
         case duration
+        case isUpowerExclusive = "is_upower_exclusive"
     }
 
     init(from decoder: Decoder) throws {
@@ -1331,6 +1450,29 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
             ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText2))
         dimension = try container.decodeIfPresent(VideoDimension.self, forKey: .dimension)
         threePointV2 = try container.decodeIfPresent([RecommendationThreePoint].self, forKey: .threePointV2)
+        let badgeStyle = try? container.decodeIfPresent(RecommendFeedReason.self, forKey: .badgeStyle)
+        let badgeTexts: [String?] = [
+            container.decodeLossyStringIfPresent(forKey: .badge),
+            badgeStyle?.content,
+            container.decodeLossyStringIfPresent(forKey: .coverBadge),
+            container.decodeLossyStringIfPresent(forKey: .coverLeftBadge),
+            container.decodeLossyStringIfPresent(forKey: .coverRightBadge),
+            recommendReason?.content,
+            bottomRecommendReason?.content,
+            topRecommendReason?.content,
+            recommendReasonStyle?.content,
+            bottomRecommendReasonStyle?.content,
+            topRecommendReasonStyle?.content
+        ]
+        isChargingExclusive = VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerExclusive)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerPlay)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerPreview)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isChargeVideo)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isChargingArc)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .chargingPay)
+            || (container.decodeLossyIntIfPresent(forKey: .elecArcType) ?? 0) > 0
+            || (playerArgs.map { VideoItem.decodeTruthyFlag(from: $0, forKey: .isUpowerExclusive) } ?? false)
+            || badgeTexts.contains(where: { VideoItem.isChargingBadgeText($0) })
     }
 
     nonisolated func asVideoItem() -> VideoItem? {
@@ -1352,7 +1494,8 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
             pages: nil,
             dimension: dimension,
             recommendReason: sanitizedRecommendReason,
-            recommendationFeedback: feedbackMetadata
+            recommendationFeedback: feedbackMetadata,
+            isChargingExclusive: isChargingExclusive
         )
     }
 
@@ -3305,9 +3448,15 @@ nonisolated struct SearchVideoItem: Identifiable, Decodable, Hashable, Sendable 
     let duration: String?
     let description: String?
     let pubdate: Int?
+    let isChargingExclusive: Bool
 
     enum CodingKeys: String, CodingKey {
-        case bvid, aid, title, pic, author, mid, play, duration, description, pubdate
+        case bvid, aid, title, pic, author, mid, play, duration, description, pubdate, badge
+        case isChargeVideo = "is_charge_video"
+        case isUpowerExclusive = "is_upower_exclusive"
+        case isUpowerPlay = "is_upower_play"
+        case chargingPay = "charging_pay"
+        case elecArcType = "elec_arc_type"
     }
 
     init(from decoder: Decoder) throws {
@@ -3322,6 +3471,13 @@ nonisolated struct SearchVideoItem: Identifiable, Decodable, Hashable, Sendable 
         duration = container.decodeLossyStringIfPresent(forKey: .duration)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
+        let badgeText = container.decodeLossyStringIfPresent(forKey: .badge)
+        isChargingExclusive = VideoItem.decodeTruthyFlag(from: container, forKey: .isChargeVideo)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerExclusive)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerPlay)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .chargingPay)
+            || (container.decodeLossyIntIfPresent(forKey: .elecArcType) ?? 0) > 0
+            || VideoItem.isChargingBadgeText(badgeText)
     }
 
     func asVideoItem() -> VideoItem {
@@ -3337,7 +3493,8 @@ nonisolated struct SearchVideoItem: Identifiable, Decodable, Hashable, Sendable 
             stat: VideoStat(view: play, reply: nil, like: nil, coin: nil, favorite: nil),
             cid: nil,
             pages: nil,
-            dimension: nil
+            dimension: nil,
+            isChargingExclusive: isChargingExclusive
         )
     }
 
@@ -5204,6 +5361,19 @@ nonisolated struct DynamicFeedItem: Identifiable, Decodable, Hashable {
             || original?.containsDynamicAdPromotion == true
     }
 
+    var isChargingVideo: Bool {
+        if let paidContent, paidContent.isChargeExclusive, paidContent.kind == .video {
+            return true
+        }
+        if archive?.isChargingExclusive == true {
+            return true
+        }
+        if let originalPaid = original?.paidContent, originalPaid.isChargeExclusive, originalPaid.kind == .video {
+            return true
+        }
+        return original?.archive?.isChargingExclusive == true
+    }
+
     var replyCount: Int? {
         modules?.moduleStat?.comment?.count
             ?? modules?.moduleStat?.reply?.count
@@ -5798,7 +5968,8 @@ nonisolated struct DynamicPaidContent: Hashable {
             stat: nil,
             cid: nil,
             pages: nil,
-            dimension: nil
+            dimension: nil,
+            isChargingExclusive: isChargeExclusive
         )
     }
 
@@ -6863,9 +7034,16 @@ nonisolated struct DynamicArchive: Decodable, Hashable {
     let durationText: String?
     let duration: Int?
     let stat: DynamicArchiveStat?
+    let isChargingExclusive: Bool
 
     enum CodingKeys: String, CodingKey {
-        case aid, bvid, title, cover, desc, stat, duration, length
+        case aid, bvid, title, cover, desc, stat, duration, length, badge
+        case badgeText = "badge_text"
+        case isUpowerExclusive = "is_upower_exclusive"
+        case isUpowerPlay = "is_upower_play"
+        case isChargeVideo = "is_charge_video"
+        case chargingPay = "charging_pay"
+        case elecArcType = "elec_arc_type"
         case durationText = "duration_text"
         case durationTextAlt = "durationText"
         case durationStr = "duration_str"
@@ -6906,6 +7084,16 @@ nonisolated struct DynamicArchive: Decodable, Hashable {
                 ?? container.decodeLossyIntIfPresent(forKey: .durationMillis)
         )
         stat = try container.decodeIfPresent(DynamicArchiveStat.self, forKey: .stat)
+        let badgeObj = try? container.decodeIfPresent(RecommendFeedReason.self, forKey: .badge)
+        let badgeStr = badgeObj?.content
+            ?? container.decodeLossyStringIfPresent(forKey: .badge)
+            ?? container.decodeLossyStringIfPresent(forKey: .badgeText)
+        isChargingExclusive = VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerExclusive)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isUpowerPlay)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .isChargeVideo)
+            || VideoItem.decodeTruthyFlag(from: container, forKey: .chargingPay)
+            || (container.decodeLossyIntIfPresent(forKey: .elecArcType) ?? 0) > 0
+            || VideoItem.isChargingBadgeText(badgeStr)
     }
 
     init?(fallbackObject object: [String: DynamicJSONValue]) {
@@ -6966,6 +7154,19 @@ nonisolated struct DynamicArchive: Decodable, Hashable {
                 ?? object["duration_millis"]?.intValueForDynamicParsing
         )
         self.stat = DynamicArchiveStat(fallbackObject: statObject)
+        let badgeObj = object["badge"]?.objectValueForDynamicParsing
+        let badgeStr = firstNonBlankDynamicText([
+            badgeObj?["text"]?.textValueForDynamicParsing,
+            object["badge"]?.textValueForDynamicParsing,
+            object["badge_text"]?.textValueForDynamicParsing
+        ])
+        self.isChargingExclusive =
+            (object["is_upower_exclusive"]?.intValueForDynamicParsing ?? 0) > 0
+            || (object["is_upower_play"]?.intValueForDynamicParsing ?? 0) > 0
+            || (object["is_charge_video"]?.intValueForDynamicParsing ?? 0) > 0
+            || (object["charging_pay"]?.intValueForDynamicParsing ?? 0) > 0
+            || (object["elec_arc_type"]?.intValueForDynamicParsing ?? 0) > 0
+            || VideoItem.isChargingBadgeText(badgeStr)
     }
 
     func asVideoItem(author: DynamicAuthor?) -> VideoItem? {
@@ -6988,7 +7189,8 @@ nonisolated struct DynamicArchive: Decodable, Hashable {
             ),
             cid: nil,
             pages: nil,
-            dimension: nil
+            dimension: nil,
+            isChargingExclusive: isChargingExclusive
         )
     }
 
