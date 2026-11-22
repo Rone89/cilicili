@@ -11,6 +11,6 @@ struct VideoDetailDanmakuSettingsSheetHost: View {
             toggleDanmaku: actions.toggleDanmaku,
             updateDanmakuSettings: actions.updateDanmakuSettings
         )
-        .presentationDetents([.medium])
+        .videoDetailBelowPlayerSheetDetents(fallback: [.medium])
     }
 }

@@ -212,7 +212,7 @@ struct VideoDetailCompactSelectionSheet: View {
                             }
                         }
                 }
-                .presentationDetents([.fraction(0.7)])
+                .videoDetailBelowPlayerSheetDetents(fallback: [.fraction(0.7)])
                 .presentationDragIndicator(.hidden)
                 .presentationBackground(.clear)
             }

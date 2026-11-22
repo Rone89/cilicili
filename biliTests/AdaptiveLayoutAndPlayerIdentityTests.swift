@@ -794,6 +794,63 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         XCTAssertEqual(viewModel.replies(for: rootComment).map(\.rpid), [2002])
     }
 
+    func testVideoDetailSheetHeightPolicyStaysBelowVideoAcrossAspectRatiosAndPreservesDynamicFallback() {
+        // iPhone 18 Pro Max portrait (440x956, top 62, bottom 34), 16:9 video (playerHeight=248 -> bottom=310)
+        let phone16x9 = VideoDetailSheetHeightPolicy.belowVideoDetentHeight(
+            containerHeight: 956,
+            playerBottomY: 310,
+            bottomSafeAreaInset: 34
+        )
+        XCTAssertEqual(phone16x9, 612)
+
+        // 4:3 video on same phone (playerHeight=330 -> bottom=392): shorter than 70% so it never covers video
+        let phone4x3 = VideoDetailSheetHeightPolicy.belowVideoDetentHeight(
+            containerHeight: 956,
+            playerBottomY: 392,
+            bottomSafeAreaInset: 34
+        )
+        XCTAssertEqual(phone4x3, 530)
+        XCTAssertLessThan(phone4x3 ?? .greatestFiniteMagnitude, 956 * 0.7)
+
+        // Vertical 9:16 video (playerHeight=621 -> bottom=683): strictly below video
+        let phoneVertical = VideoDetailSheetHeightPolicy.belowVideoDetentHeight(
+            containerHeight: 956,
+            playerBottomY: 683,
+            bottomSafeAreaInset: 34
+        )
+        XCTAssertEqual(phoneVertical, 239)
+
+        // Dynamic page (videoDetailMaxHeight == nil) keeps its 70% limit
+        XCTAssertEqual(
+            CommentSheetPresentationPolicy.detents(
+                limitsMaxHeight: true,
+                verticalSizeClass: .regular,
+                videoDetailMaxHeight: nil
+            ),
+            [.fraction(CommentInteractionSettings.limitedSheetDetentFraction)]
+        )
+
+        // Video detail page uses the computed below-video height instead of 70%
+        XCTAssertEqual(
+            CommentSheetPresentationPolicy.detents(
+                limitsMaxHeight: true,
+                verticalSizeClass: .regular,
+                videoDetailMaxHeight: phone4x3
+            ),
+            [.height(530)]
+        )
+
+        // Disabling height limit restores [.medium, .large]
+        XCTAssertEqual(
+            CommentSheetPresentationPolicy.detents(
+                limitsMaxHeight: false,
+                verticalSizeClass: .regular,
+                videoDetailMaxHeight: phone4x3
+            ),
+            [.medium, .large]
+        )
+    }
+
     private func makeLocalTestVideo() async throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("adaptive-layout-probe-\(UUID().uuidString).mov")

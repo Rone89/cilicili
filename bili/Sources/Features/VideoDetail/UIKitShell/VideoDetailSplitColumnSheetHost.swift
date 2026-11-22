@@ -35,9 +35,16 @@ final class VideoDetailSplitColumnOverlayController: ObservableObject {
     @Published var selectionSheet: VideoDetailSplitSelectionSheetPayload?
     @Published var commentDialogSheet: VideoDetailSplitCommentDialogPayload?
     @Published var inlineComposer: VideoDetailSplitInlineComposerPayload?
+    /// Non-published snapshot of the maximum sheet detent height below the video player
+    /// in stacked (portrait) mode, read at sheet presentation time without causing scroll re-renders.
+    private(set) var stackedBelowPlayerSheetMaxHeight: CGFloat?
 
     var hasActiveOverlay: Bool {
         selectionSheet != nil || commentDialogSheet != nil || inlineComposer != nil
+    }
+
+    func updateStackedBelowPlayerSheetMaxHeight(_ height: CGFloat?) {
+        stackedBelowPlayerSheetMaxHeight = height
     }
 
     func setSplitColumnMode(_ active: Bool) {
@@ -107,6 +114,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
     private var activeCommentDialogID: UUID?
     private var activeInlineComposerTargetID: String?
     private var currentCommentThreadPresentation: VideoDetailCommentThreadSheetPresentation?
+    private var currentSheetHeightFraction: CGFloat = 0.94
 
     var hasVisibleOverlay: Bool {
         selectionSheetPresenter != nil
@@ -156,9 +164,18 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         inlineComposerHost?.view.frame = bounds
     }
 
-    func updateGeometry(frame: CGRect, isSplitActive: Bool) {
-        if view.frame != frame {
+    func updateGeometry(
+        frame: CGRect,
+        isSplitActive: Bool,
+        sheetHeightFraction: CGFloat = 0.94
+    ) {
+        let fractionChanged = abs(currentSheetHeightFraction - sheetHeightFraction) > 0.005
+        currentSheetHeightFraction = sheetHeightFraction
+        if view.frame != frame || fractionChanged {
             view.frame = frame
+            selectionSheetPresenter?.updateHeightFraction(sheetHeightFraction)
+            commentThreadPresenter?.updateHeightFraction(sheetHeightFraction)
+            commentDialogPresenter?.updateHeightFraction(sheetHeightFraction)
             view.setNeedsLayout()
         }
         view.isHidden = !isSplitActive
@@ -253,7 +270,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         let presenter = SplitLiquidGlassSheetPresenter(
             parent: self,
             rootView: root,
-            heightFraction: 0.76,
+            heightFraction: currentSheetHeightFraction,
             onDismissRequest: onDismiss
         )
         selectionSheetPresenter = presenter
@@ -310,7 +327,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         let presenter = SplitLiquidGlassSheetPresenter(
             parent: self,
             rootView: inner,
-            heightFraction: 0.88,
+            heightFraction: currentSheetHeightFraction,
             onDismissRequest: onDismiss
         )
         commentThreadPresenter = presenter
@@ -346,7 +363,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         let presenter = SplitLiquidGlassSheetPresenter(
             parent: self,
             rootView: root,
-            heightFraction: 0.88,
+            heightFraction: currentSheetHeightFraction,
             onDismissRequest: onDismiss
         )
         commentDialogPresenter = presenter
@@ -418,7 +435,7 @@ private final class PassthroughSplitOverlayView: UIView {
 @MainActor
 private final class SplitLiquidGlassSheetPresenter: NSObject, UIGestureRecognizerDelegate {
     private weak var parent: UIViewController?
-    private let heightFraction: CGFloat
+    private var heightFraction: CGFloat
     private let onDismissRequest: () -> Void
 
     let containerView = UIView()
@@ -514,10 +531,17 @@ private final class SplitLiquidGlassSheetPresenter: NSObject, UIGestureRecognize
         }
     }
 
+    func updateHeightFraction(_ fraction: CGFloat) {
+        heightFraction = fraction
+    }
+
     func layout(in bounds: CGRect) {
         guard bounds.width > 0, bounds.height > 0 else { return }
         containerView.frame = bounds
-        cardHeight = max(280, min(bounds.height - 20, (bounds.height * heightFraction).rounded()))
+        let topMargin: CGFloat = heightFraction >= 0.99 ? 0 : 12
+        let maxAvailable = max(bounds.height - topMargin, 0)
+        let targetHeight = (bounds.height * heightFraction).rounded()
+        cardHeight = min(maxAvailable, max(min(220, maxAvailable), targetHeight))
         let topY = max(0, bounds.height - cardHeight)
         backdropView.frame = bounds
 

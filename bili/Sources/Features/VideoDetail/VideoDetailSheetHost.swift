@@ -32,6 +32,10 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                             \.videoDetailStandardHorizontalInset,
                             libraryStore.standardPageHorizontalInset
                         )
+                        .environment(
+                            \.videoDetailBelowPlayerSheetMaxHeight,
+                            splitColumnOverlay.stackedBelowPlayerSheetMaxHeight
+                        )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
                         .commentLikeTarget(
                             oid: viewModel.commentTarget?.oid,
@@ -50,6 +54,10 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                             \.videoDetailStandardHorizontalInset,
                             libraryStore.standardPageHorizontalInset
                         )
+                        .environment(
+                            \.videoDetailBelowPlayerSheetMaxHeight,
+                            splitColumnOverlay.stackedBelowPlayerSheetMaxHeight
+                        )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
                         .commentLikeTarget(
                             oid: viewModel.commentTarget?.oid,
@@ -66,12 +74,20 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                         onToggleDanmaku: { viewModel.toggleDanmaku() },
                         close: { sheetRouteBinding.wrappedValue = nil }
                     )
+                    .environment(
+                        \.videoDetailBelowPlayerSheetMaxHeight,
+                        splitColumnOverlay.stackedBelowPlayerSheetMaxHeight
+                    )
                 }
             }
             .sheet(isPresented: sheetState.isShowingFavoriteFolders) {
                 VideoDetailFavoriteFolderSheetHost(
                     viewModel: viewModel,
                     actions: sheetActions.favoriteFolders
+                )
+                .environment(
+                    \.videoDetailBelowPlayerSheetMaxHeight,
+                    splitColumnOverlay.stackedBelowPlayerSheetMaxHeight
                 )
             }
             .sheet(isPresented: sheetState.isShowingCoinPicker) {
@@ -81,6 +97,10 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                 VideoDetailDanmakuSettingsSheetHost(
                     viewModel: viewModel,
                     actions: sheetActions.danmaku
+                )
+                .environment(
+                    \.videoDetailBelowPlayerSheetMaxHeight,
+                    splitColumnOverlay.stackedBelowPlayerSheetMaxHeight
                 )
             }
             .sheet(isPresented: sheetState.isShowingNetworkDiagnostics) {
@@ -103,7 +123,11 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                     },
                     close: { isShowingSubtitleSelection = false }
                 )
-                // 与评论弹窗同款系统 sheet 外观（medium/large + 拖拽指示条）。
+                .environment(
+                    \.videoDetailBelowPlayerSheetMaxHeight,
+                    splitColumnOverlay.stackedBelowPlayerSheetMaxHeight
+                )
+                // 与评论弹窗同款系统 sheet 外观（按视频下方可用高度限高 + 拖拽指示条）。
                 .commentSheetPresentation()
             }
             .onChange(of: viewModel.isShowingQualitySelection) { _, isShowing in
@@ -117,6 +141,10 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                     store: viewModel.playbackRenderStore.qualityControlStore,
                     selectPlayVariant: { viewModel.selectPlayVariant($0) },
                     close: { isShowingQualitySelection = false }
+                )
+                .environment(
+                    \.videoDetailBelowPlayerSheetMaxHeight,
+                    splitColumnOverlay.stackedBelowPlayerSheetMaxHeight
                 )
             }
     }

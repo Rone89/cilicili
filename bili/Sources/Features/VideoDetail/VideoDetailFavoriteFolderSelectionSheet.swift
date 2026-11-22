@@ -32,7 +32,7 @@ struct FavoriteFolderSelectionSheet: View {
                 actions: sheetActions
             )
         }
-        .presentationDetents([.medium, .large])
+        .videoDetailBelowPlayerSheetDetents(fallback: [.medium, .large])
         .onDisappear {
             viewActions.cancelPendingTasks()
         }

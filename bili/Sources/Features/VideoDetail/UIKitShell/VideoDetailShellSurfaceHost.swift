@@ -2285,7 +2285,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     closeSheet: { isVideoListenQueuePresented = false }
                 )
             }
-            .presentationDetents([.medium, .large])
+            .videoDetailBelowPlayerSheetDetents(fallback: [.medium, .large])
             .presentationDragIndicator(.visible)
         }
     }
@@ -2828,7 +2828,7 @@ struct SurfaceOnlyMoreControlsSheet: View {
             onToggleDanmaku: onToggleDanmaku,
             close: closeSheet
         )
-        .presentationDetents([.medium])
+        .videoDetailBelowPlayerSheetDetents(fallback: [.medium])
         .presentationDragIndicator(.visible)
     }
 

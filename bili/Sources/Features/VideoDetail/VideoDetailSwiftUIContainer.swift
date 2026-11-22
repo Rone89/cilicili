@@ -23,7 +23,10 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     private(set) var playerFrame = CGRect.zero
     private(set) var splitContentFrame = CGRect.zero
     private(set) var isTwoColumnSplitActive = false
-    var onSplitContentGeometryChange: ((CGRect, Bool) -> Void)?
+    private(set) var inlineSheetHeightFraction: CGFloat = 0.94
+    private(set) var stackedBelowPlayerSheetMaxHeight: CGFloat?
+    private var lastHorizontalSizeClass: UserInterfaceSizeClass?
+    var onSplitContentGeometryChange: ((CGRect, Bool, CGFloat, CGFloat?) -> Void)?
     #if DEBUG
         let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
     #endif
@@ -181,6 +184,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         horizontalSizeClass: UserInterfaceSizeClass? = nil,
         rotationCoordinator: PlaybackRotationCoordinator
     ) -> VideoDetailShellLayout {
+        lastHorizontalSizeClass = horizontalSizeClass
         let adaptiveEnabled = runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
         let targetMode = AdaptiveLayoutPolicy.videoDetailMode(
             containerSize: size,
@@ -262,11 +266,60 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
                 playerFrameUpdates.send(playerFrame)
             #endif
         }
-        let nextSplitActive = layout.adaptiveMode == .twoColumnSplit && !layout.usesFullscreenLayout
-        if splitContentFrame != layout.contentFrame || isTwoColumnSplitActive != nextSplitActive {
-            splitContentFrame = layout.contentFrame
-            isTwoColumnSplitActive = nextSplitActive
-            onSplitContentGeometryChange?(layout.contentFrame, nextSplitActive)
+        let nextStackedBelowPlayerHeight: CGFloat? = if layout.adaptiveMode == .compactStacked, !layout.usesFullscreenLayout {
+            VideoDetailSheetHeightPolicy.belowVideoDetentHeight(
+                containerHeight: layout.contentFrame.maxY,
+                playerBottomY: layout.playerFrame.maxY,
+                bottomSafeAreaInset: rootSafeAreaInsets.bottom
+            )
+        } else {
+            nil
+        }
+
+        let nextInlineFrame: CGRect
+        let nextInlineActive: Bool
+        let nextInlineHeightFraction: CGFloat
+        if layout.adaptiveMode == .twoColumnSplit, !layout.usesFullscreenLayout {
+            nextInlineFrame = layout.contentFrame
+            nextInlineActive = true
+            nextInlineHeightFraction = 0.94
+        } else if layout.adaptiveMode == .compactStacked,
+                  !layout.usesFullscreenLayout,
+                  lastHorizontalSizeClass == .regular {
+            // Regular-width portrait (e.g. unfolded iPhone Duo / iPad portrait): system `.sheet`
+            // floats as a centered page sheet that covers the top video. Anchor inline sheets
+            // strictly below `playerFrame.maxY` using the native `UIGlassEffect` container.
+            let belowY = layout.playerFrame.maxY
+            let belowHeight = max(layout.contentFrame.maxY - belowY, 0)
+            nextInlineFrame = CGRect(
+                x: layout.contentFrame.minX,
+                y: belowY,
+                width: layout.contentFrame.width,
+                height: belowHeight
+            )
+            nextInlineActive = belowHeight >= 160
+            nextInlineHeightFraction = 1.0
+        } else {
+            nextInlineFrame = .zero
+            nextInlineActive = false
+            nextInlineHeightFraction = 0.94
+        }
+
+        let geometryChanged = splitContentFrame != nextInlineFrame
+            || isTwoColumnSplitActive != nextInlineActive
+            || abs(inlineSheetHeightFraction - nextInlineHeightFraction) > 0.005
+            || stackedBelowPlayerSheetMaxHeight != nextStackedBelowPlayerHeight
+        if geometryChanged {
+            splitContentFrame = nextInlineFrame
+            isTwoColumnSplitActive = nextInlineActive
+            inlineSheetHeightFraction = nextInlineHeightFraction
+            stackedBelowPlayerSheetMaxHeight = nextStackedBelowPlayerHeight
+            onSplitContentGeometryChange?(
+                nextInlineFrame,
+                nextInlineActive,
+                nextInlineHeightFraction,
+                nextStackedBelowPlayerHeight
+            )
         }
         if contentState.hidesBottomToolbar != layout.usesFullscreenLayout {
             contentState.hidesBottomToolbar = layout.usesFullscreenLayout
@@ -781,7 +834,10 @@ private struct VideoDetailInteractivePlayerLayer: View {
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .onChange(of: layout) { _, newLayout in
-            guard newLayout.playerFrame != model.playerFrame else { return }
+            guard newLayout.playerFrame != model.playerFrame
+                || newLayout.contentFrame != model.splitContentFrame
+                || (newLayout.adaptiveMode == .twoColumnSplit) != model.isTwoColumnSplitActive
+            else { return }
             model.scheduleLayoutSynchronization(newLayout)
         }
     }
@@ -1143,8 +1199,17 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         splitSheetContainer.view.isHidden = !contentModel.isTwoColumnSplitActive
         view.addSubview(splitSheetContainer.view)
         splitSheetContainer.didMove(toParent: self)
-        contentModel.onSplitContentGeometryChange = { [weak self] frame, isSplitActive in
-            self?.splitSheetContainer.updateGeometry(frame: frame, isSplitActive: isSplitActive)
+        splitColumnOverlay.updateStackedBelowPlayerSheetMaxHeight(
+            contentModel.stackedBelowPlayerSheetMaxHeight
+        )
+        contentModel.onSplitContentGeometryChange = { [weak self] frame, isSplitActive, heightFraction, stackedMaxHeight in
+            guard let self else { return }
+            self.splitColumnOverlay.updateStackedBelowPlayerSheetMaxHeight(stackedMaxHeight)
+            self.splitSheetContainer.updateGeometry(
+                frame: frame,
+                isSplitActive: isSplitActive,
+                sheetHeightFraction: heightFraction
+            )
         }
         syncSplitSheetCommentThread()
         #if DEBUG

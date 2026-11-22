@@ -207,7 +207,7 @@ struct MineDisplaySettingsSection: View {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("评论弹窗不展开到最大高度", systemImage: "rectangle.bottomhalf.inset.filled")
 
-                    Text("开启后，竖屏下评论与回复弹窗固定在 70% 高度并直接滚动内容，不再自动展开遮挡上方视频。")
+                    Text("开启后，视频页弹窗高度自动限制在视频区域下方不遮挡画面，动态页评论弹窗固定在 70% 高度并直接滚动内容。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

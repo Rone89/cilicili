@@ -3162,5 +3162,30 @@
     - UI 测试（`/tmp/adaptive-final-ui.xcresult`，`Passed`）：`AdaptiveLayoutUITests`（2/2）、`MineTopBarUITests`（2/2）——合计 **4/4 通过（0 失败，0 跳过）**。
     - 总计 **72/72 通过（0 失败，0 跳过）**，并已目视核对导出的 `iPhone 18 Pro Max` 首页/动态/搜索/我的截图（首页/动态/我的顶部无搜索条且右下角为独立液态玻璃 `[🔍]`；搜索页保留顶部「搜索」+ 筛选按钮且底部 TabBar 原生变形为液态玻璃 `[🔍 搜索视频]` + `[✕]`）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 本轮遵循 `AGENTS.md` 默认模拟器约束，仅在 `iPhone 18 Pro Max`（iOS 27.0）完成自动化与截图验证；`iPhone Duo`（iOS 27.1）与 `iPad` 横屏双栏下的右栏 `UIGlassEffect` 液态玻璃弹窗手感、拖拽流畅度以及评论弹窗真实网络加载体验尚未安装到 `iPhone Duo` 模拟器或真机目视实测（待用户明确指令后再安装）。
+  - 按用户指令已将 `e5838370` 编译安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `35939`）；横屏双栏右栏 `UIGlassEffect` 液态玻璃弹窗手感、拖拽流畅度、底部 TabBar 搜索栏交互以及评论回复自动加载待用户在 `iPhone Duo` 上实景体验反馈。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（视频页弹窗高度按视频区域动态限高，不再套用动态页 70% 固定高度）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `e5838370` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **视频页堆叠态按视频区域底边精确计算弹窗上限（不遮挡视频画面）**：
+     - [CommentSheetPresentation.swift](bili/Sources/Features/VideoDetail/CommentSheetPresentation.swift)：新增 `EnvironmentValues.videoDetailBelowPlayerSheetMaxHeight`、`VideoDetailSheetHeightPolicy.belowVideoDetentHeight(containerHeight:playerBottomY:bottomSafeAreaInset:)` 与通用 `.videoDetailBelowPlayerSheetDetents(fallback:)`。结合 iOS 26/27 浮动液态玻璃 `.sheet` 实测几何（`belowVideo - max(bottomSafeAreaInset, 12)`），使视频详情页堆叠态弹窗顶边严格落在 `playerFrame.maxY` 下方（自动适配 21:9、16:9、4:3、1:1、9:16 各类画幅以及不同机型）；动态页因无 `videoDetailBelowPlayerSheetMaxHeight`，完全保留原有 70%（`0.7`）固定限高不变。
+  2. **大屏竖屏与横屏双栏统一避免遮挡视频**：
+     - [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift) & [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift)：
+       - 竖屏紧凑态（iPhone / Duo 外屏）：实时同步 `stackedBelowPlayerSheetMaxHeight`（非 `@Published`，零滚动重绘开销）供系统 `.sheet` 使用。
+       - 大屏展开竖屏（`iPhone Duo` 展开竖屏 / `iPad` 竖屏，`horizontalSizeClass == .regular` 且 `compactStacked`）：复用原生 `UIGlassEffect` 内联弹窗容器并精准裁切在 `playerFrame.maxY` 下方（`heightFraction = 1.0`），避免系统 `.pageSheet` 居中弹出遮挡顶部视频。
+       - 横屏双栏（`twoColumnSplit`）：右栏本身无视频区域，将右栏内联弹窗高度比例统一放宽至 `0.94`（原为 `0.76`/`0.88`）。
+  3. **覆盖视频页全部相关弹窗与设置文案**：
+     - [VideoDetailSheetHost.swift](bili/Sources/Features/VideoDetail/VideoDetailSheetHost.swift)、[VideoDetailCompactSelectionSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailCompactSelectionSheet.swift)、[VideoDetailFavoriteFolderSelectionSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailFavoriteFolderSelectionSheet.swift)、[VideoDetailDanmakuSettingsSheetHost.swift](bili/Sources/Features/VideoDetail/VideoDetailDanmakuSettingsSheetHost.swift) & [VideoDetailShellSurfaceHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellSurfaceHost.swift)：评论回复、评论二级对话、分P/合集/番剧选集、字幕、清晰度、收藏夹、弹幕设置、更多播放控制与听视频队列全部接入视频下方限高。
+     - [MineDisplaySettingsSection.swift](bili/Sources/Features/Mine/MineDisplaySettingsSection.swift)：同步更新「评论弹窗不展开到最大高度」副标题文案，区分视频页（视频区域下方不遮挡画面）与动态页（70%）。
+  4. **新增单元测试**：
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testVideoDetailSheetHeightPolicyStaysBelowVideoAcrossAspectRatiosAndPreservesDynamicFallback`，覆盖 16:9 / 4:3 / 9:16 竖屏计算、动态页 70% 回退以及关闭开关恢复 `[.medium, .large]`。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - 单元测试（`/tmp/video-sheet-height-unit.xcresult`，`Passed`）：`AdaptiveLayoutAndPlayerIdentityTests`（15/15）、`DynamicFeedCategoriesTests`（4/4）、`PlaybackDetailSharedLayoutTests`（47/47）、`RootTabBarVisibilityTests`（3/3）——合计 **69/69 通过（0 失败，0 跳过）**。
+    - UI 测试（`/tmp/video-sheet-height-ui.xcresult`，`Passed`）：`AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`——**1/1 通过（0 失败，0 跳过）**。
+- **未验证与待办（明确区分，不推测通过）**：
+  - `iPhone Duo`（iOS 27.1）模拟器上当前运行的仍是上一提交 `e5838370`，本轮视频下方动态限高改动尚未重新安装到 `iPhone Duo`（或真机）实景验证（需用户指示后再安装）。
   - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
