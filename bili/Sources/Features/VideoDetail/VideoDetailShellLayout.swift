@@ -145,15 +145,13 @@ struct VideoDetailShellLayout: Equatable {
 
         if adaptiveMode == .twoColumnSplit {
             let split = AdaptiveLayoutPolicy.videoDetailSplitColumnWidths(totalWidth: bounds.width)
-            let topInset = max(0, safeAreaTop)
-            let bottomInset = max(0, safeAreaBottom)
-            let availableStageHeight = max(bounds.height - topInset - bottomInset, 220)
+            let availableStageHeight = max(bounds.height, 220)
             let clampedAspect = (videoAspectRatio.isFinite && videoAspectRatio > 0)
                 ? min(max(videoAspectRatio, 0.72), 2.35)
                 : (16.0 / 9.0)
             let idealPlayerHeight = (split.playerColumnWidth / clampedAspect).rounded()
             let playerHeight = min(availableStageHeight, max(idealPlayerHeight, 220))
-            let playerY = bounds.minY + topInset + max((availableStageHeight - playerHeight) / 2, 0).rounded()
+            let playerY = bounds.minY + max((availableStageHeight - playerHeight) / 2, 0).rounded()
             let playerFrame = CGRect(
                 x: bounds.minX,
                 y: playerY,
@@ -168,9 +166,9 @@ struct VideoDetailShellLayout: Equatable {
             )
             let contentFrame = CGRect(
                 x: bounds.minX + split.playerColumnWidth,
-                y: bounds.minY + topInset,
+                y: bounds.minY,
                 width: split.contentColumnWidth,
-                height: max(bounds.height - topInset, 0)
+                height: max(bounds.height, 0)
             )
             return Self(
                 adaptiveMode: .twoColumnSplit,

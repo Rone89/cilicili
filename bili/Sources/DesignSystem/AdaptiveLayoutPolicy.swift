@@ -184,7 +184,8 @@ nonisolated enum AdaptiveLayoutPolicy {
         if horizontalSizeClass == .compact, containerSize.height < 500 {
             return .compactStacked
         }
-        if containerSize.width >= videoDetailSplitMinWidth,
+        if containerSize.width > containerSize.height,
+           containerSize.width >= videoDetailSplitMinWidth,
            containerSize.height >= videoDetailSplitMinHeight {
             return .twoColumnSplit
         }
@@ -200,12 +201,12 @@ nonisolated enum AdaptiveLayoutPolicy {
         return (playerColumnWidth, contentColumnWidth)
     }
 
-    /// Whether the active container/window exposes an asymmetric vertical system
-    /// chrome rail (iPhone Duo folded cover display in portrait or unfolded inner
-    /// display in landscape, where one horizontal edge reserves ~84pt for the
-    /// vertical status/toolbar/tab rail while the opposite horizontal edge stays
-    /// minimal). Standard iPhone landscape has symmetric horizontal safe areas,
-    /// and iPad / Duo inner portrait have zero horizontal safe areas.
+    /// Whether the active container/window exposes a portrait asymmetric vertical
+    /// system chrome rail (iPhone Duo folded cover display in portrait, where one
+    /// horizontal edge reserves ~84pt for the vertical status/toolbar/tab rail while
+    /// the opposite horizontal edge stays minimal). Large-screen landscape (Duo inner
+    /// landscape / iPad landscape) uses `.twoColumnSplit` with its own right-column
+    /// phone-style bottom toolbar instead.
     static func usesVerticalTrailingChromeRail(
         containerSize: CGSize,
         safeAreaInsets: EdgeInsets
@@ -213,7 +214,9 @@ nonisolated enum AdaptiveLayoutPolicy {
         guard containerSize.width > 0, containerSize.height > 0 else { return false }
         let maxHorizontalInset = max(safeAreaInsets.leading, safeAreaInsets.trailing)
         let minHorizontalInset = min(safeAreaInsets.leading, safeAreaInsets.trailing)
-        return maxHorizontalInset >= 50 && minHorizontalInset <= 16
+        return containerSize.height > containerSize.width
+            && maxHorizontalInset >= 50
+            && minHorizontalInset <= 16
     }
 
     @MainActor

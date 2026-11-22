@@ -74,6 +74,57 @@ struct VideoDetailVerticalToolbarTabButton: View {
     }
 }
 
+/// Phone-style floating Liquid Glass bottom toolbar scoped to the right-hand
+/// detail/comments column in landscape `.twoColumnSplit` (iPad / iPhone Duo).
+struct VideoDetailSplitColumnBottomToolbar: View {
+    let navigationHistory: NavigationHistoryContext?
+    let onNavigateBack: () -> Void
+    @Binding var selection: VideoDetailContentTab
+    let onOpenCommentComposer: (() -> Void)?
+
+    var body: some View {
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 12) {
+                if let navigationHistory {
+                    VideoDetailHistoryBackMenu(history: navigationHistory)
+                        .frame(width: 44, height: 44)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                } else {
+                    Button(action: onNavigateBack) {
+                        Image(systemName: "chevron.backward")
+                            .frame(width: 44, height: 44)
+                    }
+                    .tint(.primary)
+                    .accessibilityLabel("返回")
+                    .accessibilityIdentifier("video.detail.history-back")
+                    .glassEffect(.regular.interactive(), in: .circle)
+                }
+
+                Spacer(minLength: 8)
+
+                VideoDetailToolbarSegmentedPickerView(selection: $selection)
+                    .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+
+                Spacer(minLength: 8)
+
+                if let onOpenCommentComposer {
+                    VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
+                        .frame(width: 44, height: 44)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                } else {
+                    Color.clear
+                        .frame(width: 44, height: 44)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+        }
+    }
+}
+
 private struct VideoDetailToolbarSegmentedPickerPreview: View {
     @State private var selection: VideoDetailContentTab = .detail
 

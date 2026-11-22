@@ -144,11 +144,25 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         isViewActive = true
         updateOrientationLock()
         reconcileTransparentNavigationBarSafeAreaIfNeeded()
+        if shouldUseImmersiveChrome(
+            for: view.bounds.size,
+            isLandscapeFullscreen: resolvedLandscapeForRecovery
+        ) {
+            setImmersivePlayback(true)
+        }
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         reconcileTransparentNavigationBarSafeAreaIfNeeded()
+        if isViewActive, !rotationCoordinator.isTransitioning {
+            setImmersivePlayback(
+                shouldUseImmersiveChrome(
+                    for: view.bounds.size,
+                    isLandscapeFullscreen: rotationCoordinator.layoutLandscape
+                )
+            )
+        }
 #if DEBUG
         print(
             "[VideoDetailGeometry] stage=rotationBridgeLayout window=\(view.window?.bounds as Any) root=\(view.bounds) safeArea=\(view.safeAreaInsets) playerFrame=\(contentController.playerFrame)"
@@ -171,7 +185,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
         )
         setImmersivePlayback(
-            resolvedLandscapeForRecovery || rotationCoordinator.isPortraitFullscreen
+            shouldUseImmersiveChrome(
+                for: view.bounds.size,
+                isLandscapeFullscreen: resolvedLandscapeForRecovery
+            )
         )
         contentController.setSecondaryContentMounted(true)
         if rotationCoordinator.isTransitioning {
@@ -444,7 +461,12 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         }
         // The outer SwiftUI page owns the toolbar. System-driven rotation
         // must notify it too, not just requests from the fullscreen button.
-        setImmersivePlayback(toLandscape || rotationCoordinator.isAnyFullscreen)
+        setImmersivePlayback(
+            shouldUseImmersiveChrome(
+                for: size,
+                isLandscapeFullscreen: toLandscape
+            )
+        )
         if toLandscape != rotationCoordinator.isLandscape || rotationCoordinator.isTransitioning {
             contentController.beginSystemRotation(toLandscape: toLandscape)
             contentController.markRotationStarted(toLandscape: toLandscape)
@@ -522,7 +544,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     private func requestExitFullscreen() {
         if rotationCoordinator.isPortraitFullscreen {
             rotationCoordinator.setPortraitFullscreen(false)
-            setImmersivePlayback(false)
+            setImmersivePlayback(
+                shouldUseImmersiveChrome(for: view.bounds.size, isLandscapeFullscreen: false)
+            )
             contentController.recoverStableLayout()
             updateOrientationLock()
             setNeedsStatusBarAppearanceUpdate()
@@ -531,7 +555,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         }
         if rotationCoordinator.isInPlaceFullscreen {
             rotationCoordinator.setInPlaceFullscreen(false)
-            setImmersivePlayback(false)
+            setImmersivePlayback(
+                shouldUseImmersiveChrome(for: view.bounds.size, isLandscapeFullscreen: false)
+            )
             contentController.recoverStableLayout()
             updateOrientationLock()
             setNeedsStatusBarAppearanceUpdate()
@@ -540,7 +566,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         }
         let scene = view.window?.windowScene
         if scene?.effectiveGeometry.interfaceOrientation.isPortrait == true {
-            setImmersivePlayback(false)
+            setImmersivePlayback(
+                shouldUseImmersiveChrome(for: view.bounds.size, isLandscapeFullscreen: false)
+            )
             rotationCoordinator.reconcileStableState(
                 isLandscape: false,
                 isPortraitFullscreen: false
@@ -562,7 +590,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             isLandscape: landscape,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
         )
-        setImmersivePlayback(landscape || rotationCoordinator.isAnyFullscreen)
+        setImmersivePlayback(
+            shouldUseImmersiveChrome(for: view.bounds.size, isLandscapeFullscreen: landscape)
+        )
         contentController.recoverStableLayout()
     }
 
@@ -598,6 +628,26 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         )
     }
 
+    private func shouldUseImmersiveChrome(
+        for containerSize: CGSize,
+        isLandscapeFullscreen: Bool
+    ) -> Bool {
+        if isLandscapeFullscreen
+            || rotationCoordinator.isPortraitFullscreen
+            || rotationCoordinator.isInPlaceFullscreen {
+            return true
+        }
+        let adaptiveEnabled = contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+        let resolvedHorizontalSizeClass: UserInterfaceSizeClass? =
+            traitCollection.horizontalSizeClass == .compact ? .compact : .regular
+        return AdaptiveLayoutPolicy.videoDetailMode(
+            containerSize: containerSize,
+            horizontalSizeClass: resolvedHorizontalSizeClass,
+            isFullscreenActive: false,
+            adaptiveEnabled: adaptiveEnabled
+        ) == .twoColumnSplit
+    }
+
     private func setImmersivePlayback(_ active: Bool) {
         guard isImmersivePlayback != active else { return }
         isImmersivePlayback = active
@@ -623,7 +673,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
                     if !self.recoverInterruptedRotationIfNeeded(reason: "applicationDidBecomeActive") {
                         self.contentController.recoverStableLayout()
                         self.setImmersivePlayback(
-                            self.resolvedLandscapeForRecovery || self.rotationCoordinator.isPortraitFullscreen
+                            self.shouldUseImmersiveChrome(
+                                for: self.view.bounds.size,
+                                isLandscapeFullscreen: self.resolvedLandscapeForRecovery
+                            )
                         )
                     }
                     self.updateOrientationLock()
@@ -678,7 +731,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             }
             self.contentController.finishSystemRotation()
             self.setImmersivePlayback(
-                self.rotationCoordinator.layoutLandscape || self.rotationCoordinator.isPortraitFullscreen
+                self.shouldUseImmersiveChrome(
+                    for: self.view.bounds.size,
+                    isLandscapeFullscreen: self.rotationCoordinator.layoutLandscape
+                )
             )
             let actualOrientation: String?
             switch currentOrientation {
@@ -716,7 +772,12 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
         )
         if isViewActive, !didPrepareForDismantle {
-            setImmersivePlayback(landscape || rotationCoordinator.isPortraitFullscreen)
+            setImmersivePlayback(
+                shouldUseImmersiveChrome(
+                    for: view.bounds.size,
+                    isLandscapeFullscreen: landscape
+                )
+            )
         }
         contentController.recoverStableLayout()
         contentController.markRotationRecovered(reason: reason)

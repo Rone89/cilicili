@@ -3028,5 +3028,26 @@
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：
     - `RootTabScrollUITests`（`iphone18pm-homemenu-v2.xcresult` **2/2 通过**、`iphone18pm-homemenu-v3.xcresult` **1/1 通过，0 运行时警告**，像素复核头像圆心偏移 `dx = -0.2pt, dy = +0.2pt`）以及视频详情回归（`iphone18pm-video-toolbar-v1.xcresult` **2/2 通过，0 运行时警告**、`iphone18pm-video-picker-v2.xcresult` **1/1 通过，0 运行时警告**、`iphone18pm-duo-inner-landscape-v1.xcresult` **2/2 通过，0 运行时警告**）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 真机 `RCe2027` 当前安装的是 `21f8e57`（不含本轮 `HomeTopBar.swift` 及 Duo 视频详情工具栏修改）；如需在真机复核新的原生工具栏胶囊样式，可重新执行本地真机构建安装。
+  - 真机 `RCe2027` 当前安装的是 `21f8e57`（不含本轮 `HomeTopBar.swift` 及 Duo / iPad 视频详情工具栏修改）；如需在真机复核新的原生工具栏胶囊样式，可重新执行本地真机构建安装。
   - 真机 `iPhone Duo` 实体铰链半折/热折展连续动画及真机 iPad 多窗口仍待真实硬件验收。
+
+### 2026-11-22（iPad & `iPhone Duo` 横屏全屏左右双栏 + 右边栏手机同款底部工具栏）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `698f9ab` 叠加本轮改造并提交，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)：
+    - 将 `.twoColumnSplit` 限定为**大屏横屏**（`width > height && width >= 700 && height >= 460`，覆盖 `iPhone Duo` 内屏横屏 `951×669 pt` 与 iPad 横屏）；iPad 竖屏（`1024×1366 pt`）统一回到上下单栏 `.compactStacked`。
+    - `usesVerticalTrailingChromeRail` 保持仅匹配 `iPhone Duo` 外屏竖屏（`466×678 pt`），Duo 外屏竖屏继续保留右侧竖向图标切换栏。
+  - [VideoDetailShellLayout.swift](bili/Sources/Features/VideoDetail/VideoDetailShellLayout.swift) & [VideoDetailRotationBridgeViewController.swift](bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift)：
+    - 新增 `shouldUseImmersiveChrome`，在横屏 `.twoColumnSplit` 态下自动隐藏系统状态栏、Home Indicator 与外层跨屏 `.bottomBar`（横屏铺满全屏：左视频舞台 + 右简介/评论栏全高边到边，零黑边、零跨栏工具栏遮挡视频）；点击播放器全屏按钮仍可继续收起右侧栏进入纯视频独占全屏，退出全屏后返回横屏双栏并保持状态栏隐藏。
+  - [VideoDetailToolbarSegmentedPicker.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailToolbarSegmentedPicker.swift) & [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift)：
+    - 新增 `VideoDetailSplitColumnBottomToolbar`，在横屏 `.twoColumnSplit` 且非纯视频全屏时直接挂载于右侧简介/评论栏底部，呈现与手机底栏一致的液态玻璃三段布局（左 `<` 返回及长按历史菜单 `VideoDetailHistoryBackMenu`、中 `简介 | 评论` 分段 `Picker`、右 `📝` 发评 `VideoDetailToolbarCommentAction`），并同步保障右侧列表底部留白（`max(rootSafeAreaInsets.bottom, 20)`）避免遮挡末条内容。
+  - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift) & [AdaptiveLayoutUITests.swift](biliUITests/AdaptiveLayoutUITests.swift)：更新单测覆盖 iPad 竖屏单栏、iPad/Duo 横屏全屏双栏及 Duo 外屏竖栏判定，并在 UI 测试中校验横屏双栏下 `<`、`简介 | 评论` 与 `📝` 全部位于右侧栏边界内、零遮挡左侧播放器、点击切换评论与纯视频全屏往返正常。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone Duo` 内屏横屏（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，测后已关闭）**：`AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`（`duo-split-toolbar-v1.xcresult`）**1/1 通过**（`951×669 pt` 横屏分栏下右侧栏内 `<`、`简介 | 评论`、`📝` 位置边界、切换评论与纯视频全屏往返全部通过）。
+  - **`iPhone Duo` 外屏竖屏（iOS 27.1，测后已关闭）**：`AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`（`duo-split-live.xcresult`）**1/1 通过**，确认外屏竖屏仍保留右侧竖向图标切换栏。
+  - **`cilicili-iPad-Pro-13`（iOS 27.0，UDID `F3373D0E-7DA7-43FF-BD0D-3B112C8A1859`，测后已关闭）**：`AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`（`ipad-split-toolbar-v1.xcresult`）**1/1 通过，0 运行时警告**（验证 iPad 竖屏上下单栏、横屏隐藏状态栏全屏双栏、右边栏底栏三按钮零遮挡视频、切换评论及纯视频全屏往返）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：`AdaptiveLayoutAndPlayerIdentityTests`（6/6，含连续缩放播放器身份稳定）+ `AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`（1/1）共 **7/7 通过（0 失败，0 跳过）**（`iphone18pm-split-toolbar-v1.xcresult`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；真机 iPad 与真机 `iPhone Duo` 的横屏全屏双栏视觉与手势交互待对应真机实测验收。

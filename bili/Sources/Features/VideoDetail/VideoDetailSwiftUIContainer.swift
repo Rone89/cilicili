@@ -262,6 +262,12 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         if contentState.hidesBottomToolbar != layout.usesFullscreenLayout {
             contentState.hidesBottomToolbar = layout.usesFullscreenLayout
         }
+        let targetBottomInset = layout.adaptiveMode == .twoColumnSplit
+            ? max(rootSafeAreaInsets.bottom, 20)
+            : rootSafeAreaInsets.bottom
+        if abs(contentState.bottomInset - targetBottomInset) > 0.5 {
+            contentState.bottomInset = targetBottomInset
+        }
         guard let contentTopInset = layout.contentTopInset else { return }
         guard abs(contentState.topInset - contentTopInset) > 0.5 else { return }
         contentState.topInset = contentTopInset
@@ -899,6 +905,16 @@ struct VideoDetailSwiftUIContainer: View {
                         )
                     }
                 )
+                .overlay(alignment: .bottom) {
+                    if layout.adaptiveMode == .twoColumnSplit, !layout.usesFullscreenLayout {
+                        VideoDetailSplitColumnBottomToolbar(
+                            navigationHistory: model.navigationHistory,
+                            onNavigateBack: onNavigateBack,
+                            selection: $selectedContentTab,
+                            onOpenCommentComposer: { onOpenCommentComposer(nil) }
+                        )
+                    }
+                }
                 .frame(
                     width: layout.contentFrame.width,
                     height: layout.contentFrame.height

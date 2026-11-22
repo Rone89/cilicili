@@ -98,6 +98,21 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         XCTAssertEqual(compact.contentFrame.minX, 0)
         XCTAssertGreaterThan(compact.contentTopInset ?? 0, 200)
 
+        let ipadPortrait = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 1024, height: 1366),
+            safeAreaTop: 24,
+            safeAreaBottom: 20,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: nil,
+            isPlaybackActive: true,
+            isLandscape: false,
+            isPortraitFullscreen: false,
+            horizontalSizeClass: .regular,
+            adaptiveLargeScreenEnabled: true
+        )
+        XCTAssertEqual(ipadPortrait.adaptiveMode, .compactStacked)
+        XCTAssertEqual(ipadPortrait.playerFrame.width, 1024)
+
         let split = VideoDetailShellLayout.resolve(
             bounds: CGRect(x: 0, y: 0, width: 1366, height: 1024),
             safeAreaTop: 24,
@@ -113,11 +128,30 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         XCTAssertEqual(split.adaptiveMode, .twoColumnSplit)
         XCTAssertFalse(split.usesFullscreenLayout)
         XCTAssertEqual(split.contentTopInset, 0)
+        XCTAssertEqual(split.contentFrame.minY, 0)
+        XCTAssertEqual(split.contentFrame.height, 1024)
         XCTAssertEqual(split.playerFrame.minX, 0)
         XCTAssertGreaterThanOrEqual(split.playerFrame.width, 800)
         XCTAssertEqual(split.contentFrame.minX, split.playerFrame.width, accuracy: 0.5)
         XCTAssertEqual(split.contentFrame.width, 460, accuracy: 0.5)
         XCTAssertEqual(split.danmakuCanvasSize, split.playerFrame.size)
+
+        let duoInnerLandscape = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 951, height: 669),
+            safeAreaTop: 0,
+            safeAreaBottom: 20,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: nil,
+            isPlaybackActive: true,
+            isLandscape: false,
+            isPortraitFullscreen: false,
+            horizontalSizeClass: .regular,
+            adaptiveLargeScreenEnabled: true
+        )
+        XCTAssertEqual(duoInnerLandscape.adaptiveMode, .twoColumnSplit)
+        XCTAssertEqual(duoInnerLandscape.contentFrame.minY, 0)
+        XCTAssertEqual(duoInnerLandscape.contentFrame.height, 669)
+        XCTAssertEqual(duoInnerLandscape.contentFrame.width, 380, accuracy: 0.5)
 
         let narrowSplit = VideoDetailShellLayout.resolve(
             bounds: CGRect(x: 0, y: 0, width: 500, height: 1024),
@@ -349,7 +383,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         XCTAssertEqual(AppOrientationLock.resolvedSupportedOrientations(for: padWindow), .all)
     }
 
-    func testVerticalTrailingChromeRailDetectsDuoCoverAndInnerLandscapeOnly() {
+    func testVerticalTrailingChromeRailDetectsDuoCoverPortraitOnly() {
         // iPhone Duo cover display (portrait)
         XCTAssertTrue(
             AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
@@ -357,8 +391,8 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
                 safeAreaInsets: EdgeInsets(top: 0, leading: 0, bottom: 34, trailing: 84)
             )
         )
-        // iPhone Duo unfolded inner display (landscape)
-        XCTAssertTrue(
+        // iPhone Duo unfolded inner display (landscape uses twoColumnSplit with right-column horizontal toolbar)
+        XCTAssertFalse(
             AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
                 containerSize: CGSize(width: 951, height: 669),
                 safeAreaInsets: EdgeInsets(top: 0, leading: 0, bottom: 20, trailing: 84)
