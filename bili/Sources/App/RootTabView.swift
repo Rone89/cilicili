@@ -408,8 +408,7 @@ struct RootTabView: View {
                 hidesRootTabBar: visibleRootTabs.count == 1,
                 onRootTabTap: selectedTab == .search ? { tabSelection.wrappedValue = .search } : nil,
                 capturesSelectedTabTap: false,
-                isSearchTab: false,
-                defersRevealUntilPopCompletion: true
+                isSearchTab: false
             )
         }
         .navigationHistoryStack(path: detailPath, rootTitle: AppTab.search.title)

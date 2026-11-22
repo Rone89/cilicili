@@ -3353,12 +3353,14 @@
   2. **关闭评论弹窗后底层评论列表无法滚动**：
      - [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift)：原实现在 `syncCommentThreadIfNeeded` 等分支调用 `presenter?.dismiss(animated: true)` 后立即将 `presenter = nil`，导致 `SplitLiquidGlassSheetPresenter` 立刻释放，其 `UIViewPropertyAnimator` 完成回调中 `[weak self]` 提前返回、`containerView.removeFromSuperview()` 从未执行，遗留不可见全屏容器与 `backdropView` 持续拦截点击与滚动手势。现改为在 `dismiss(animated:)` 开头立即禁用 `containerView` 与 `backdropView` 交互，并在 `teardown` 闭包强引用视图与 `hostingController` 确保动画结束后彻底移除。
   3. **搜索页进入视频详情返回时各形态（折叠 Duo、展开竖/横屏 Duo、真机 18 Pro Max）TabBar/搜索框闪跳**：
-     - [NativeBottomBarVisibility.swift](bili/Sources/App/NativeBottomBarVisibility.swift) & [RootTabView.swift](bili/Sources/App/RootTabView.swift)：保持 `NativeRootTabBarTransitionSource` 单一所有权（严格不混用 `.toolbarVisibility(.hidden, for: .tabBar)`），为 `coordinatesRootTabBarTransitions` 新增 `defersRevealUntilPopCompletion: Bool = false` 参数并在 `searchRootTabNavigationStack` 启用；当从搜索页返回且 `navigationController.transitionCoordinator != nil` 时，将 `setTabBarHidden(false, animated: true)` 推迟到返回转场完成后的下一主线程循环，等待 `UISearchTab` 挂回底部搜索栏后再一次性平滑恢复，避免中途闪现普通/最小化 TabBar 或顶部搜索框。
+     - [NativeBottomBarVisibility.swift](bili/Sources/App/NativeBottomBarVisibility.swift) & [RootTabView.swift](bili/Sources/App/RootTabView.swift)：保持 `NativeRootTabBarTransitionSource` 单一所有权（严格不混用 `.toolbarVisibility(.hidden, for: .tabBar)`）。此前尝试推迟到转场完成后再 `setTabBarHidden(false)` 在真机 18 Pro Max 上复现了 `UISearchController` 退回顶部导航栏并永久驻留、底部 TabBar 延迟闪现的副作用；现已移除延迟逻辑，改为在根视图 `viewWillAppear`（当 `transitionCoordinator` 正在 pop 回根页）以及 `update` 取消隐藏时同步触发 `setRootTabBarHidden(false)`，并增加 `isRevealingForPopTransition` 保护防止 `viewDidLayoutSubviews` 误重隐以及交互侧滑取消时的状态回滚，使 `UISearchTab` 从返回转场首帧即可保持底部搜索栏形态。
   4. **单元测试**：
      - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testSplitColumnSheetDismissRemovesOverlayContainerAndNotifiesVisibilityChange`。
-     - [RootTabBarVisibilityTests.swift](biliTests/RootTabBarVisibilityTests.swift)：新增 `testSearchTabDeferredPopRevealRestoresTabBarCleanly`。
+     - [RootTabBarVisibilityTests.swift](biliTests/RootTabBarVisibilityTests.swift)：新增 `testSearchTabDeferredPopRevealRestoresTabBarCleanly`（验证 `Tab(role: .search)` 返回后 TabBar 干净恢复）。
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
-  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests`、`RootTabBarVisibilityTests`、`PlaybackDetailSharedLayoutTests` 全部通过（`/tmp/bili-fix-three-1795376722.xcresult`，`** TEST SUCCEEDED **`）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`RootTabBarVisibilityTests` 全部通过（`/tmp/bili-search-tabbar-sync-1795377393.xcresult`，`** TEST SUCCEEDED **`）；先前 `AdaptiveLayoutAndPlayerIdentityTests` 与 `PlaybackDetailSharedLayoutTests` 已在同一基线通过。
+  - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`）**：已安装并启动最新 Debug 构建（`cc.bili`）。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）**：已通过共享 `Xcode-27` 缓存及本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译最新 Release 包，`codesign --verify --deep --strict` 通过，原位安装成功（自动拉起时手机处于锁屏状态）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - `iPhone Duo` 模拟器（展开竖/横屏与折叠态）及真机 `RCe2027` 的交互观感验收尚未安装复测；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
+  - `iPhone Duo` 模拟器与真机 `RCe2027` 解锁后的搜索页返回实景观感待用户复测；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。

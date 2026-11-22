@@ -180,8 +180,7 @@ final class RootTabBarVisibilityTests: XCTestCase {
                         }
                         .coordinatesRootTabBarTransitions(
                             isDetailPresented: !driver.path.isEmpty,
-                            hidesRootTabBar: false,
-                            defersRevealUntilPopCompletion: true
+                            hidesRootTabBar: false
                         )
                     }
                 }
