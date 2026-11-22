@@ -349,29 +349,47 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         XCTAssertEqual(AppOrientationLock.resolvedSupportedOrientations(for: padWindow), .all)
     }
 
-    func testVerticalTrailingChromeRailDetectsDuoCoverDisplayOnly() {
+    func testVerticalTrailingChromeRailDetectsDuoCoverAndInnerLandscapeOnly() {
+        // iPhone Duo cover display (portrait)
         XCTAssertTrue(
             AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
                 containerSize: CGSize(width: 466, height: 678),
                 safeAreaInsets: EdgeInsets(top: 0, leading: 0, bottom: 34, trailing: 84)
             )
         )
+        // iPhone Duo unfolded inner display (landscape)
+        XCTAssertTrue(
+            AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+                containerSize: CGSize(width: 951, height: 669),
+                safeAreaInsets: EdgeInsets(top: 0, leading: 0, bottom: 20, trailing: 84)
+            )
+        )
+        // Standard iPhone portrait
         XCTAssertFalse(
             AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
                 containerSize: CGSize(width: 440, height: 956),
                 safeAreaInsets: EdgeInsets(top: 62, leading: 0, bottom: 34, trailing: 0)
             )
         )
+        // iPhone Duo unfolded inner display (portrait)
         XCTAssertFalse(
             AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
                 containerSize: CGSize(width: 669, height: 951),
                 safeAreaInsets: EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 0)
             )
         )
+        // Standard iPhone landscape (symmetric horizontal safe areas)
         XCTAssertFalse(
             AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
                 containerSize: CGSize(width: 956, height: 440),
                 safeAreaInsets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62)
+            )
+        )
+        // iPad landscape
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
+                containerSize: CGSize(width: 1366, height: 1024),
+                safeAreaInsets: EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 0)
             )
         )
     }

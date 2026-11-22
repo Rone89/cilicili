@@ -97,16 +97,25 @@ final class AdaptiveLayoutUITests: XCTestCase {
                 "Large screen window did not rotate to landscape: \(landscapeWindow.frame)"
             )
             // Large screen landscape must remain in two-column split (not auto-fullscreen)
-            XCTAssertTrue(toolbar.waitForExistence(timeout: 5), "Toolbar should remain visible in iPad landscape split mode")
+            XCTAssertTrue(
+                waitForCondition(timeout: 5) {
+                    toolbar.exists || (verticalDetailTab.exists && verticalCommentsTab.exists)
+                },
+                "Toolbar or Duo vertical switcher should remain visible in landscape split mode"
+            )
             let landscapeSplitPlayerFrame = playerFrameElement.frame
             XCTAssertLessThan(
                 landscapeSplitPlayerFrame.width,
                 landscapeWindow.frame.width * 0.75,
-                "iPad landscape must remain in two-column split until fullscreen is tapped, got \(landscapeSplitPlayerFrame)"
+                "Large screen landscape must remain in two-column split until fullscreen is tapped, got \(landscapeSplitPlayerFrame)"
             )
 
             // Switch to comments tab and verify it renders in the right column
-            toolbar.buttons["评论"].tap()
+            if verticalCommentsTab.exists {
+                verticalCommentsTab.tap()
+            } else {
+                toolbar.buttons["评论"].tap()
+            }
             let commentsList = app.tables["comments.list"].firstMatch
             XCTAssertTrue(commentsList.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertGreaterThanOrEqual(
@@ -157,6 +166,29 @@ final class AdaptiveLayoutUITests: XCTestCase {
                     landscapeWindow.frame.width > landscapeWindow.frame.height
                         || playerFrameElement.frame.height >= landscapeWindow.frame.height - 40
                 }, "Compact screen did not enter landscape or fullscreen after tapping fullscreen: window=\(landscapeWindow.frame) player=\(playerFrameElement.frame)")
+            } else if waitForCondition(timeout: 5, condition: {
+                verticalDetailTab.exists && verticalCommentsTab.exists
+            }) {
+                // Duo unfolded inner display in landscape: vertical right-rail icon switcher
+                XCTAssertGreaterThan(
+                    verticalDetailTab.frame.minX,
+                    landscapeWindow.frame.width * 0.72,
+                    "Duo inner-landscape detail tab should sit in the right rail: \(verticalDetailTab.frame)"
+                )
+                XCTAssertLessThan(
+                    verticalDetailTab.frame.midY,
+                    verticalCommentsTab.frame.midY,
+                    "Detail icon (info.circle) should sit above comments icon (text.bubble)"
+                )
+                XCTAssertEqual(
+                    verticalDetailTab.frame.midX,
+                    verticalCommentsTab.frame.midX,
+                    accuracy: 4,
+                    "Duo inner-landscape switcher icons should align vertically"
+                )
+                verticalCommentsTab.tap()
+                let commentsList = app.tables["comments.list"].firstMatch
+                XCTAssertTrue(commentsList.waitForExistence(timeout: 10), app.debugDescription)
             }
             attachScreenshot(app.screenshot(), name: "adaptive-video-detail-iphone-landscape")
         }

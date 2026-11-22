@@ -200,18 +200,20 @@ nonisolated enum AdaptiveLayoutPolicy {
         return (playerColumnWidth, contentColumnWidth)
     }
 
-    /// Whether the active container/window exposes an asymmetric trailing system
-    /// chrome rail (iPhone Duo folded cover display in portrait, where trailing
-    /// safe area reserves ~84pt for the vertical status/toolbar/tab rail while
-    /// leading safe area stays minimal).
+    /// Whether the active container/window exposes an asymmetric vertical system
+    /// chrome rail (iPhone Duo folded cover display in portrait or unfolded inner
+    /// display in landscape, where one horizontal edge reserves ~84pt for the
+    /// vertical status/toolbar/tab rail while the opposite horizontal edge stays
+    /// minimal). Standard iPhone landscape has symmetric horizontal safe areas,
+    /// and iPad / Duo inner portrait have zero horizontal safe areas.
     static func usesVerticalTrailingChromeRail(
         containerSize: CGSize,
         safeAreaInsets: EdgeInsets
     ) -> Bool {
         guard containerSize.width > 0, containerSize.height > 0 else { return false }
-        return containerSize.height > containerSize.width
-            && safeAreaInsets.trailing >= 50
-            && safeAreaInsets.leading <= 16
+        let maxHorizontalInset = max(safeAreaInsets.leading, safeAreaInsets.trailing)
+        let minHorizontalInset = min(safeAreaInsets.leading, safeAreaInsets.trailing)
+        return maxHorizontalInset >= 50 && minHorizontalInset <= 16
     }
 
     @MainActor
