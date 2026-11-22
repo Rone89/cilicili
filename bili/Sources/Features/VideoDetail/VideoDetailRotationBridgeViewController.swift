@@ -80,6 +80,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         contentController.updateSelectedContentTab(binding)
     }
 
+    func updateNavigateBackAction(_ action: @escaping () -> Void) {
+        contentController.updateNavigateBackAction(action)
+    }
+
     func updateNavigationHistory(_ history: NavigationHistoryContext?) {
         contentController.contentModel.updateNavigationHistory(history)
     }

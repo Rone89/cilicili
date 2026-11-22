@@ -905,16 +905,6 @@ struct VideoDetailSwiftUIContainer: View {
                         )
                     }
                 )
-                .overlay(alignment: .bottom) {
-                    if layout.adaptiveMode == .twoColumnSplit, !layout.usesFullscreenLayout {
-                        VideoDetailSplitColumnBottomToolbar(
-                            navigationHistory: model.navigationHistory,
-                            onNavigateBack: onNavigateBack,
-                            selection: $selectedContentTab,
-                            onOpenCommentComposer: { onOpenCommentComposer(nil) }
-                        )
-                    }
-                }
                 .frame(
                     width: layout.contentFrame.width,
                     height: layout.contentFrame.height
@@ -947,6 +937,23 @@ struct VideoDetailSwiftUIContainer: View {
                     onShowDanmakuSettings: onShowDanmakuSettings,
                     onNavigateBack: onNavigateBack
                 )
+
+                if layout.adaptiveMode == .twoColumnSplit, !layout.usesFullscreenLayout {
+                    VideoDetailSplitColumnBottomToolbar(
+                        navigationHistory: model.navigationHistory,
+                        onNavigateBack: onNavigateBack,
+                        selection: $selectedContentTab,
+                        onOpenCommentComposer: { onOpenCommentComposer(nil) }
+                    )
+                    .frame(width: layout.contentFrame.width)
+                    .frame(
+                        width: layout.contentFrame.width,
+                        height: layout.contentFrame.height,
+                        alignment: .bottom
+                    )
+                    .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
+                    .zIndex(4)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .onAppear {
@@ -1010,7 +1017,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     private let onPresentPlayerMoreControls: (PlayerStateViewModel, @escaping () -> Void) -> Void
     private let onDismissPlayerMoreControls: () -> Void
     private let onToggleDanmaku: () -> Void
-    private let onNavigateBack: () -> Void
+    private var onNavigateBack: () -> Void
     private let usesTransparentNavigationBar: Bool
     private let playbackDiagnostics = VideoDetailPlaybackDiagnostics()
     private var cancellables = Set<AnyCancellable>()
@@ -1237,6 +1244,10 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             return
         }
         onPresentPlayerMoreControls(player, onDismiss)
+    }
+
+    func updateNavigateBackAction(_ action: @escaping () -> Void) {
+        onNavigateBack = action
     }
 
     func navigateBack() {

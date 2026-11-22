@@ -170,6 +170,18 @@ final class AdaptiveLayoutUITests: XCTestCase {
             }, "Exiting fullscreen must return to two-column split, got \(playerFrameElement.frame)")
             XCTAssertTrue(commentsList.waitForExistence(timeout: 5))
             XCTAssertTrue(toolbar.waitForExistence(timeout: 5))
+
+            // Verify tapping the right-column back button actually pops back to Home
+            let splitBackButton = app.buttons["video.detail.history-back"].firstMatch
+            XCTAssertTrue(splitBackButton.waitForExistence(timeout: 5), app.debugDescription)
+            splitBackButton.tap()
+            let homeModeMenu = app.buttons["home.feed.modeMenu"].firstMatch
+            XCTAssertTrue(
+                waitForCondition(timeout: 8) {
+                    !playerFrameElement.exists || homeModeMenu.exists
+                },
+                "Tapping back button in landscape split must pop back from video detail: \(app.debugDescription)"
+            )
         } else {
             if !didRotateByDeviceOrientation {
                 let fullscreenButton = fullscreenControl(in: app)
