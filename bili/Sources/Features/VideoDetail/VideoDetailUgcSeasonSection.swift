@@ -3,6 +3,7 @@ import SwiftUI
 /// UGC 合集区块：数据来自详情响应自带的 `ugc_season`，无需额外请求。
 /// 紧凑单行入口 + 共享单列弹窗；条目是独立视频，选集走 `selectUgcSeasonEpisode` 原地切换。
 struct VideoDetailUgcSeasonSection: View {
+    @Environment(\.videoDetailSplitColumnOverlay) private var splitOverlay
     let season: UgcSeason?
     let detail: VideoItem
     let selectEpisode: (VideoItem) -> Void
@@ -27,19 +28,39 @@ struct VideoDetailUgcSeasonSection: View {
                 countUnit: "个",
                 items: compactItems,
                 accessibilityIdentifier: "video.detail.seasonMenu.compact",
-                showsSheet: $isSeasonSheetPresented
+                showsSheet: sheetPresentationBinding
             )
             .sheet(isPresented: $isSeasonSheetPresented) {
                 VideoDetailCompactSelectionSheet(
                     sectionTitle: "全部合集",
                     items: compactItems,
-                    selectItem: { item in
-                        guard let video = item.selectVideo else { return }
-                        selectEpisode(video)
-                    }
+                    selectItem: handleSelectItem
                 )
             }
         }
+    }
+
+    private var sheetPresentationBinding: Binding<Bool> {
+        Binding(
+            get: { isSeasonSheetPresented },
+            set: { shouldShow in
+                if shouldShow, let splitOverlay, splitOverlay.isSplitColumnMode {
+                    splitOverlay.selectionSheet = VideoDetailSplitSelectionSheetPayload(
+                        sectionTitle: "全部合集",
+                        items: compactItems,
+                        selectItem: handleSelectItem
+                    )
+                    isSeasonSheetPresented = false
+                } else {
+                    isSeasonSheetPresented = shouldShow
+                }
+            }
+        )
+    }
+
+    private func handleSelectItem(_ item: VideoDetailCompactSelectionItem) {
+        guard let video = item.selectVideo else { return }
+        selectEpisode(video)
     }
 }
 

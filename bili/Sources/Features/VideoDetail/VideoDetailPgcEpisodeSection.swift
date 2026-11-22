@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
+    @Environment(\.videoDetailSplitColumnOverlay) private var splitOverlay
     let detail: VideoItem
     let api: BiliAPIClient
     let selectEpisode: (VideoItem) -> Void
@@ -46,7 +47,7 @@ struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
                             countUnit: "集",
                             items: compactItems,
                             accessibilityIdentifier: "video.detail.episodeMenu.compact",
-                            showsSheet: $isEpisodeSheetPresented
+                            showsSheet: episodeSheetPresentationBinding
                         )
                     }
                 }
@@ -67,13 +68,33 @@ struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
                 VideoDetailCompactSelectionSheet(
                     sectionTitle: "全部分集",
                     items: compactItems,
-                    selectItem: { item in
-                        guard let video = item.selectVideo else { return }
-                        selectEpisode(video)
-                    }
+                    selectItem: handleSelectEpisodeItem
                 )
             }
         }
+    }
+
+    private var episodeSheetPresentationBinding: Binding<Bool> {
+        Binding(
+            get: { isEpisodeSheetPresented },
+            set: { shouldShow in
+                if shouldShow, let splitOverlay, splitOverlay.isSplitColumnMode {
+                    splitOverlay.selectionSheet = VideoDetailSplitSelectionSheetPayload(
+                        sectionTitle: "全部分集",
+                        items: compactItems,
+                        selectItem: handleSelectEpisodeItem
+                    )
+                    isEpisodeSheetPresented = false
+                } else {
+                    isEpisodeSheetPresented = shouldShow
+                }
+            }
+        )
+    }
+
+    private func handleSelectEpisodeItem(_ item: VideoDetailCompactSelectionItem) {
+        guard let video = item.selectVideo else { return }
+        selectEpisode(video)
     }
 
     private func load(force: Bool) async {

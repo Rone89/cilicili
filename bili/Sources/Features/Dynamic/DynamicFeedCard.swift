@@ -151,7 +151,7 @@ private struct PreloadedOriginalDynamicDetailsKey: EnvironmentKey {
     static let defaultValue = [String: DynamicFeedItem]()
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var dynamicDetailNavigationPath: Binding<NavigationPath>? {
         get { self[DynamicDetailNavigationPathKey.self] }
         set { self[DynamicDetailNavigationPathKey.self] = newValue }

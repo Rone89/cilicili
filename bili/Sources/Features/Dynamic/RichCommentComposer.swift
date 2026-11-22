@@ -210,6 +210,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
     @Environment(\.colorScheme) private var inheritedColorScheme
     @Environment(\.appContentColorScheme) private var appContentColorScheme
     @Environment(\.commentLikeTarget) private var inheritedCommentTarget
+    @Environment(\.videoDetailSplitColumnOverlay) private var splitColumnOverlay
     @Binding var target: DynamicCommentComposerTarget?
     let draft: (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>
     let api: BiliAPIClient
@@ -257,8 +258,13 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             contentTarget: contentTarget ?? inheritedCommentTarget,
             submit: submit,
             presenter: controller,
-            targetBinding: $target
+            targetBinding: $target,
+            splitColumnOverlay: splitColumnOverlay
         )
+    }
+
+    static func dismantleUIViewController(_ uiViewController: PresenterViewController, coordinator: Coordinator) {
+        coordinator.dismantle()
     }
 
     final class PresenterViewController: UIViewController {}
@@ -267,6 +273,15 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
         private weak var presentedController: UIHostingController<AnyView>?
         private var presentedTargetID: String?
         private var pendingPresentationTask: Task<Void, Never>?
+        private weak var activeSplitOverlay: VideoDetailSplitColumnOverlayController?
+
+        func dismantle() {
+            let ownerID = ObjectIdentifier(self)
+            activeSplitOverlay?.dismissInlineComposerIfOwned(by: ownerID)
+            activeSplitOverlay = nil
+            pendingPresentationTask?.cancel()
+            pendingPresentationTask = nil
+        }
 
         func update(
             target: DynamicCommentComposerTarget?,
@@ -277,11 +292,19 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             contentTarget: CommentLikeTarget?,
             submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void,
             presenter: UIViewController,
-            targetBinding: Binding<DynamicCommentComposerTarget?>
+            targetBinding: Binding<DynamicCommentComposerTarget?>,
+            splitColumnOverlay: VideoDetailSplitColumnOverlayController?
         ) {
+            let ownerID = ObjectIdentifier(self)
             guard let target else {
                 pendingPresentationTask?.cancel()
                 pendingPresentationTask = nil
+                if let overlay = splitColumnOverlay ?? activeSplitOverlay {
+                    DispatchQueue.main.async {
+                        overlay.dismissInlineComposerIfOwned(by: ownerID)
+                    }
+                }
+                activeSplitOverlay = nil
                 guard let presentedController else { return }
                 self.presentedController = nil
                 presentedTargetID = nil
@@ -316,6 +339,39 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
                 .environment(\.appContentColorScheme, colorScheme)
                 .preferredColorScheme(colorScheme)
             )
+
+            if let splitColumnOverlay, splitColumnOverlay.isSplitColumnMode {
+                // In landscape two-column split, host the composer strictly inside
+                // the right-hand detail/comments column without covering the video.
+                if let presentedController {
+                    self.presentedController = nil
+                    presentedTargetID = nil
+                    if presentedController.presentingViewController != nil
+                        || presentedController.isBeingPresented {
+                        presentedController.dismiss(animated: false)
+                    }
+                }
+                activeSplitOverlay = splitColumnOverlay
+                let targetID = target.id
+                DispatchQueue.main.async {
+                    splitColumnOverlay.presentInlineComposer(
+                        ownerID: ownerID,
+                        targetID: targetID,
+                        content: rootView,
+                        onDismiss: {
+                            targetBinding.wrappedValue = nil
+                        }
+                    )
+                }
+                return
+            }
+
+            if let overlay = activeSplitOverlay {
+                DispatchQueue.main.async {
+                    overlay.dismissInlineComposerIfOwned(by: ownerID)
+                }
+                activeSplitOverlay = nil
+            }
 
             if let presentedController {
                 presentedTargetID = target.id

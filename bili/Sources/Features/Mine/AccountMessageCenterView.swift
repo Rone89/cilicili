@@ -134,6 +134,7 @@ private struct AccountMessageInboxView: View {
             content
         }
         .hiddenInlineNavigationTitle()
+        .standardPageHorizontalContentMargins(20, maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth)
         .nativeTopScrollEdgeEffect()
         .searchable(text: $searchText, prompt: "搜索已加载消息")
         .toolbar {
@@ -294,6 +295,7 @@ struct AccountMessageFeedView: View {
             content
         }
         .hiddenInlineNavigationTitle()
+        .standardPageHorizontalContentMargins(20, maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth)
         .nativeTopScrollEdgeEffect()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -922,6 +924,7 @@ private struct AccountMessageLikeDetailView: View {
             }
         }
         .hiddenInlineNavigationTitle()
+        .standardPageHorizontalContentMargins(20, maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth)
         .nativeTopScrollEdgeEffect()
         .task {
             guard state == .idle else { return }
@@ -1106,6 +1109,7 @@ private struct AccountMessageFollowersView: View {
             }
         }
         .hiddenInlineNavigationTitle()
+        .standardPageHorizontalContentMargins(20, maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth)
         .nativeTopScrollEdgeEffect()
         .task {
             guard state == .idle else { return }

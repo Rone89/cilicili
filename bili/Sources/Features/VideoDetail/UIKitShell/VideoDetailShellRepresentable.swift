@@ -19,6 +19,8 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @Binding var isShowingFavoriteFolders: Bool
     @Binding var isShowingCoinPicker: Bool
     @Binding var isShowingNetworkDiagnostics: Bool
+    let splitColumnOverlay: VideoDetailSplitColumnOverlayController
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     let onOpenCommentComposer: (Comment?) -> Void
     let onNavigateBack: () -> Void
 
@@ -34,6 +36,9 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
             dependencies: dependencies,
             openVideoOwnerRoute: openVideoOwnerRoute,
             selectedContentTab: $selectedContentTab,
+            sheetRoute: $sheetRoute,
+            splitColumnOverlay: splitColumnOverlay,
+            submitReply: submitReply,
             onShowNetworkDiagnostics: { isShowingNetworkDiagnostics = true },
             onShowFavoriteFolders: { isShowingFavoriteFolders = true },
             onShowCoinPicker: { isShowingCoinPicker = true },
@@ -81,6 +86,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     ) {
         controller.updateNavigateBackAction(onNavigateBack)
         controller.updateSelectedContentTab($selectedContentTab)
+        controller.updateSheetRoute($sheetRoute)
         controller.scheduleNavigationHistoryUpdate(navigationHistory)
     }
 

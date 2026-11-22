@@ -803,6 +803,9 @@ struct VideoDetailSwiftUIContainer: View {
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var rotationCoordinator: PlaybackRotationCoordinator
     @Binding var selectedContentTab: VideoDetailContentTab
+    @Binding var sheetRoute: VideoDetailSheetRoute?
+    let splitColumnOverlay: VideoDetailSplitColumnOverlayController
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     let dependencies: AppDependencies
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
@@ -953,6 +956,21 @@ struct VideoDetailSwiftUIContainer: View {
                     )
                     .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
                     .zIndex(4)
+
+                    VideoDetailSplitColumnSheetHost(
+                        overlay: splitColumnOverlay,
+                        viewModel: viewModel,
+                        libraryStore: dependencies.libraryStore,
+                        sheetRoute: $sheetRoute,
+                        submitReply: submitReply
+                    )
+                    .frame(
+                        width: layout.contentFrame.width,
+                        height: layout.contentFrame.height
+                    )
+                    .clipped()
+                    .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
+                    .zIndex(5)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
@@ -960,10 +978,19 @@ struct VideoDetailSwiftUIContainer: View {
                 DispatchQueue.main.async {
                     model.synchronize(layout: layout)
                     model.updateCollapsedChrome(bounds: proxy.size)
+                    splitColumnOverlay.setSplitColumnMode(
+                        layout.adaptiveMode == .twoColumnSplit && !layout.usesFullscreenLayout
+                    )
+                }
+            }
+            .onChange(of: layout.adaptiveMode == .twoColumnSplit && !layout.usesFullscreenLayout) { _, isSplit in
+                DispatchQueue.main.async {
+                    splitColumnOverlay.setSplitColumnMode(isSplit)
                 }
             }
         }
         .background(Color.black)
+        .environment(\.videoDetailSplitColumnOverlay, splitColumnOverlay)
         .environment(\.navigationHistoryContext, model.navigationHistory)
         .environment(\.navigationHistoryBackAction, model.navigationHistory != nil ? onNavigateBack : nil)
         .environment(
@@ -1007,6 +1034,10 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     private let dependencies: AppDependencies
     private var selectedContentTab: Binding<VideoDetailContentTab>
     private var lastSelectedContentTab: VideoDetailContentTab
+    private var sheetRoute: Binding<VideoDetailSheetRoute?>
+    private var lastSheetRouteID: UUID?
+    private let splitColumnOverlay: VideoDetailSplitColumnOverlayController
+    private let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     private let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     private let onShowNetworkDiagnostics: () -> Void
     private let onShowFavoriteFolders: () -> Void
@@ -1039,6 +1070,9 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         rotationCoordinator: PlaybackRotationCoordinator,
         openVideoOwnerRoute: ((VideoOwner) -> Void)?,
         selectedContentTab: Binding<VideoDetailContentTab>,
+        sheetRoute: Binding<VideoDetailSheetRoute?> = .constant(nil),
+        splitColumnOverlay: VideoDetailSplitColumnOverlayController = VideoDetailSplitColumnOverlayController(),
+        submitReply: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void = { _, _, _ in },
         onShowNetworkDiagnostics: @escaping () -> Void,
         onShowFavoriteFolders: @escaping () -> Void,
         onShowCoinPicker: @escaping () -> Void,
@@ -1056,6 +1090,10 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         self.dependencies = dependencies
         self.selectedContentTab = selectedContentTab
         self.lastSelectedContentTab = selectedContentTab.wrappedValue
+        self.sheetRoute = sheetRoute
+        self.lastSheetRouteID = sheetRoute.wrappedValue?.id
+        self.splitColumnOverlay = splitColumnOverlay
+        self.submitReply = submitReply
         self.openVideoOwnerRoute = openVideoOwnerRoute
         self.onShowNetworkDiagnostics = onShowNetworkDiagnostics
         self.onShowFavoriteFolders = onShowFavoriteFolders
@@ -1305,6 +1343,14 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         hostingController.rootView = makeRootView()
     }
 
+    func updateSheetRoute(_ binding: Binding<VideoDetailSheetRoute?>) {
+        let nextID = binding.wrappedValue?.id
+        sheetRoute = binding
+        guard nextID != lastSheetRouteID else { return }
+        lastSheetRouteID = nextID
+        hostingController.rootView = makeRootView()
+    }
+
     private func makeRootView() -> VideoDetailSwiftUIContainer {
         VideoDetailSwiftUIContainer(
             viewModel: viewModel,
@@ -1312,6 +1358,9 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             runtimeSettings: runtimeSettings,
             rotationCoordinator: rotationCoordinator,
             selectedContentTab: selectedContentTab,
+            sheetRoute: sheetRoute,
+            splitColumnOverlay: splitColumnOverlay,
+            submitReply: submitReply,
             dependencies: dependencies,
             onShowNetworkDiagnostics: onShowNetworkDiagnostics,
             onShowFavoriteFolders: onShowFavoriteFolders,

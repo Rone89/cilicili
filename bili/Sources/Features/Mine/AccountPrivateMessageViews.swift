@@ -89,6 +89,7 @@ struct AccountPrivateMessageSessionsView: View {
             sessionListOverlay
         }
         .hiddenInlineNavigationTitle()
+        .standardPageHorizontalContentMargins(20, maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth)
         .nativeTopScrollEdgeEffect()
         .searchable(text: $searchText, prompt: "搜索用户或最近消息")
         .toolbar {

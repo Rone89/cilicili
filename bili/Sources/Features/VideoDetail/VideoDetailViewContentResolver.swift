@@ -19,6 +19,7 @@ struct VideoDetailViewContentResolver: View {
     let onNavigateBack: () -> Void
     @State private var commentComposerTarget: DynamicCommentComposerTarget?
     @StateObject private var commentComposerDrafts = RichCommentDraftStore()
+    @StateObject private var splitColumnOverlay = VideoDetailSplitColumnOverlayController()
 
     var body: some View {
         VideoDetailShellRepresentable(
@@ -32,6 +33,8 @@ struct VideoDetailViewContentResolver: View {
             isShowingFavoriteFolders: $isShowingFavoriteFolders,
             isShowingCoinPicker: $isShowingCoinPicker,
             isShowingNetworkDiagnostics: $isShowingNetworkDiagnostics,
+            splitColumnOverlay: splitColumnOverlay,
+            submitReply: videoCommentSubmitAction,
             onOpenCommentComposer: openCommentComposer(for:),
             onNavigateBack: onNavigateBack
         )
@@ -42,6 +45,7 @@ struct VideoDetailViewContentResolver: View {
         .videoDetailSheets(
             viewModel: viewModel,
             libraryStore: dependencies.libraryStore,
+            splitColumnOverlay: splitColumnOverlay,
             sheetState: VideoDetailSheetState(
                 route: $sheetRoute,
                 isShowingFavoriteFolders: $isShowingFavoriteFolders,
@@ -64,6 +68,7 @@ struct VideoDetailViewContentResolver: View {
                     try await submitComment(target: target, message: message, pictures: pictures)
                 }
             )
+            .environment(\.videoDetailSplitColumnOverlay, splitColumnOverlay)
             .allowsHitTesting(false)
         }
         .task(id: "\(viewModel.detail.aid ?? 0)-\(libraryStore.accountFavoriteChangeRevision)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.accountConfigurationVersion)") {

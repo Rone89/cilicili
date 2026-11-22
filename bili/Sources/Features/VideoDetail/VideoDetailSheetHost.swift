@@ -3,6 +3,7 @@ import SwiftUI
 private struct VideoDetailSheetHostModifier: ViewModifier {
     @ObservedObject var viewModel: VideoDetailViewModel
     @ObservedObject var libraryStore: LibraryStore
+    @ObservedObject var splitColumnOverlay: VideoDetailSplitColumnOverlayController
     /// 字幕选轨弹窗用本地 @State 驱动：ViewModel 的 @Published 直接绑定
     /// 在每次 body 重建时都会生成新 Binding，sheet 不会呈现。
     @State private var isShowingSubtitleSelection = false
@@ -122,9 +123,20 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
 
     private var sheetRouteBinding: Binding<VideoDetailSheetRoute?> {
         Binding(
-            get: { sheetState.route.wrappedValue },
+            get: {
+                let route = sheetState.route.wrappedValue
+                // In landscape two-column split, comment thread sheets are presented
+                // inside the right-hand detail/comments column instead of full-window modal.
+                if splitColumnOverlay.isSplitColumnMode, case .commentThread = route {
+                    return nil
+                }
+                return route
+            },
             set: { route in
                 let currentRoute = sheetState.route.wrappedValue
+                if splitColumnOverlay.isSplitColumnMode, case .commentThread = currentRoute, route == nil {
+                    return
+                }
                 guard currentRoute?.id != route?.id else { return }
                 if let currentRoute {
                     finish(currentRoute)
@@ -153,6 +165,7 @@ extension View {
     func videoDetailSheets(
         viewModel: VideoDetailViewModel,
         libraryStore: LibraryStore,
+        splitColumnOverlay: VideoDetailSplitColumnOverlayController,
         sheetState: VideoDetailSheetState,
         submitReply: @escaping (
             DynamicCommentComposerTarget,
@@ -164,6 +177,7 @@ extension View {
             VideoDetailSheetHostModifier(
                 viewModel: viewModel,
                 libraryStore: libraryStore,
+                splitColumnOverlay: splitColumnOverlay,
                 sheetState: sheetState,
                 sheetActions: VideoDetailSheetActions(viewModel: viewModel),
                 submitReply: submitReply

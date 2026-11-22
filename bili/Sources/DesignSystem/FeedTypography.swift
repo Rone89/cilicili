@@ -292,9 +292,48 @@ enum FeedTypography {
     static let titleUIFont = UIFont.systemFont(ofSize: primaryTextSize, weight: .semibold)
 }
 
+private struct StandardPageHorizontalContentMarginsModifier: ViewModifier {
+    @AppStorage("cc.bili.display.adaptiveLargeScreenLayoutExperimentEnabled.v1")
+    private var adaptiveLargeScreenEnabled = true
+    @State private var containerWidth: CGFloat = 0
+    let baseInset: CGFloat
+    let maxContentWidth: CGFloat
+
+    private var resolvedMargin: CGFloat {
+        AdaptiveLayoutPolicy.readableHorizontalContentMargin(
+            containerWidth: containerWidth,
+            baseInset: baseInset,
+            maxContentWidth: maxContentWidth,
+            adaptiveEnabled: adaptiveLargeScreenEnabled
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                if abs(containerWidth - width) > 0.5 {
+                    containerWidth = width
+                }
+            }
+            .contentMargins(.horizontal, resolvedMargin, for: .scrollContent)
+    }
+}
+
 extension View {
-    /// Applies the app-wide 20pt horizontal content inset to scroll content.
-    func standardPageHorizontalContentMargins(_ inset: CGFloat) -> some View {
-        contentMargins(.horizontal, inset, for: .scrollContent)
+    /// Applies horizontal content inset to scroll content and caps readable width
+    /// on large displays (Duo unfolded landscape, iPad) while preserving full-width
+    /// scrolling and edge scroll indicators.
+    func standardPageHorizontalContentMargins(
+        _ inset: CGFloat,
+        maxContentWidth: CGFloat = AdaptiveLayoutPolicy.formListMaxWidth
+    ) -> some View {
+        modifier(
+            StandardPageHorizontalContentMarginsModifier(
+                baseInset: inset,
+                maxContentWidth: maxContentWidth
+            )
+        )
     }
 }

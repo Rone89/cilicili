@@ -21,6 +21,26 @@ struct DynamicFeedTabSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Picker(
+                    "信息流布局",
+                    selection: Binding(
+                        get: { libraryStore.dynamicFeedLayoutMode },
+                        set: { libraryStore.setDynamicFeedLayoutMode($0) }
+                    )
+                ) {
+                    ForEach(DynamicFeedLayoutMode.allCases) { mode in
+                        Label(mode.title, systemImage: mode.systemImage)
+                            .tag(mode)
+                    }
+                }
+                .accessibilityIdentifier("settings.dynamicFeedTabs.layoutMode")
+            } header: {
+                Text("布局模式")
+            } footer: {
+                Text("瀑布流模式在 iPhone、iPhone Duo 与 iPad 上均可开启，会根据屏幕宽度自动调整为 2 至 5 列。")
+            }
+
+            Section {
                 ForEach(visibleKinds, id: \.self) { kind in
                     if isEditingOrder {
                         Text(kind.title)

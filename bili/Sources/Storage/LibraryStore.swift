@@ -95,6 +95,31 @@ nonisolated struct StoredPlaybackProgress: Codable, Equatable, Sendable {
     let updatedAt: Date
 }
 
+nonisolated enum DynamicFeedLayoutMode: String, CaseIterable, Identifiable, Sendable {
+    case list
+    case waterfall
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .list:
+            return "经典列表"
+        case .waterfall:
+            return "瀑布流"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .list:
+            return "list.bullet"
+        case .waterfall:
+            return "rectangle.3.group"
+        }
+    }
+}
+
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published private(set) var appearanceMode: AppAppearanceMode
@@ -168,6 +193,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
     @Published private(set) var visibleDynamicFeedKinds: [DynamicFeedKind]
+    @Published private(set) var dynamicFeedLayoutMode: DynamicFeedLayoutMode
     @Published private(set) var homeFeedLayout: HomeFeedLayout
     @Published private(set) var homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
     @Published private(set) var showsHotSearches: Bool
@@ -392,6 +418,7 @@ final class LibraryStore: ObservableObject {
     private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
     private static let visibleDynamicFeedKindsKey = "cc.bili.display.visibleDynamicFeedKinds.v1"
+    private static let dynamicFeedLayoutModeKey = "cc.bili.dynamic.feedLayoutMode.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let homeRecommendFeedSourcePreferenceKey = "cc.bili.home.recommendFeedSourcePreference.v1"
     private static let showsHotSearchesKey = "cc.bili.search.showsHotSearches.v1"
@@ -737,6 +764,10 @@ final class LibraryStore: ObservableObject {
         self.visibleDynamicFeedKinds = DynamicFeedKind.normalizedVisibleKinds(
             userDefaults.stringArray(forKey: Self.visibleDynamicFeedKindsKey)
         )
+        self.dynamicFeedLayoutMode =
+            DynamicFeedLayoutMode(
+                rawValue: userDefaults.string(forKey: Self.dynamicFeedLayoutModeKey) ?? ""
+            ) ?? .list
         self.homeFeedLayout =
             HomeFeedLayout(
                 rawValue: userDefaults.string(forKey: Self.homeFeedLayoutKey) ?? ""
@@ -1552,6 +1583,11 @@ final class LibraryStore: ObservableObject {
         guard normalized != visibleDynamicFeedKinds else { return }
         visibleDynamicFeedKinds = normalized
         userDefaults.set(normalized.map(\.rawValue), forKey: Self.visibleDynamicFeedKindsKey)
+    }
+
+    func setDynamicFeedLayoutMode(_ mode: DynamicFeedLayoutMode) {
+        dynamicFeedLayoutMode = mode
+        userDefaults.set(mode.rawValue, forKey: Self.dynamicFeedLayoutModeKey)
     }
 
     func setHomeFeedLayout(_ layout: HomeFeedLayout) {

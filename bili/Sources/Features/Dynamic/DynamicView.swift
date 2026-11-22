@@ -49,7 +49,7 @@ struct DynamicContentRoot: View {
     }
 
     private var usesRootNavigationToolbar: Bool {
-        isRootTabContent && (visibleFeedKinds.count > 1 || showsHiddenRootPageSwitcher)
+        isRootTabContent
     }
 
     var body: some View {
@@ -93,7 +93,9 @@ struct DynamicContentRoot: View {
                     titleState: titleState,
                     kinds: visibleFeedKinds,
                     currentKind: selectedFeed,
-                    onSelect: { selectedFeed = $0 }
+                    layoutMode: libraryStore.dynamicFeedLayoutMode,
+                    onSelect: { selectedFeed = $0 },
+                    onToggleLayoutMode: toggleDynamicLayoutMode
                 )
             }
         }
@@ -108,6 +110,24 @@ struct DynamicContentRoot: View {
                     DynamicTopBarTitle(state: titleState)
                 }
                 .sharedBackgroundVisibility(.hidden)
+            }
+            if usesRootNavigationToolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: toggleDynamicLayoutMode) {
+                        Image(
+                            systemName: libraryStore.dynamicFeedLayoutMode == .waterfall
+                                ? DynamicFeedLayoutMode.list.systemImage
+                                : DynamicFeedLayoutMode.waterfall.systemImage
+                        )
+                    }
+                    .tint(.primary)
+                    .accessibilityLabel(
+                        libraryStore.dynamicFeedLayoutMode == .waterfall
+                            ? "切换为经典列表"
+                            : "切换为瀑布流"
+                    )
+                    .accessibilityIdentifier("dynamic.layoutMode.toggle")
+                }
             }
             if usesRootNavigationToolbar && visibleFeedKinds.count > 1 {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -157,6 +177,11 @@ struct DynamicContentRoot: View {
                 selectedUP = owner
             }
         }
+    }
+
+    private func toggleDynamicLayoutMode() {
+        let next: DynamicFeedLayoutMode = libraryStore.dynamicFeedLayoutMode == .waterfall ? .list : .waterfall
+        libraryStore.setDynamicFeedLayoutMode(next)
     }
 
     private func selectFeed(_ kind: DynamicFeedKind) {

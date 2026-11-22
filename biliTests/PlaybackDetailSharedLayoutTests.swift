@@ -135,6 +135,8 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             let root = VideoDetailSwiftUIContainer(
                 viewModel: model.viewModel, model: model, runtimeSettings: model.runtimeSettings,
                 rotationCoordinator: model.rotationCoordinator, selectedContentTab: .constant(.detail),
+                sheetRoute: .constant(nil), splitColumnOverlay: VideoDetailSplitColumnOverlayController(),
+                submitReply: { _, _, _ in },
                 dependencies: dependencies, onShowNetworkDiagnostics: {}, onShowFavoriteFolders: {},
                 onShowCoinPicker: {}, onOpenCommentComposer: { _ in }, onReply: { _ in },
                 openVideoOwnerRoute: nil, onShowMoreControls: { _ in }, onDismissMoreControls: {},

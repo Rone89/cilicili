@@ -3070,3 +3070,36 @@
 - **未验证与待办（明确区分，不推测通过）**：
   - `simctl` 命令行未提供无头展开 `iPhone Duo` 物理铰链的指令（单独熄屏 `display=1` 会触发 SpringBoard 崩溃），因此 `.toolbarVerticalBehavior(.disabled)` 在 **Duo 展开内屏**上彻底消除右上角时间/信号圆环的实时目视效果，需在 Simulator 图形界面手动展开 Duo 内屏或真机 Duo 上复核确认。
   - 真机 `RCe2027` 仍停留在 `21f8e57`。
+
+### 2026-11-22（大屏列表阅读宽度限制、横屏分栏右栏专属弹窗、动态页可选瀑布流）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `1adbc9f` 叠加本轮三项需求改动并提交，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **大屏列表/通知/设置页可读最大宽度限制**：
+     - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)：新增 `formListMaxWidth`（`680pt`）、`readableListMaxWidth`（`760pt`）及 `readableHorizontalContentMargin(containerWidth:baseInset:maxContentWidth:adaptiveEnabled:)`，按当前窗口宽度动态计算左右对称 `.contentMargins` 留白；窄屏手机保持原始 `baseInset`，大屏自适应实验关闭时自动回退。
+     - [FeedTypography.swift](bili/Sources/DesignSystem/FeedTypography.swift)：升级 `standardPageHorizontalContentMargins(_:maxContentWidth:)` 为 `StandardPageHorizontalContentMarginsModifier`，基于 `.onGeometryChange` 在 `.contentMargins(.horizontal, ..., for: .scrollContent)` 施加可读宽度上限，完整保留全宽滚动手势与贴边滚动条，一次覆盖「我的」、设置页、历史/收藏/缓存、诊断与开发设置等全部既有 `insetGrouped` 列表页。
+     - [AccountMessageCenterView.swift](bili/Sources/Features/Mine/AccountMessageCenterView.swift) & [AccountPrivateMessageViews.swift](bili/Sources/Features/Mine/AccountPrivateMessageViews.swift)：为「通知」收件箱（`AccountMessageInboxView`）、消息列表、点赞详情、新增粉丝与私信会话列表接入 `.standardPageHorizontalContentMargins(20, maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth)`。
+  2. **横屏双栏视频详情右栏专属弹窗（不遮挡左侧视频）**：
+     - 新增 [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift)：实现 `VideoDetailSplitColumnOverlayController`、`EnvironmentValues.videoDetailSplitColumnOverlay` / `videoDetailSplitSheetDismiss`、`VideoDetailSplitColumnSheetHost` 与可下滑关闭的 `VideoDetailSplitSheetCard`，严格裁切在右侧 `layout.contentFrame` 区域内（`.zIndex(5)`）承载分P/选集/合集、评论详情楼中楼、二级对话弹窗及内联富文本发评输入框。
+     - [VideoDetailPageMenu.swift](bili/Sources/Features/VideoDetail/VideoDetailPageMenu.swift)、[VideoDetailUgcSeasonSection.swift](bili/Sources/Features/VideoDetail/VideoDetailUgcSeasonSection.swift)、[VideoDetailPgcEpisodeSection.swift](bili/Sources/Features/VideoDetail/VideoDetailPgcEpisodeSection.swift) & [VideoDetailCompactSelectionSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailCompactSelectionSheet.swift)：横屏 `.twoColumnSplit` 时将分P/合集/番剧选集弹窗路由到右栏容器；竖屏/窄屏保持系统 `.sheet` 不变。
+     - [VideoDetailSheetHost.swift](bili/Sources/Features/VideoDetail/VideoDetailSheetHost.swift)、[VideoDetailCommentRepliesSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailCommentRepliesSheet.swift)、[VideoDetailCommentDialogSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailCommentDialogSheet.swift) & [RichCommentComposer.swift](bili/Sources/Features/Dynamic/RichCommentComposer.swift)：横屏 `.twoColumnSplit` 时抑制全屏 `.sheet` / `.overFullScreen` 呈现，将评论回复楼层、二级对话弹窗与发评/回复输入框全部收口到右栏容器并支持按持有者清理；退出分栏或切纯视频全屏时自动清场。
+     - [VideoDetailViewContentResolver.swift](bili/Sources/Features/VideoDetail/VideoDetailViewContentResolver.swift)、[VideoDetailShellRepresentable.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellRepresentable.swift)、[VideoDetailRotationBridgeViewController.swift](bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift) & [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift)：串联 `splitColumnOverlay`、`$sheetRoute` 与 `submitReply`，并同步更新 [PlaybackDetailSharedLayoutTests.swift](biliTests/PlaybackDetailSharedLayoutTests.swift) 构造调用。
+  3. **动态页小红书风格瀑布流（默认关闭、可切换开启，全机型按宽自适应列数）**：
+     - [LibraryStore.swift](bili/Sources/Storage/LibraryStore.swift)：新增 `DynamicFeedLayoutMode`（`.list` 经典列表默认 / `.waterfall` 瀑布流），持久化至 `cc.bili.dynamic.feedLayoutMode.v1`。
+     - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)：新增 `dynamicWaterfallColumnCount(containerWidth:horizontalInset:columnSpacing:)`，按屏幕宽度自动适配列数（iPhone/Duo 外屏 `2` 列、Duo 内屏竖屏 `3` 列、Duo 内屏横屏 / iPad 竖屏 `4` 列、iPad 横屏 `5` 列）。
+     - 新增 [DynamicWaterfallFeedView.swift](bili/Sources/Features/Dynamic/DynamicWaterfallFeedView.swift)：实现增量最短列稳定分桶器 `DynamicWaterfallLayoutPlanner`（加载下一页不重排已有卡片，仅列数变化或刷新时重算）与 `DynamicWaterfallCard`（覆盖图文单/多图比例钳制、实况/GIF/多图角标、视频/番剧/直播/专栏/充电视频封面与时长、纯文字与转发文字卡片、作者头像跳转与卡片点赞乐观更新）。
+     - [DynamicFeedScreenContent.swift](bili/Sources/Features/Dynamic/DynamicFeedScreenContent.swift)、[DynamicFeedScrollContent.swift](bili/Sources/Features/Dynamic/DynamicFeedScrollContent.swift)、[DynamicView.swift](bili/Sources/Features/Dynamic/DynamicView.swift)、[DynamicTopBar.swift](bili/Sources/Features/Dynamic/DynamicTopBar.swift)、[DynamicFeedCard.swift](bili/Sources/Features/Dynamic/DynamicFeedCard.swift) & [DynamicFeedTabSettingsView.swift](bili/Sources/Features/Mine/DynamicFeedTabSettingsView.swift)：顶部工具栏新增一键切换按钮（`dynamic.layoutMode.toggle`）并在「动态顶部分类设置」中同步提供「布局模式」选择器；顶部「最常访问」UP 栏保持全宽不变。
+  4. **新增单元测试**：
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 5 项测试覆盖大屏阅读宽度边距、瀑布流全宽段列数、瀑布流增量分页列稳定与旋转重排、右栏弹窗控制器持有者隔离与退出清场、以及布局模式默认 `.list` 与持久化切换。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存，`build/logs/adaptive-3features-v4.xcresult`）**：
+    - `AdaptiveLayoutAndPlayerIdentityTests`：**12/12 通过（0 失败，0 跳过）**
+    - `DynamicFeedCategoriesTests`：**4/4 通过（0 失败，0 跳过）**
+    - `PlaybackDetailSharedLayoutTests`：**47/47 通过（0 失败，0 跳过）**
+    - `RootTabBarVisibilityTests`：**3/3 通过（0 失败，0 跳过）**
+    - `AdaptiveLayoutUITests`：**2/2 通过（0 失败，0 跳过）**
+    - 注：同轮顺带跑的 `DynamicDetailNavigationTests`（24 项）中有 3 项评论 gRPC 游标分页用例因 stub 环境返回无法识别的 gRPC 数据而失败（本轮未触碰评论网络/gRPC 分页逻辑）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 本轮遵循 `AGENTS.md` 规则仅在默认 `iPhone 18 Pro Max`（iOS 27.0）模拟器完成编译与自动化回归；`iPhone Duo`（外屏/展开内屏横屏）与 `iPad` 下的通知页居中留白、横屏分栏右栏弹窗（分P/评论回复/发评键盘抬起）以及多列瀑布流实景视觉效果尚未在对应模拟器或真机上目视核验。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。

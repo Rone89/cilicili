@@ -4,6 +4,7 @@ struct CommentDialogSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.videoDetailSplitSheetDismiss) private var splitSheetDismiss
     let rootComment: Comment
     let focusReply: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
@@ -73,7 +74,13 @@ struct CommentDialogSheet: View {
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
         .commentSheetPresentation(
-            onDismiss: { dismiss() },
+            onDismiss: {
+                if let splitSheetDismiss {
+                    splitSheetDismiss()
+                } else {
+                    dismiss()
+                }
+            },
             onRefresh: { Task { await reloadDialog(rootComment, focusReply) } }
         )
         .background {

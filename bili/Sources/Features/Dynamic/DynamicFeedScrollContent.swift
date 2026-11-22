@@ -9,6 +9,8 @@ struct DynamicFeedScrollContent: View {
     let isLoggedIn: Bool
     let contentWidth: CGFloat
     let horizontalInset: CGFloat
+    var layoutMode: DynamicFeedLayoutMode = .list
+    var waterfallColumnCount: Int = 2
     var selectedUP: VideoOwner? = nil
     var onChooseUP: (() -> Void)? = nil
     var titleState: FeedChromeTitleState? = nil
@@ -22,6 +24,8 @@ struct DynamicFeedScrollContent: View {
                     topUploaderStripViewModel: topUploaderStripViewModel ?? viewModel,
                     isLoggedIn: isLoggedIn,
                     contentWidth: contentWidth,
+                    layoutMode: layoutMode,
+                    waterfallColumnCount: waterfallColumnCount,
                     selectedUP: selectedUP, onChooseUP: onChooseUP
                 )
                 .frame(width: contentWidth, alignment: .leading)
@@ -92,6 +96,8 @@ private struct DynamicFeedBodyContent: View {
     let topUploaderStripViewModel: DynamicViewModel
     let isLoggedIn: Bool
     let contentWidth: CGFloat
+    let layoutMode: DynamicFeedLayoutMode
+    let waterfallColumnCount: Int
     var selectedUP: VideoOwner? = nil
     var onChooseUP: (() -> Void)? = nil
 
@@ -129,12 +135,22 @@ private struct DynamicFeedBodyContent: View {
                     DynamicFeedFooter(viewModel: viewModel)
                 }
             } else {
-                DynamicFeedItemsList(
-                    api: api,
-                    viewModel: viewModel,
-                    items: viewModel.items,
-                    contentWidth: contentWidth
-                )
+                if layoutMode == .waterfall {
+                    DynamicWaterfallFeedView(
+                        api: api,
+                        viewModel: viewModel,
+                        items: viewModel.items,
+                        contentWidth: contentWidth,
+                        columnCount: waterfallColumnCount
+                    )
+                } else {
+                    DynamicFeedItemsList(
+                        api: api,
+                        viewModel: viewModel,
+                        items: viewModel.items,
+                        contentWidth: contentWidth
+                    )
+                }
 
                 DynamicFeedFooter(viewModel: viewModel)
                     .padding(.top, 6)

@@ -31,6 +31,8 @@ nonisolated enum AdaptiveLayoutPolicy {
     static let wideHorizontalInset: CGFloat = 32
 
     static let readingColumnMaxWidth: CGFloat = 720
+    static let formListMaxWidth: CGFloat = 680
+    static let readableListMaxWidth: CGFloat = 760
     static let singleColumnFeedMaxWidth: CGFloat = 640
     static let multiColumnFeedMaxWidth: CGFloat = 1360
     static let searchResultsMaxWidth: CGFloat = 1280
@@ -165,6 +167,48 @@ nonisolated enum AdaptiveLayoutPolicy {
     ) -> CGFloat {
         let bounded = min(max(containerWidth, 0), maxContentWidth)
         return max(bounded - horizontalInset * 2, 0)
+    }
+
+    /// Computes horizontal scroll content margins that keep insetGrouped lists /
+    /// settings / notification pages within a comfortable readable width on large
+    /// screens while preserving full-width scrolling and edge scroll indicators.
+    static func readableHorizontalContentMargin(
+        containerWidth: CGFloat,
+        baseInset: CGFloat,
+        maxContentWidth: CGFloat = formListMaxWidth,
+        adaptiveEnabled: Bool = true
+    ) -> CGFloat {
+        let normalizedBase = max(baseInset, 0)
+        guard adaptiveEnabled, containerWidth > 0, maxContentWidth > 0 else {
+            return normalizedBase
+        }
+        let centeredMargin = floor((containerWidth - maxContentWidth) / 2)
+        return max(normalizedBase, centeredMargin)
+    }
+
+    /// Adaptive column count for Xiaohongshu-style masonry waterfall feeds on all
+    /// devices (2 cols on iPhone/Duo cover, 3 cols on Duo inner portrait, 4 cols
+    /// on Duo inner landscape / iPad portrait, 5 cols on iPad 13" landscape+).
+    static func dynamicWaterfallColumnCount(
+        containerWidth: CGFloat,
+        horizontalInset: CGFloat = 12,
+        columnSpacing: CGFloat = 10
+    ) -> Int {
+        let width = max(containerWidth, 0)
+        guard width > 0 else { return 2 }
+        switch width {
+        case ..<560:
+            return 2
+        case 560..<840:
+            return 3
+        case 840..<1180:
+            return 4
+        default:
+            let effectiveWidth = min(width, multiColumnFeedMaxWidth)
+            let available = max(effectiveWidth - horizontalInset * 2, 0)
+            let raw = Int(floor((available + columnSpacing) / (230 + columnSpacing)))
+            return max(4, min(5, raw))
+        }
     }
 
     /// Determines whether the video detail page should use a side-by-side two-column layout,

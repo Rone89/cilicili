@@ -261,6 +261,9 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             runtimeSettings: runtime,
             rotationCoordinator: coordinator,
             selectedContentTab: .constant(.detail),
+            sheetRoute: .constant(nil),
+            splitColumnOverlay: VideoDetailSplitColumnOverlayController(),
+            submitReply: { _, _, _ in },
             dependencies: dependencies,
             onShowNetworkDiagnostics: {},
             onShowFavoriteFolders: {},
@@ -471,6 +474,185 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
                 userInterfaceIdiom: .pad
             )
         )
+    }
+
+    func testReadableHorizontalContentMarginCapsLargeScreensWithoutShrinkingPhones() {
+        // Standard iPhone (390pt) and Duo cover (466pt) keep their base inset unchanged.
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.readableHorizontalContentMargin(
+                containerWidth: 390,
+                baseInset: 20,
+                maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth,
+                adaptiveEnabled: true
+            ),
+            20
+        )
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.readableHorizontalContentMargin(
+                containerWidth: 466,
+                baseInset: 20,
+                maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth,
+                adaptiveEnabled: true
+            ),
+            20
+        )
+
+        // Duo unfolded inner landscape (951pt) centers readable 760pt content: (951 - 760) / 2 = 95.5 -> 95.
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.readableHorizontalContentMargin(
+                containerWidth: 951,
+                baseInset: 20,
+                maxContentWidth: AdaptiveLayoutPolicy.readableListMaxWidth,
+                adaptiveEnabled: true
+            ),
+            95
+        )
+
+        // iPad 13" landscape (1366pt) centers 680pt form lists: (1366 - 680) / 2 = 343.
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.readableHorizontalContentMargin(
+                containerWidth: 1366,
+                baseInset: 20,
+                maxContentWidth: AdaptiveLayoutPolicy.formListMaxWidth,
+                adaptiveEnabled: true
+            ),
+            343
+        )
+
+        // Disabling adaptive large-screen layout falls back to base inset.
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.readableHorizontalContentMargin(
+                containerWidth: 1366,
+                baseInset: 20,
+                maxContentWidth: AdaptiveLayoutPolicy.formListMaxWidth,
+                adaptiveEnabled: false
+            ),
+            20
+        )
+    }
+
+    func testDynamicWaterfallColumnCountAdaptsAcrossPhoneDuoAndIPadWidths() {
+        XCTAssertEqual(AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(containerWidth: 390), 2)
+        XCTAssertEqual(AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(containerWidth: 466), 2)
+        XCTAssertEqual(AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(containerWidth: 669), 3)
+        XCTAssertEqual(AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(containerWidth: 951), 4)
+        XCTAssertEqual(AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(containerWidth: 1024), 4)
+        XCTAssertEqual(AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(containerWidth: 1366), 5)
+    }
+
+    func testDynamicWaterfallLayoutPlannerPreservesColumnAssignmentsAcrossLoadMore() throws {
+        func makeItem(id: String, width: Int? = nil, height: Int? = nil, text: String = "测试动态") throws -> DynamicFeedItem {
+            let drawJSON: String
+            if let width, let height {
+                drawJSON = """
+                "major":{"type":"MAJOR_TYPE_DRAW","draw":{"id":1,"items":[{"src":"https://i0.hdslb.com/bfs/new_dyn/\(id).jpg","width":\(width),"height":\(height)}]}}
+                """
+            } else {
+                drawJSON = "\"major\":null"
+            }
+            let json = """
+            {
+              "id_str": "\(id)",
+              "type": "DYNAMIC_TYPE_DRAW",
+              "modules": {
+                "module_author": {"mid": 1001, "name": "Tester", "face": "https://i0.hdslb.com/bfs/face/test.jpg", "pub_time": "1分钟前"},
+                "module_dynamic": {
+                  "desc": {"text": "\(text)", "rich_text_nodes": [{"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": "\(text)"}]},
+                  \(drawJSON)
+                }
+              }
+            }
+            """
+            return try JSONDecoder.bili.decode(DynamicFeedItem.self, from: Data(json.utf8))
+        }
+
+        let planner = DynamicWaterfallLayoutPlanner()
+        let firstBatch = [
+            try makeItem(id: "dyn-1", width: 800, height: 1200, text: "长图"),
+            try makeItem(id: "dyn-2", width: 1200, height: 800, text: "横图"),
+            try makeItem(id: "dyn-3", width: 900, height: 900, text: "方图"),
+            try makeItem(id: "dyn-4", text: "纯文字动态内容测试"),
+        ]
+        let initialColumns = planner.columns(for: firstBatch, columnCount: 2, cardWidth: 180)
+        XCTAssertEqual(initialColumns.count, 2)
+        XCTAssertEqual(initialColumns.flatMap { $0 }.count, 4)
+
+        var initialColumnByID: [String: Int] = [:]
+        for (colIdx, colItems) in initialColumns.enumerated() {
+            for item in colItems {
+                initialColumnByID[item.id] = colIdx
+            }
+        }
+
+        // Appending next page must keep every previously placed item in its exact column.
+        let secondBatch = firstBatch + [
+            try makeItem(id: "dyn-5", width: 800, height: 1000, text: "第二页1"),
+            try makeItem(id: "dyn-6", width: 1000, height: 800, text: "第二页2"),
+        ]
+        let expandedColumns = planner.columns(for: secondBatch, columnCount: 2, cardWidth: 180)
+        XCTAssertEqual(expandedColumns.flatMap { $0 }.count, 6)
+        for (colIdx, colItems) in expandedColumns.enumerated() {
+            for item in colItems {
+                if let previousCol = initialColumnByID[item.id] {
+                    XCTAssertEqual(colIdx, previousCol, "Item \(item.id) shifted column on loadMore")
+                }
+            }
+        }
+
+        // Changing columnCount (e.g. rotating to 4 columns) rebalances cleanly across all columns.
+        let fourColumns = planner.columns(for: secondBatch, columnCount: 4, cardWidth: 210)
+        XCTAssertEqual(fourColumns.count, 4)
+        XCTAssertEqual(fourColumns.flatMap { $0 }.count, 6)
+        XCTAssertTrue(fourColumns.allSatisfy { !$0.isEmpty })
+    }
+
+    func testVideoDetailSplitColumnOverlayControllerManagesOwnershipAndDismissesOnExit() {
+        let overlay = VideoDetailSplitColumnOverlayController()
+        let ownerA = NSObject()
+        let ownerB = NSObject()
+        var dismissedCount = 0
+
+        overlay.setSplitColumnMode(true)
+        XCTAssertTrue(overlay.isSplitColumnMode)
+
+        overlay.selectionSheet = VideoDetailSplitSelectionSheetPayload(
+            sectionTitle: "分P",
+            items: [],
+            selectItem: { _ in }
+        )
+        overlay.presentInlineComposer(
+            ownerID: ObjectIdentifier(ownerA),
+            targetID: "root-1",
+            content: AnyView(EmptyView()),
+            onDismiss: { dismissedCount += 1 }
+        )
+        XCTAssertNotNil(overlay.selectionSheet)
+        XCTAssertEqual(overlay.inlineComposer?.targetID, "root-1")
+
+        // Unrelated owner must not dismiss ownerA's composer.
+        overlay.dismissInlineComposerIfOwned(by: ObjectIdentifier(ownerB))
+        XCTAssertNotNil(overlay.inlineComposer)
+
+        // Exiting split column mode clears all split overlays and invokes composer onDismiss.
+        overlay.setSplitColumnMode(false)
+        XCTAssertFalse(overlay.isSplitColumnMode)
+        XCTAssertNil(overlay.selectionSheet)
+        XCTAssertNil(overlay.commentDialogSheet)
+        XCTAssertNil(overlay.inlineComposer)
+        XCTAssertEqual(dismissedCount, 1)
+    }
+
+    func testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle() {
+        let store = LibraryStore()
+        let previous = store.dynamicFeedLayoutMode
+        defer { store.setDynamicFeedLayoutMode(previous) }
+
+        store.setDynamicFeedLayoutMode(.list)
+        XCTAssertEqual(LibraryStore().dynamicFeedLayoutMode, .list)
+
+        store.setDynamicFeedLayoutMode(.waterfall)
+        XCTAssertEqual(store.dynamicFeedLayoutMode, .waterfall)
+        XCTAssertEqual(LibraryStore().dynamicFeedLayoutMode, .waterfall)
     }
 
     private func waitForSurfaceHost(in root: UIView) async throws -> DirectUIKitPlayerSurfaceHostView {

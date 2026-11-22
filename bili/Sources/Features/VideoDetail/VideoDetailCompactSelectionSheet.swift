@@ -167,6 +167,7 @@ struct VideoDetailCompactEntryButton: View {
 /// 左上角收起、右上角正序/倒序，图标不用主题色。
 struct VideoDetailCompactSelectionSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.videoDetailSplitSheetDismiss) private var splitSheetDismiss
     let sectionTitle: String
     let items: [VideoDetailCompactSelectionItem]
     let selectItem: (VideoDetailCompactSelectionItem) -> Void
@@ -175,6 +176,14 @@ struct VideoDetailCompactSelectionSheet: View {
 
     private var displayedItems: [VideoDetailCompactSelectionItem] {
         isReverseOrder ? items.reversed() : items
+    }
+
+    private func closeSheet() {
+        if let splitSheetDismiss {
+            splitSheetDismiss()
+        } else {
+            dismiss()
+        }
     }
 
     var body: some View {
@@ -202,7 +211,7 @@ struct VideoDetailCompactSelectionSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        dismiss()
+                        closeSheet()
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.body.weight(.semibold))
@@ -237,6 +246,7 @@ struct VideoDetailCompactSelectionSheet: View {
 
 private struct VideoDetailCompactSelectionRow: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.videoDetailSplitSheetDismiss) private var splitSheetDismiss
     let item: VideoDetailCompactSelectionItem
     let select: () -> Void
 
@@ -246,7 +256,11 @@ private struct VideoDetailCompactSelectionRow: View {
         Button {
             // 不可播放条目保持旧瓦片语义：置灰且点按无动作，不收起弹窗。
             guard item.isSelectable else { return }
-            dismiss()
+            if let splitSheetDismiss {
+                splitSheetDismiss()
+            } else {
+                dismiss()
+            }
             guard !item.isSelected else { return }
             select()
         } label: {

@@ -8,7 +8,9 @@ struct DynamicTopBar: View {
     @ObservedObject var titleState: FeedChromeTitleState
     let kinds: [DynamicFeedKind]
     let currentKind: DynamicFeedKind
+    var layoutMode: DynamicFeedLayoutMode = .list
     let onSelect: (DynamicFeedKind) -> Void
+    var onToggleLayoutMode: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -16,6 +18,20 @@ struct DynamicTopBar: View {
                 DynamicTopBarTitle(state: titleState)
             }
             Spacer(minLength: 8)
+            if let onToggleLayoutMode {
+                Button(action: onToggleLayoutMode) {
+                    Image(
+                        systemName: layoutMode == .waterfall
+                            ? DynamicFeedLayoutMode.list.systemImage
+                            : DynamicFeedLayoutMode.waterfall.systemImage
+                    )
+                    .frame(width: DynamicTopBarLayout.controlHeight, height: DynamicTopBarLayout.controlHeight)
+                }
+                .tint(.primary)
+                .glassEffect(.regular.interactive(), in: Circle())
+                .accessibilityLabel(layoutMode == .waterfall ? "切换为经典列表" : "切换为瀑布流")
+                .accessibilityIdentifier("dynamic.layoutMode.toggle")
+            }
             if kinds.count > 1 {
                 DynamicFeedKindMenu(kinds: kinds, current: currentKind, onSelect: onSelect)
             }

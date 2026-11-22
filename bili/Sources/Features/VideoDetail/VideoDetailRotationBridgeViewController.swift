@@ -30,6 +30,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         dependencies: AppDependencies,
         openVideoOwnerRoute: ((VideoOwner) -> Void)?,
         selectedContentTab: Binding<VideoDetailContentTab>,
+        sheetRoute: Binding<VideoDetailSheetRoute?> = .constant(nil),
+        splitColumnOverlay: VideoDetailSplitColumnOverlayController = VideoDetailSplitColumnOverlayController(),
+        submitReply: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void = { _, _, _ in },
         onShowNetworkDiagnostics: @escaping () -> Void,
         onShowFavoriteFolders: @escaping () -> Void,
         onShowCoinPicker: @escaping () -> Void,
@@ -54,6 +57,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             rotationCoordinator: rotationCoordinator,
             openVideoOwnerRoute: openVideoOwnerRoute,
             selectedContentTab: selectedContentTab,
+            sheetRoute: sheetRoute,
+            splitColumnOverlay: splitColumnOverlay,
+            submitReply: submitReply,
             onShowNetworkDiagnostics: onShowNetworkDiagnostics,
             onShowFavoriteFolders: onShowFavoriteFolders,
             onShowCoinPicker: onShowCoinPicker,
@@ -78,6 +84,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
 
     func updateSelectedContentTab(_ binding: Binding<VideoDetailContentTab>) {
         contentController.updateSelectedContentTab(binding)
+    }
+
+    func updateSheetRoute(_ binding: Binding<VideoDetailSheetRoute?>) {
+        contentController.updateSheetRoute(binding)
     }
 
     func updateNavigateBackAction(_ action: @escaping () -> Void) {

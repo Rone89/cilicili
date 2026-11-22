@@ -3,6 +3,8 @@ import SwiftUI
 struct CommentRepliesSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.videoDetailSplitSheetDismiss) private var splitSheetDismiss
+    @Environment(\.videoDetailSplitColumnOverlay) private var splitOverlay
     let rootComment: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
     let initialReplyID: Int?
@@ -56,7 +58,13 @@ struct CommentRepliesSheet: View {
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
         .commentSheetPresentation(
-            onDismiss: { dismiss() },
+            onDismiss: {
+                if let splitSheetDismiss {
+                    splitSheetDismiss()
+                } else {
+                    dismiss()
+                }
+            },
             onRefresh: { Task { await reloadReplies(rootComment) } }
         )
         .sheet(item: $dialogReply) { reply in
@@ -95,7 +103,18 @@ struct CommentRepliesSheet: View {
     }
 
     private func showDialog(_ reply: Comment) {
-        dialogReply = reply
+        if let splitOverlay, splitOverlay.isSplitColumnMode {
+            splitOverlay.commentDialogSheet = VideoDetailSplitCommentDialogPayload(
+                rootComment: rootComment,
+                focusReply: reply,
+                store: store,
+                loadDialog: loadDialog,
+                reloadDialog: reloadDialog,
+                submitReply: submitReply
+            )
+        } else {
+            dialogReply = reply
+        }
     }
 
     private func openReplyComposer(for parent: Comment) {
