@@ -3244,3 +3244,19 @@
 - **未验证与待办（明确区分，不推测通过）**：
   - 已构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `55095`）；折叠态视频详情页右侧黑色底区与各类弹窗顶部 `.soft` 边缘效果待用户在 `iPhone Duo` 上实景确认。
   - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（Duo 折叠态视频详情页弹窗宽度严格限定在左侧区域，不覆盖右侧控件区）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `a825ec1` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **折叠态视频详情页启用左侧内联原生 `UIGlassEffect` 弹窗容器**：
+     - [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift)：在 `synchronize(layout:)` 中将 `layout.usesDuoFoldedHorizontalBounds` 纳入内联弹窗容器启用条件，使弹窗严格锚定在 `CGRect(x: layout.contentFrame.minX, y: layout.playerFrame.maxY, width: layout.contentFrame.width, height: belowHeight)`（如 `466×678pt` 折叠态外屏下仅覆盖左侧 `381pt` 视频下方区域），彻底不再覆盖右侧黑色控件栏。
+  2. **扩展通用工具弹窗槽位**：
+     - [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift) & [VideoDetailSheetHost.swift](bili/Sources/Features/VideoDetail/VideoDetailSheetHost.swift)：新增 `VideoDetailSplitUtilitySheetPayload` 与 `utilitySheet` 槽位，除选集（分P/合集/番剧）、评论回复、二级对话和发评输入外，将字幕选轨与快捷清晰度弹窗也一并纳入该左侧内联液态玻璃容器。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - `AdaptiveLayoutAndPlayerIdentityTests`（`/tmp/duo-left-sheet-unit.xcresult`，`** TEST SUCCEEDED **`）：**16/16 通过（0 失败，0 跳过）**。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 已构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `57794`）；折叠态视频详情页下选集、评论回复、二级对话、字幕与清晰度弹窗仅覆盖左侧视频下方区域的效果待用户在 `iPhone Duo` 上实景确认。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。

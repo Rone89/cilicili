@@ -299,10 +299,11 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             nextInlineHeightFraction = 0.94
         } else if layout.adaptiveMode == .compactStacked,
                   !layout.usesFullscreenLayout,
-                  lastHorizontalSizeClass == .regular {
-            // Regular-width portrait (e.g. unfolded iPhone Duo / iPad portrait): system `.sheet`
-            // floats as a centered page sheet that covers the top video. Anchor inline sheets
-            // strictly below `playerFrame.maxY` using the native `UIGlassEffect` container.
+                  lastHorizontalSizeClass == .regular || layout.usesDuoFoldedHorizontalBounds {
+            // Regular-width portrait (unfolded iPhone Duo / iPad portrait) or folded iPhone Duo
+            // cover display: system `.sheet` spans full width (covering Duo's right chrome rail)
+            // or floats centered over the video. Anchor inline sheets strictly inside
+            // `layout.contentFrame` below `playerFrame.maxY` using the native `UIGlassEffect` host.
             let belowY = layout.playerFrame.maxY
             let belowHeight = max(layout.contentFrame.maxY - belowY, 0)
             nextInlineFrame = CGRect(

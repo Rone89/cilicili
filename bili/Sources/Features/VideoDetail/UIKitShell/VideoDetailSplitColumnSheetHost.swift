@@ -26,6 +26,18 @@ struct VideoDetailSplitInlineComposerPayload {
     let onDismiss: () -> Void
 }
 
+struct VideoDetailSplitUtilitySheetPayload: Identifiable {
+    let id: UUID
+    let content: AnyView
+    let onDismiss: () -> Void
+
+    init(id: UUID = UUID(), content: AnyView, onDismiss: @escaping () -> Void) {
+        self.id = id
+        self.content = content
+        self.onDismiss = onDismiss
+    }
+}
+
 /// Coordinates modal presentations scoped strictly to the right-hand detail/comments
 /// column while `VideoDetailSwiftUIContainer` is in landscape `.twoColumnSplit`,
 /// ensuring popups never cover the left-hand video player.
@@ -34,13 +46,17 @@ final class VideoDetailSplitColumnOverlayController: ObservableObject {
     @Published var isSplitColumnMode = false
     @Published var selectionSheet: VideoDetailSplitSelectionSheetPayload?
     @Published var commentDialogSheet: VideoDetailSplitCommentDialogPayload?
+    @Published var utilitySheet: VideoDetailSplitUtilitySheetPayload?
     @Published var inlineComposer: VideoDetailSplitInlineComposerPayload?
     /// Non-published snapshot of the maximum sheet detent height below the video player
     /// in stacked (portrait) mode, read at sheet presentation time without causing scroll re-renders.
     private(set) var stackedBelowPlayerSheetMaxHeight: CGFloat?
 
     var hasActiveOverlay: Bool {
-        selectionSheet != nil || commentDialogSheet != nil || inlineComposer != nil
+        selectionSheet != nil
+            || commentDialogSheet != nil
+            || utilitySheet != nil
+            || inlineComposer != nil
     }
 
     func updateStackedBelowPlayerSheetMaxHeight(_ height: CGFloat?) {
@@ -77,6 +93,10 @@ final class VideoDetailSplitColumnOverlayController: ObservableObject {
     func dismissAll() {
         selectionSheet = nil
         commentDialogSheet = nil
+        if let utility = utilitySheet {
+            utilitySheet = nil
+            utility.onDismiss()
+        }
         if let composer = inlineComposer {
             inlineComposer = nil
             composer.onDismiss()
@@ -107,11 +127,13 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
     private var selectionSheetPresenter: SplitLiquidGlassSheetPresenter?
     private var commentThreadPresenter: SplitLiquidGlassSheetPresenter?
     private var commentDialogPresenter: SplitLiquidGlassSheetPresenter?
+    private var utilitySheetPresenter: SplitLiquidGlassSheetPresenter?
     private var inlineComposerHost: UIHostingController<AnyView>?
 
     private var activeSelectionID: UUID?
     private var activeCommentThreadID: UUID?
     private var activeCommentDialogID: UUID?
+    private var activeUtilitySheetID: UUID?
     private var activeInlineComposerTargetID: String?
     private var currentCommentThreadPresentation: VideoDetailCommentThreadSheetPresentation?
     private var currentSheetHeightFraction: CGFloat = 0.94
@@ -161,6 +183,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         selectionSheetPresenter?.layout(in: bounds)
         commentThreadPresenter?.layout(in: bounds)
         commentDialogPresenter?.layout(in: bounds)
+        utilitySheetPresenter?.layout(in: bounds)
         inlineComposerHost?.view.frame = bounds
     }
 
@@ -176,6 +199,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
             selectionSheetPresenter?.updateHeightFraction(sheetHeightFraction)
             commentThreadPresenter?.updateHeightFraction(sheetHeightFraction)
             commentDialogPresenter?.updateHeightFraction(sheetHeightFraction)
+            utilitySheetPresenter?.updateHeightFraction(sheetHeightFraction)
             view.setNeedsLayout()
         }
         view.isHidden = !isSplitActive
@@ -200,6 +224,13 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
             .receive(on: RunLoop.main)
             .sink { [weak self] payload in
                 self?.syncCommentDialog(payload)
+            }
+            .store(in: &cancellables)
+
+        overlay.$utilitySheet
+            .receive(on: RunLoop.main)
+            .sink { [weak self] payload in
+                self?.syncUtilitySheet(payload)
             }
             .store(in: &cancellables)
 
@@ -405,6 +436,35 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         host.removeFromParent()
     }
 
+    private func syncUtilitySheet(_ payload: VideoDetailSplitUtilitySheetPayload?) {
+        guard overlay.isSplitColumnMode, let payload else {
+            activeUtilitySheetID = nil
+            utilitySheetPresenter?.dismiss(animated: true)
+            utilitySheetPresenter = nil
+            return
+        }
+        guard payload.id != activeUtilitySheetID else { return }
+        activeUtilitySheetID = payload.id
+        utilitySheetPresenter?.dismiss(animated: false)
+
+        let onDismiss: () -> Void = { [weak self] in
+            guard let self else { return }
+            let current = self.overlay.utilitySheet
+            self.overlay.utilitySheet = nil
+            current?.onDismiss()
+        }
+        let root = wrappedEnvironment(payload.content, onDismiss: onDismiss)
+        let presenter = SplitLiquidGlassSheetPresenter(
+            parent: self,
+            rootView: root,
+            heightFraction: currentSheetHeightFraction,
+            onDismissRequest: onDismiss
+        )
+        utilitySheetPresenter = presenter
+        presenter.present(in: view, animated: true)
+        reorderOverlayLayers()
+    }
+
     private func reorderOverlayLayers() {
         if let container = selectionSheetPresenter?.containerView {
             view.bringSubviewToFront(container)
@@ -413,6 +473,9 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
             view.bringSubviewToFront(container)
         }
         if let container = commentDialogPresenter?.containerView {
+            view.bringSubviewToFront(container)
+        }
+        if let container = utilitySheetPresenter?.containerView {
             view.bringSubviewToFront(container)
         }
         if let composerView = inlineComposerHost?.view {

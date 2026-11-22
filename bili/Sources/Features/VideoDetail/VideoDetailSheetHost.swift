@@ -112,7 +112,33 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                 .scrollEdgeEffectStyle(.soft, for: .top)
             }
             .onChange(of: viewModel.isShowingSubtitleSelection) { _, isShowing in
-                isShowingSubtitleSelection = isShowing
+                if splitColumnOverlay.isSplitColumnMode {
+                    if isShowing {
+                        splitColumnOverlay.utilitySheet = VideoDetailSplitUtilitySheetPayload(
+                            content: AnyView(
+                                VideoDetailSubtitleSelectionSheet(
+                                    store: viewModel.subtitleRenderStore,
+                                    onSelect: { lan in
+                                        Task { await viewModel.selectSubtitleTrack(lan: lan) }
+                                    },
+                                    close: {
+                                        viewModel.isShowingSubtitleSelection = false
+                                        splitColumnOverlay.utilitySheet = nil
+                                    }
+                                )
+                                .commentSheetPresentation()
+                            ),
+                            onDismiss: {
+                                viewModel.isShowingSubtitleSelection = false
+                            }
+                        )
+                    } else if splitColumnOverlay.utilitySheet != nil {
+                        splitColumnOverlay.utilitySheet = nil
+                    }
+                    isShowingSubtitleSelection = false
+                } else {
+                    isShowingSubtitleSelection = isShowing
+                }
             }
             .sheet(
                 isPresented: $isShowingSubtitleSelection,
@@ -133,7 +159,30 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                 .commentSheetPresentation()
             }
             .onChange(of: viewModel.isShowingQualitySelection) { _, isShowing in
-                isShowingQualitySelection = isShowing
+                if splitColumnOverlay.isSplitColumnMode {
+                    if isShowing {
+                        splitColumnOverlay.utilitySheet = VideoDetailSplitUtilitySheetPayload(
+                            content: AnyView(
+                                VideoDetailQuickQualitySelectionSheet(
+                                    store: viewModel.playbackRenderStore.qualityControlStore,
+                                    selectPlayVariant: { viewModel.selectPlayVariant($0) },
+                                    close: {
+                                        viewModel.isShowingQualitySelection = false
+                                        splitColumnOverlay.utilitySheet = nil
+                                    }
+                                )
+                            ),
+                            onDismiss: {
+                                viewModel.isShowingQualitySelection = false
+                            }
+                        )
+                    } else if splitColumnOverlay.utilitySheet != nil {
+                        splitColumnOverlay.utilitySheet = nil
+                    }
+                    isShowingQualitySelection = false
+                } else {
+                    isShowingQualitySelection = isShowing
+                }
             }
             .sheet(
                 isPresented: $isShowingQualitySelection,
