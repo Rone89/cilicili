@@ -970,6 +970,70 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         )
     }
 
+    func testSplitColumnSheetDismissRemovesOverlayContainerAndNotifiesVisibilityChange() async throws {
+        let dependencies = AppDependencies()
+        let video = try JSONDecoder.bili.decode(VideoItem.self, from: Data("""
+            {"bvid":"BVSplitSheetProbe","aid":54321,"title":"Split sheet probe"}
+            """.utf8))
+        let viewModel = VideoDetailViewModel(
+            seedVideo: video,
+            api: dependencies.api,
+            libraryStore: dependencies.libraryStore,
+            sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService
+        )
+        let overlay = VideoDetailSplitColumnOverlayController()
+        overlay.isSplitColumnMode = true
+
+        let container = VideoDetailSplitColumnSheetContainerController(
+            overlay: overlay,
+            viewModel: viewModel,
+            dependencies: dependencies,
+            submitReply: { _, _, _ in },
+            onDismissCommentThreadRoute: {}
+        )
+        var visibilityEvents: [Bool] = []
+        container.onOverlayVisibilityChange = { visibilityEvents.append($0) }
+
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        host.addChild(container)
+        container.view.frame = CGRect(x: 0, y: 0, width: 669, height: 600)
+        host.view.addSubview(container.view)
+        container.didMove(toParent: host)
+        container.view.layoutIfNeeded()
+
+        overlay.utilitySheet = VideoDetailSplitUtilitySheetPayload(
+            content: AnyView(Text("Test Sheet")),
+            onDismiss: {}
+        )
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(container.hasVisibleOverlay)
+        XCTAssertEqual(visibilityEvents, [true])
+        XCTAssertEqual(container.view.subviews.count, 1)
+
+        // Dismiss immediately releases the presenter reference; its completion teardown
+        // must still remove containerView so touches/scrolling underneath are never blocked.
+        overlay.utilitySheet = nil
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertFalse(container.hasVisibleOverlay)
+        XCTAssertEqual(visibilityEvents, [true, false])
+        XCTAssertTrue(
+            container.view.subviews.isEmpty,
+            "关闭内嵌弹窗后必须彻底移除透明容器视图，否则会持续拦截底层评论区滚动事件"
+        )
+    }
+
     private func makeLocalTestVideo() async throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("adaptive-layout-probe-\(UUID().uuidString).mov")

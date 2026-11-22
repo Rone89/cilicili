@@ -26,6 +26,10 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     private(set) var inlineSheetHeightFraction: CGFloat = 0.94
     private(set) var stackedBelowPlayerSheetMaxHeight: CGFloat?
     private var lastHorizontalSizeClass: UserInterfaceSizeClass?
+    private var hasActiveInlineOverlay = false
+    private var lastAdaptiveMode: VideoDetailAdaptiveMode = .compactStacked
+    private var lastUsesFullscreenLayout = false
+    private var lastUsesDuoFoldedHorizontalBounds = false
     var onSplitContentGeometryChange: ((CGRect, Bool, CGFloat, CGFloat?) -> Void)?
     #if DEBUG
         let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
@@ -336,9 +340,10 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
                 nextStackedBelowPlayerHeight
             )
         }
-        if contentState.hidesBottomToolbar != layout.usesFullscreenLayout {
-            contentState.hidesBottomToolbar = layout.usesFullscreenLayout
-        }
+        lastAdaptiveMode = layout.adaptiveMode
+        lastUsesFullscreenLayout = layout.usesFullscreenLayout
+        lastUsesDuoFoldedHorizontalBounds = layout.usesDuoFoldedHorizontalBounds
+        updateBottomToolbarVisibility()
         let targetBottomInset = layout.adaptiveMode == .twoColumnSplit
             ? max(rootSafeAreaInsets.bottom, 20)
             : rootSafeAreaInsets.bottom
@@ -348,6 +353,25 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         guard let contentTopInset = layout.contentTopInset else { return }
         guard abs(contentState.topInset - contentTopInset) > 0.5 else { return }
         contentState.topInset = contentTopInset
+    }
+
+    func setHasActiveInlineOverlay(_ active: Bool) {
+        guard hasActiveInlineOverlay != active else { return }
+        hasActiveInlineOverlay = active
+        updateBottomToolbarVisibility()
+    }
+
+    private func updateBottomToolbarVisibility() {
+        // In unfolded Duo / iPad portrait (`compactStacked` without right chrome rail),
+        // the navigation `.bottomBar` floats above child VC subviews; hide it while an
+        // inline Liquid Glass sheet is presented so the sheet stays unobstructed.
+        let hidesForInlineOverlay = lastAdaptiveMode == .compactStacked
+            && !lastUsesDuoFoldedHorizontalBounds
+            && hasActiveInlineOverlay
+        let shouldHide = lastUsesFullscreenLayout || hidesForInlineOverlay
+        if contentState.hidesBottomToolbar != shouldHide {
+            contentState.hidesBottomToolbar = shouldHide
+        }
     }
 
     func scheduleLayoutSynchronization(_ layout: VideoDetailShellLayout) {
@@ -1221,6 +1245,9 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         addChild(splitSheetContainer)
         splitSheetContainer.view.frame = contentModel.splitContentFrame
         splitSheetContainer.view.isHidden = !contentModel.isTwoColumnSplitActive
+        splitSheetContainer.onOverlayVisibilityChange = { [weak self] isVisible in
+            self?.contentModel.setHasActiveInlineOverlay(isVisible)
+        }
         view.addSubview(splitSheetContainer.view)
         splitSheetContainer.didMove(toParent: self)
         splitColumnOverlay.updateStackedBelowPlayerSheetMaxHeight(

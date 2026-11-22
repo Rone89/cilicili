@@ -156,6 +156,62 @@ final class RootTabBarVisibilityTests: XCTestCase {
         )
     }
 
+    func testSearchTabDeferredPopRevealRestoresTabBarCleanly() async throws {
+        final class Driver: ObservableObject {
+            @Published var path: [String] = []
+            @Published var query = ""
+            @Published var selectedTab = 1
+        }
+        struct Host: View {
+            @ObservedObject var driver: Driver
+            var body: some View {
+                TabView(selection: $driver.selectedTab) {
+                    Tab("首页", systemImage: "house", value: 0) {
+                        Text("Home")
+                    }
+                    Tab("搜索", systemImage: "magnifyingglass", value: 1, role: .search) {
+                        NavigationStack(path: $driver.path) {
+                            ScrollView { Text("Search Root").frame(height: 2000) }
+                                .navigationTitle("搜索")
+                                .searchable(text: $driver.query, prompt: "搜索视频")
+                                .navigationDestination(for: String.self) { _ in
+                                    ScrollView { Text("Video Detail").frame(height: 2000) }
+                                }
+                        }
+                        .coordinatesRootTabBarTransitions(
+                            isDetailPresented: !driver.path.isEmpty,
+                            hidesRootTabBar: false,
+                            defersRevealUntilPopCompletion: true
+                        )
+                    }
+                }
+                .tabBarMinimizeBehavior(.onScrollDown)
+            }
+        }
+
+        let driver = Driver()
+        let window = try makeHostedWindow(rootView: Host(driver: driver))
+        defer { tearDownWindow(window) }
+
+        await waitUntil(timeout: 2.0) {
+            self.findTabBarController(in: window.rootViewController) != nil
+        }
+        let tbc = try XCTUnwrap(findTabBarController(in: window.rootViewController))
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(tbc.isTabBarHidden)
+
+        driver.path.append("detail")
+        await waitUntil(timeout: 2.0) { tbc.isTabBarHidden }
+        XCTAssertTrue(tbc.isTabBarHidden)
+        try await Task.sleep(for: .milliseconds(450))
+
+        driver.path.removeLast()
+        await waitUntil(timeout: 2.5) { !tbc.isTabBarHidden }
+        XCTAssertFalse(tbc.isTabBarHidden)
+        XCTAssertEqual(tbc.tabBar.alpha, 1.0, accuracy: 0.01)
+        XCTAssertEqual(tbc.tabBarMinimizeBehavior, .onScrollDown)
+    }
+
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

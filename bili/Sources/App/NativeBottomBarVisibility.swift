@@ -16,11 +16,19 @@ extension View {
         hidesRootTabBar: Bool = false,
         onRootTabTap: (() -> Void)? = nil,
         capturesSelectedTabTap: Bool = false,
-        isSearchTab: Bool = false
+        isSearchTab: Bool = false,
+        defersRevealUntilPopCompletion: Bool = false
     ) -> some View {
         if isEnabled {
             background(
-                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap, isSearchTab: isSearchTab)
+                NativeRootTabBarTransitionSource(
+                    isDetailPresented: isDetailPresented,
+                    hidesRootTabBar: hidesRootTabBar,
+                    onRootTabTap: onRootTabTap,
+                    capturesSelectedTabTap: capturesSelectedTabTap,
+                    isSearchTab: isSearchTab,
+                    defersRevealUntilPopCompletion: defersRevealUntilPopCompletion
+                )
             )
         } else {
             self
@@ -34,15 +42,24 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
     let onRootTabTap: (() -> Void)?
     let capturesSelectedTabTap: Bool
     let isSearchTab: Bool
+    let defersRevealUntilPopCompletion: Bool
 
     func makeUIViewController(context _: Context) -> Controller {
-        Controller(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSelectedTabTap: capturesSelectedTabTap, isSearchTab: isSearchTab)
+        Controller(
+            isDetailPresented: isDetailPresented,
+            hidesRootTabBar: hidesRootTabBar,
+            onRootTabTap: onRootTabTap,
+            capturesSelectedTabTap: capturesSelectedTabTap,
+            isSearchTab: isSearchTab,
+            defersRevealUntilPopCompletion: defersRevealUntilPopCompletion
+        )
     }
 
     func updateUIViewController(_ controller: Controller, context _: Context) {
         controller.onRootTabTap = onRootTabTap
         controller.capturesSelectedTabTap = capturesSelectedTabTap
         controller.isSearchTab = isSearchTab
+        controller.defersRevealUntilPopCompletion = defersRevealUntilPopCompletion
         controller.installRootTabTap()
         controller.update(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar)
     }
@@ -55,6 +72,7 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         var onRootTabTap: (() -> Void)?
         var capturesSelectedTabTap: Bool
         var isSearchTab: Bool
+        var defersRevealUntilPopCompletion: Bool
         private lazy var rootTabTap: UITapGestureRecognizer = {
             let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleRootTabTap))
             recognizer.cancelsTouchesInView = false
@@ -68,12 +86,20 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
         private var didHideSidebarForDetail = false
         private var reconcileTask: Task<Void, Never>?
 
-        init(isDetailPresented: Bool, hidesRootTabBar: Bool, onRootTabTap: (() -> Void)?, capturesSelectedTabTap: Bool, isSearchTab: Bool) {
+        init(
+            isDetailPresented: Bool,
+            hidesRootTabBar: Bool,
+            onRootTabTap: (() -> Void)?,
+            capturesSelectedTabTap: Bool,
+            isSearchTab: Bool,
+            defersRevealUntilPopCompletion: Bool
+        ) {
             self.isDetailPresented = isDetailPresented
             self.hidesRootTabBar = hidesRootTabBar
             self.onRootTabTap = onRootTabTap
             self.capturesSelectedTabTap = capturesSelectedTabTap
             self.isSearchTab = isSearchTab
+            self.defersRevealUntilPopCompletion = defersRevealUntilPopCompletion
             super.init(nibName: nil, bundle: nil)
         }
 
@@ -91,6 +117,12 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
+            if defersRevealUntilPopCompletion,
+               let nav = selectedNavigationController(),
+               nav.transitionCoordinator != nil {
+                installRootTabTap()
+                return
+            }
             reconcile(animated: false)
             installRootTabTap()
         }
@@ -188,8 +220,31 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
                       let self,
                       self.viewIfLoaded?.window != nil,
                       let navigationController = self.selectedNavigationController() else { return }
+                let shouldHide = self.isDetailPresented || self.hidesRootTabBar
+                if self.defersRevealUntilPopCompletion,
+                   !shouldHide,
+                   let coordinator = navigationController.transitionCoordinator {
+                    // On `UISearchTab`, revealing `UITabBar` at pop start shows a
+                    // plain/minimized TabBar or top search bar before `UISearchTab`
+                    // re-attaches its integrated bottom search field. Wait until the
+                    // pop finishes so the TabBar reveals directly in search-bar state.
+                    coordinator.animate(alongsideTransition: nil) { [weak self] context in
+                        guard let self,
+                              !context.isCancelled,
+                              self.viewIfLoaded?.window != nil else { return }
+                        let finalShouldHide = self.isDetailPresented || self.hidesRootTabBar
+                        guard !finalShouldHide else { return }
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self,
+                                  self.viewIfLoaded?.window != nil,
+                                  !(self.isDetailPresented || self.hidesRootTabBar) else { return }
+                            self.setRootTabBarHidden(false, animated: true)
+                        }
+                    }
+                    return
+                }
                 let animated = navigationController.transitionCoordinator != nil
-                self.setRootTabBarHidden(self.isDetailPresented || self.hidesRootTabBar, animated: animated)
+                self.setRootTabBarHidden(shouldHide, animated: animated)
             }
         }
 

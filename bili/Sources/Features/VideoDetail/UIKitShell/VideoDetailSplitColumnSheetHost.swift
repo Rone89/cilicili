@@ -137,12 +137,23 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
     private var activeInlineComposerTargetID: String?
     private var currentCommentThreadPresentation: VideoDetailCommentThreadSheetPresentation?
     private var currentSheetHeightFraction: CGFloat = 0.94
+    private var lastReportedOverlayVisible = false
+
+    var onOverlayVisibilityChange: ((Bool) -> Void)?
 
     var hasVisibleOverlay: Bool {
         selectionSheetPresenter != nil
             || commentThreadPresenter != nil
             || commentDialogPresenter != nil
+            || utilitySheetPresenter != nil
             || inlineComposerHost != nil
+    }
+
+    private func notifyOverlayVisibilityIfNeeded() {
+        let visible = hasVisibleOverlay
+        guard visible != lastReportedOverlayVisible else { return }
+        lastReportedOverlayVisible = visible
+        onOverlayVisibilityChange?(visible)
     }
 
     init(
@@ -282,6 +293,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
             activeSelectionID = nil
             selectionSheetPresenter?.dismiss(animated: true)
             selectionSheetPresenter = nil
+            notifyOverlayVisibilityIfNeeded()
             return
         }
         guard payload.id != activeSelectionID else { return }
@@ -308,6 +320,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         selectionSheetPresenter = presenter
         presenter.present(in: view, animated: true)
         reorderOverlayLayers()
+        notifyOverlayVisibilityIfNeeded()
     }
 
     private func syncCommentThreadIfNeeded() {
@@ -315,6 +328,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
             activeCommentThreadID = nil
             commentThreadPresenter?.dismiss(animated: true)
             commentThreadPresenter = nil
+            notifyOverlayVisibilityIfNeeded()
             return
         }
         guard presentation.id != activeCommentThreadID else { return }
@@ -372,6 +386,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
             activeCommentDialogID = nil
             commentDialogPresenter?.dismiss(animated: true)
             commentDialogPresenter = nil
+            notifyOverlayVisibilityIfNeeded()
             return
         }
         guard payload.id != activeCommentDialogID else { return }
@@ -434,6 +449,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         host.willMove(toParent: nil)
         host.view.removeFromSuperview()
         host.removeFromParent()
+        notifyOverlayVisibilityIfNeeded()
     }
 
     private func syncUtilitySheet(_ payload: VideoDetailSplitUtilitySheetPayload?) {
@@ -441,6 +457,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
             activeUtilitySheetID = nil
             utilitySheetPresenter?.dismiss(animated: true)
             utilitySheetPresenter = nil
+            notifyOverlayVisibilityIfNeeded()
             return
         }
         guard payload.id != activeUtilitySheetID else { return }
@@ -481,6 +498,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         if let composerView = inlineComposerHost?.view {
             view.bringSubviewToFront(composerView)
         }
+        notifyOverlayVisibilityIfNeeded()
     }
 }
 
@@ -627,14 +645,25 @@ private final class SplitLiquidGlassSheetPresenter: NSObject, UIGestureRecognize
     func dismiss(animated: Bool) {
         guard !isDismissing else { return }
         isDismissing = true
+        // Immediately stop intercepting touches so the underlying comments list
+        // becomes scrollable the moment dismissal begins.
+        containerView.isUserInteractionEnabled = false
+        backdropView.isUserInteractionEnabled = false
         activeAnimator?.stopAnimation(true)
         activeAnimator = nil
 
-        let teardown: () -> Void = { [weak self] in
-            guard let self else { return }
-            self.hostingController.willMove(toParent: nil)
-            self.containerView.removeFromSuperview()
-            self.hostingController.removeFromParent()
+        // Capture `container` and `host` strongly rather than `[weak self]`:
+        // the caller immediately drops its reference to `self` right after
+        // calling `dismiss(animated: true)`, so a `[weak self]` completion would
+        // never run and would leak an invisible `containerView` blocking scroll.
+        let container = containerView
+        let host = hostingController
+        let shadowWrapper = shadowWrapperView
+        let backdrop = backdropView
+        let teardown: () -> Void = {
+            host.willMove(toParent: nil)
+            container.removeFromSuperview()
+            host.removeFromParent()
         }
 
         guard animated else {
@@ -643,10 +672,9 @@ private final class SplitLiquidGlassSheetPresenter: NSObject, UIGestureRecognize
         }
 
         let targetOffset = cardHeight + 32
-        let animator = UIViewPropertyAnimator(duration: 0.24, dampingRatio: 0.94) { [weak self] in
-            guard let self else { return }
-            self.shadowWrapperView.transform = CGAffineTransform(translationX: 0, y: targetOffset)
-            self.backdropView.alpha = 0
+        let animator = UIViewPropertyAnimator(duration: 0.24, dampingRatio: 0.94) {
+            shadowWrapper.transform = CGAffineTransform(translationX: 0, y: targetOffset)
+            backdrop.alpha = 0
         }
         animator.addCompletion { _ in
             teardown()

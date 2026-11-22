@@ -3341,4 +3341,24 @@
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`VideoRecommendationFilterTests`（5/5）与 `DynamicVideoFilterTests`（3/3）共 **8/8 通过（0 失败，0 跳过）**。
   - Release 真机编译、`codesign --verify --deep --strict` 与原位安装至 `RCe2027`（`app.bamboo2779.brussels691`）：通过（自动拉起时手机处于锁屏状态，需解锁后手动点开）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 动态页下拉刷新与充电视频屏蔽的真机实景效果待用户在 `RCe2027` 解锁打开后复测；未签名 IPA 与 `iPhone Duo` 模拟器仍停留在 `5cfa45f`；尚未推送远端或合入 `main`。
+  - 动态页下拉刷新与充电视频屏蔽的真机实景效果待用户在 `RCe2027` 解锁打开后复测；`iPhone Duo` 模拟器仍停留在 `5cfa45f`；尚未推送远端或合入 `main`。
+  - 已按用户指令基于 `0057cb5` 通过共享 `Xcode-27` 缓存生成本地未签名 Release IPA：`build/release-unsigned-ipa/bili-release-unsigned.ipa`（`com.rayc.cilicili`，版本 `1.1.7` / Build `232`，大小 `24M`，SHA-256 `25f2b392f41e2d82bfbf3cfc9316c02762fb0b4a024d998ef1026460e9a3144c`，已校验无 `_CodeSignature` 与 `embedded.mobileprovision`）。
+
+### 2026-11-23（修复 iPhone Duo 竖屏内嵌评论弹窗被底部工具栏遮挡、关闭弹窗后底层评论无法滚动，以及搜索页返回时 TabBar/搜索框闪跳）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `0057cb5` 提交本轮修复，未推送远端、未合入 `main`）。
+- **根因与已实现改动**：
+  1. **展开态 iPhone Duo 竖屏（`compactStacked` 非折叠态）内嵌弹窗与底部 `.bottomBar` 遮挡**：
+     - [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift) & [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift)：在 `VideoDetailSplitColumnSheetContainerController` 新增 `onOverlayVisibilityChange` 回调（并将 `utilitySheetPresenter` 纳入 `hasVisibleOverlay`），由 `VideoDetailSwiftUIContainerViewController` 在 `lastAdaptiveMode == .compactStacked && !lastUsesDuoFoldedHorizontalBounds && hasActiveInlineOverlay` 时通过 `contentState.hidesBottomToolbar` 隐藏底部 `.bottomBar`，关闭所有内嵌弹窗后自动恢复（不影响 `.twoColumnSplit` 双栏与折叠态 Duo 右侧轨道）。
+  2. **关闭评论弹窗后底层评论列表无法滚动**：
+     - [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift)：原实现在 `syncCommentThreadIfNeeded` 等分支调用 `presenter?.dismiss(animated: true)` 后立即将 `presenter = nil`，导致 `SplitLiquidGlassSheetPresenter` 立刻释放，其 `UIViewPropertyAnimator` 完成回调中 `[weak self]` 提前返回、`containerView.removeFromSuperview()` 从未执行，遗留不可见全屏容器与 `backdropView` 持续拦截点击与滚动手势。现改为在 `dismiss(animated:)` 开头立即禁用 `containerView` 与 `backdropView` 交互，并在 `teardown` 闭包强引用视图与 `hostingController` 确保动画结束后彻底移除。
+  3. **搜索页进入视频详情返回时各形态（折叠 Duo、展开竖/横屏 Duo、真机 18 Pro Max）TabBar/搜索框闪跳**：
+     - [NativeBottomBarVisibility.swift](bili/Sources/App/NativeBottomBarVisibility.swift) & [RootTabView.swift](bili/Sources/App/RootTabView.swift)：保持 `NativeRootTabBarTransitionSource` 单一所有权（严格不混用 `.toolbarVisibility(.hidden, for: .tabBar)`），为 `coordinatesRootTabBarTransitions` 新增 `defersRevealUntilPopCompletion: Bool = false` 参数并在 `searchRootTabNavigationStack` 启用；当从搜索页返回且 `navigationController.transitionCoordinator != nil` 时，将 `setTabBarHidden(false, animated: true)` 推迟到返回转场完成后的下一主线程循环，等待 `UISearchTab` 挂回底部搜索栏后再一次性平滑恢复，避免中途闪现普通/最小化 TabBar 或顶部搜索框。
+  4. **单元测试**：
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testSplitColumnSheetDismissRemovesOverlayContainerAndNotifiesVisibilityChange`。
+     - [RootTabBarVisibilityTests.swift](biliTests/RootTabBarVisibilityTests.swift)：新增 `testSearchTabDeferredPopRevealRestoresTabBarCleanly`。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests`、`RootTabBarVisibilityTests`、`PlaybackDetailSharedLayoutTests` 全部通过（`/tmp/bili-fix-three-1795376722.xcresult`，`** TEST SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - `iPhone Duo` 模拟器（展开竖/横屏与折叠态）及真机 `RCe2027` 的交互观感验收尚未安装复测；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
