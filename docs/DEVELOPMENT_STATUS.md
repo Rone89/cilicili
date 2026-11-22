@@ -3259,4 +3259,15 @@
     - `AdaptiveLayoutAndPlayerIdentityTests`（`/tmp/duo-left-sheet-unit.xcresult`，`** TEST SUCCEEDED **`）：**16/16 通过（0 失败，0 跳过）**。
 - **未验证与待办（明确区分，不推测通过）**：
   - 已构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `57794`）；折叠态视频详情页下选集、评论回复、二级对话、字幕与清晰度弹窗仅覆盖左侧视频下方区域的效果待用户在 `iPhone Duo` 上实景确认。
-  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+  - 按用户指令已通过共享 `Xcode-27` 缓存及命令行本地签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`，不改动项目签名配置）构建 `952aa4d` 的 Release 真机包，`codesign --verify --deep --strict` 通过，并原位更新安装及启动至真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）；真机实景体验待用户验收。尚未推送远端或合入 `main`。
+
+### 2026-11-22（修复「我的」页顶部搜索框在 iOS 26/27 `Form` 中被 `Section` 大圆角裁切）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `952aa4d` 提交本轮修复，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [MineContentView.swift](bili/Sources/Features/Mine/MineContentView.swift)：移除搜索行内额外的 `RoundedRectangle(cornerRadius: 12)` 与 `leading/trailing: 0` 缩进，改用 `Section` 行原生 `.listRowBackground(Color(.tertiarySystemFill))` 与 `.listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))`，彻底消除与 iOS 26/27 `Form(.grouped)` 外层大圆角裁切冲突，并与下方分组卡片左右对齐。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - Release 真机编译与深度签名校验（`codesign --verify --deep --strict`）：通过，使用共享 `Xcode-27` 缓存与命令行本地签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`，未修改项目签名配置）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 已原位更新安装并启动至真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`），待用户在真机上确认「我的」页搜索框圆角与输入体验；未重跑模拟器 `MineTopBarUITests`；尚未推送远端或合入 `main`。

@@ -84,14 +84,8 @@ struct MineContentView: View {
                     .accessibilityIdentifier("mine.search.cancel")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(.tertiarySystemFill))
-            )
-            .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 2, trailing: 0))
-            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
+            .listRowBackground(Color(.tertiarySystemFill))
             .listRowSeparator(.hidden)
         }
     }
