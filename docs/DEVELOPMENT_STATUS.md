@@ -3052,3 +3052,21 @@
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：`AdaptiveLayoutAndPlayerIdentityTests`（6/6，含连续缩放播放器身份稳定）+ `AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`（1/1）共 **7/7 通过（0 失败，0 跳过）**（`iphone18pm-split-fix-v1.xcresult`）。
 - **未验证与待办（明确区分，不推测通过）**：
   - 真机 `RCe2027` 仍停留在 `21f8e57`；真机 iPad 与真机 `iPhone Duo` 的横屏全屏双栏视觉与手势交互待对应真机实测验收。
+
+### 2026-11-22（`iPhone Duo` 展开内屏全应用全屏与隐藏竖向系统栏/信号图标）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `9f6c16e` 叠加本轮改动并提交，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)：
+    - 新增 `isDuoUnfoldedInnerDisplay(containerSize:userInterfaceIdiom:)`，精确匹配手机形态且短边 `>= 540pt` 的 `iPhone Duo` 展开内屏（竖屏 `669×951 pt` 与横屏 `951×669 pt`），排除 Duo 闭合外屏（`466×678 pt`）、所有常规 iPhone（短边 `<= 440pt`）及 iPad（`.pad`）。
+    - 新增 `EnvironmentValues.isDuoUnfoldedInnerDisplay` 与 `View.adaptiveDuoFullscreenChrome(isHidden:)`：在 `#available(iOS 27.1, *)` 下同时应用 `.toolbarVerticalBehavior(isHidden ? .disabled : .automatic)`、`.statusBarHidden(isHidden)` 与 `.persistentSystemOverlays(isHidden ? .hidden : .visible)`，用于彻底关闭 Duo 竖向系统栏（移除右侧 `84pt` 系统栏与竖向信号/时间圆环）并让状态栏隐藏完整生效。
+  - [RootTabView.swift](bili/Sources/App/RootTabView.swift) & [RootTabSupport.swift](bili/Sources/App/RootTabSupport.swift)：在应用根容器实时监测 `isDuoUnfoldedInnerDisplay`，将 `.adaptiveDuoFullscreenChrome(isHidden:)` 覆盖到根 `TabView`、各 `NavigationStack` 首页根视图及全部推入目标页（含「我的」子页、UP 空间、专栏、番剧与视频/直播详情页），并挂载 `StatusBarStyleBridge` 触发 UIKit 容器链刷新。
+  - [PlaybackDetailChrome.swift](bili/Sources/Features/Player/PlaybackDetailChrome.swift)、[StatusBarStyleBridge.swift](bili/Sources/Features/Player/StatusBarStyleBridge.swift) & [VideoDetailRotationBridgeViewController.swift](bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift)：`PlaybackDetailSystemChrome` 合并 `isHidden || isDuoInnerDisplay`；`StatusBarStyleBridge.Controller` 与 `VideoDetailRotationBridgeViewController` 覆写 iOS 27.1 `preferredVerticalBarBehavior` 并在状态变化时调用 `setNeedsUpdateOfVerticalBarConfiguration()`。
+  - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testIsDuoUnfoldedInnerDisplayDetectsUnfoldedPhoneOnly` 单元测试覆盖 Duo 内外屏、常规 iPhone 与 iPad 全部组合。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone Duo` 闭合外屏（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，测后已关闭）**：`bili` + `biliTests` + `biliUITests` 在 `iOS 27.1 SDK` 下 `build-for-testing` 编译通过，`AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`（`duo-full-app-fs-v1.xcresult`）**1/1 通过**，确认外屏竖屏不受影响、仍保留右侧竖向图标栏。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`）**：`AdaptiveLayoutAndPlayerIdentityTests`（7/7，含新增 `testIsDuoUnfoldedInnerDisplayDetectsUnfoldedPhoneOnly`）+ `AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`（1/1）共 **8/8 通过（0 失败，0 跳过）**（`iphone18pm-duo-full-fs-v1.xcresult`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - `simctl` 命令行未提供无头展开 `iPhone Duo` 物理铰链的指令（单独熄屏 `display=1` 会触发 SpringBoard 崩溃），因此 `.toolbarVerticalBehavior(.disabled)` 在 **Duo 展开内屏**上彻底消除右上角时间/信号圆环的实时目视效果，需在 Simulator 图形界面手动展开 Duo 内屏或真机 Duo 上复核确认。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`。

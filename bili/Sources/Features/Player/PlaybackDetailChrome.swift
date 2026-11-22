@@ -38,15 +38,16 @@ private struct PlaybackDetailNavigationBarVisibilityModifier: ViewModifier {
 }
 
 private struct PlaybackDetailSystemChrome: ViewModifier {
+    @Environment(\.isDuoUnfoldedInnerDisplay) private var isDuoInnerDisplay
     let isHidden: Bool
     let statusBarStyle: UIStatusBarStyle
 
     func body(content: Content) -> some View {
+        let effectiveHidden = isHidden || isDuoInnerDisplay
         content
-            .statusBar(hidden: isHidden)
-            .persistentSystemOverlays(isHidden ? .hidden : .visible)
+            .adaptiveDuoFullscreenChrome(isHidden: effectiveHidden)
             .background {
-                StatusBarStyleBridge(style: statusBarStyle, isHidden: isHidden)
+                StatusBarStyleBridge(style: statusBarStyle, isHidden: effectiveHidden)
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
             }

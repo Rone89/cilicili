@@ -49,6 +49,11 @@ struct StatusBarStyleBridge: UIViewControllerRepresentable {
             isHidden ? .all : []
         }
 
+        @available(iOS 27.1, *)
+        override var preferredVerticalBarBehavior: UIVerticalBarBehavior {
+            isHidden ? .disabled : .automatic
+        }
+
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
             isChromeActive = true
@@ -161,6 +166,9 @@ struct StatusBarStyleBridge: UIViewControllerRepresentable {
                 controller.setNeedsStatusBarAppearanceUpdate()
                 controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
                 controller.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+                if #available(iOS 27.1, *) {
+                    controller.setNeedsUpdateOfVerticalBarConfiguration()
+                }
             }
         }
     }

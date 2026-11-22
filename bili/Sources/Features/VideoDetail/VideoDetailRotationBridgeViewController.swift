@@ -115,6 +115,17 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         isImmersivePlayback ? .all : []
     }
 
+    @available(iOS 27.1, *)
+    override var preferredVerticalBarBehavior: UIVerticalBarBehavior {
+        if isImmersivePlayback || AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+            containerSize: view.bounds.size,
+            userInterfaceIdiom: traitCollection.userInterfaceIdiom
+        ) {
+            return .disabled
+        }
+        return .automatic
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
@@ -659,6 +670,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         setNeedsStatusBarAppearanceUpdate()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
         setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        if #available(iOS 27.1, *) {
+            setNeedsUpdateOfVerticalBarConfiguration()
+        }
     }
 
     private func bindApplicationLifecycleForRotationRecovery() {

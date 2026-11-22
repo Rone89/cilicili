@@ -428,6 +428,51 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         )
     }
 
+    func testIsDuoUnfoldedInnerDisplayDetectsUnfoldedPhoneOnly() {
+        XCTAssertTrue(
+            AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: CGSize(width: 669, height: 951),
+                userInterfaceIdiom: .phone
+            )
+        )
+        XCTAssertTrue(
+            AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: CGSize(width: 951, height: 669),
+                userInterfaceIdiom: .phone
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: CGSize(width: 466, height: 678),
+                userInterfaceIdiom: .phone
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: CGSize(width: 440, height: 956),
+                userInterfaceIdiom: .phone
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: CGSize(width: 956, height: 440),
+                userInterfaceIdiom: .phone
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: CGSize(width: 1024, height: 1366),
+                userInterfaceIdiom: .pad
+            )
+        )
+        XCTAssertFalse(
+            AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: CGSize(width: 1366, height: 1024),
+                userInterfaceIdiom: .pad
+            )
+        )
+    }
+
     private func waitForSurfaceHost(in root: UIView) async throws -> DirectUIKitPlayerSurfaceHostView {
         let deadline = ContinuousClock.now + .seconds(3)
         while ContinuousClock.now < deadline {

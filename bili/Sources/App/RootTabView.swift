@@ -6,6 +6,7 @@ struct RootTabView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @State private var usesVideoStatusBarContrast = false
     @State private var videoContentColorScheme: ColorScheme?
+    @State private var isDuoInnerFullscreenActive = false
     @EnvironmentObject var dependencies: AppDependencies
     @EnvironmentObject var libraryStore: LibraryStore
     @StateObject var runtimeSettings = RootRuntimeSettingsStore()
@@ -40,6 +41,35 @@ struct RootTabView: View {
 
     var body: some View {
         rootTabBar
+        .onGeometryChange(for: Bool.self) { proxy in
+            let idiom = UIDevice.current.userInterfaceIdiom
+            if AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                containerSize: proxy.size,
+                userInterfaceIdiom: idiom
+            ) {
+                return true
+            }
+            if let window = UIApplication.shared.playbackDetailForegroundKeyWindow {
+                return AdaptiveLayoutPolicy.isDuoUnfoldedInnerDisplay(
+                    containerSize: window.bounds.size,
+                    userInterfaceIdiom: window.traitCollection.userInterfaceIdiom
+                )
+            }
+            return false
+        } action: { nextValue in
+            if isDuoInnerFullscreenActive != nextValue {
+                isDuoInnerFullscreenActive = nextValue
+            }
+        }
+        .environment(\.isDuoUnfoldedInnerDisplay, isDuoInnerFullscreenActive)
+        .adaptiveDuoFullscreenChrome(isHidden: isDuoInnerFullscreenActive)
+        .background {
+            if isDuoInnerFullscreenActive {
+                StatusBarStyleBridge(style: .default, isHidden: true)
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+            }
+        }
         .environment(\.openVideoAction, openVideo)
         .environment(\.openLiveRoomAction, openLiveRoom)
         .environment(\.prewarmVideoRouteAction, beginPlaybackPreload)
@@ -214,6 +244,7 @@ struct RootTabView: View {
             ?? videoContentColorScheme ?? systemColorScheme
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
+                .adaptiveDuoFullscreenChrome(isHidden: isDuoInnerFullscreenActive)
                 .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
                 .environment(\.showsHiddenRootPageSwitcher, showsPageSwitcher)
                 .environment(
@@ -258,6 +289,7 @@ struct RootTabView: View {
                         sessionStore: dependencies.sessionStore,
                         api: dependencies.api
                     )
+                    .adaptiveDuoFullscreenChrome(isHidden: isDuoInnerFullscreenActive)
                     .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
                     .navigationHistoryTitle(route.navigationDisplayTitle)
                 }

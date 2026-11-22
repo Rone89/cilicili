@@ -42,25 +42,41 @@ extension View {
             .environment(\.videoDetailUsesTransparentNavigationBar, usesTransparentNavigationBar)
         }
         .navigationDestination(for: PgcSeasonRoute.self) { route in
-            PgcSeasonPlaybackRouteView(route: route)
-                .navigationHistoryTitle(route.title)
+            DuoInnerFullscreenDestinationWrapper {
+                PgcSeasonPlaybackRouteView(route: route)
+                    .navigationHistoryTitle(route.title)
+            }
         }
         .navigationDestination(for: VideoOwner.self) { owner in
-            UploaderView(owner: owner)
-                .navigationHistoryTitle(owner.name)
-                .toolbar(.visible, for: .navigationBar)
-                .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
+            DuoInnerFullscreenDestinationWrapper {
+                UploaderView(owner: owner)
+                    .navigationHistoryTitle(owner.name)
+                    .toolbar(.visible, for: .navigationBar)
+                    .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
+            }
         }
         .navigationDestination(for: LiveRoom.self) { room in
             LiveRoomDetailView(seedRoom: room, usesTransparentNavigationBar: usesTransparentNavigationBar)
                 .navigationHistoryTitle(room.title)
         }
         .navigationDestination(for: ArticleRoute.self) { route in
-            ArticleDetailDestination(route: route)
-                .navigationHistoryTitle(route.title)
-                .toolbar(.visible, for: .navigationBar)
-                .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
+            DuoInnerFullscreenDestinationWrapper {
+                ArticleDetailDestination(route: route)
+                    .navigationHistoryTitle(route.title)
+                    .toolbar(.visible, for: .navigationBar)
+                    .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
+            }
         }
+    }
+}
+
+private struct DuoInnerFullscreenDestinationWrapper<Content: View>: View {
+    @Environment(\.isDuoUnfoldedInnerDisplay) private var isDuoInnerDisplay
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .adaptiveDuoFullscreenChrome(isHidden: isDuoInnerDisplay)
     }
 }
 

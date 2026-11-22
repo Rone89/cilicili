@@ -234,6 +234,20 @@ nonisolated enum AdaptiveLayoutPolicy {
         )
     }
 
+    /// Whether the active container/window is the unfolded inner display of an
+    /// iPhone Duo (phone idiom with short side >= 540pt, covering both portrait
+    /// `669×951pt` and landscape `951×669pt`). Excludes the folded Duo cover
+    /// display (`466×678pt`), all standard iPhones (short side <= 440pt), and
+    /// all iPads (`userInterfaceIdiom == .pad`).
+    static func isDuoUnfoldedInnerDisplay(
+        containerSize: CGSize,
+        userInterfaceIdiom: UIUserInterfaceIdiom
+    ) -> Bool {
+        guard userInterfaceIdiom == .phone else { return false }
+        let minSide = min(containerSize.width, containerSize.height)
+        return minSide >= 540
+    }
+
     /// Whether a scene/window should allow all orientations natively (iPad, Duo unfolded,
     /// regular-width multitasking) instead of locking root screens to portrait.
     @MainActor
@@ -303,9 +317,30 @@ struct AdaptiveReadableWidthModifier: ViewModifier {
     }
 }
 
+extension EnvironmentValues {
+    @Entry var isDuoUnfoldedInnerDisplay = false
+}
+
 extension View {
     func adaptiveReadableWidth(maxWidth: CGFloat = AdaptiveLayoutPolicy.readingColumnMaxWidth) -> some View {
         modifier(AdaptiveReadableWidthModifier(maxWidth: maxWidth))
+    }
+
+    /// Disables the iOS 27.1 vertical system bar and hides status bar / persistent
+    /// system overlays when full-bleed fullscreen is requested (e.g. whenever
+    /// iPhone Duo's unfolded inner display is active or during immersive video).
+    @ViewBuilder
+    func adaptiveDuoFullscreenChrome(isHidden: Bool) -> some View {
+        if #available(iOS 27.1, *) {
+            self
+                .toolbarVerticalBehavior(isHidden ? .disabled : .automatic)
+                .statusBarHidden(isHidden)
+                .persistentSystemOverlays(isHidden ? .hidden : .visible)
+        } else {
+            self
+                .statusBarHidden(isHidden)
+                .persistentSystemOverlays(isHidden ? .hidden : .visible)
+        }
     }
 
     /// Respects iPhone Duo / iOS 27.1 hardware occlusion and hinge division reserved regions
