@@ -192,6 +192,7 @@ struct VideoDetailCompactSelectionSheet: View {
                 VStack(spacing: 0) {
                     inlineSplitHeader
                     selectionScrollView
+                        .scrollEdgeEffectStyle(.soft, for: .top)
                         .scrollContentBackground(.hidden)
                         .background(.clear)
                 }

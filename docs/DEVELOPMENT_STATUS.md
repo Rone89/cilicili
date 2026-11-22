@@ -3226,3 +3226,21 @@
 - **未验证与待办（明确区分，不推测通过）**：
   - 已将本轮修复增量构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `53391`）；动态详情页、直播列表与搜索页在折叠态外屏上的实景显示待用户确认。
   - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（Duo 折叠态视频详情页控件底区默认黑色 + 全应用弹窗顶部边缘改为 `.soft`）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `06f9268` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **Duo 折叠态视频详情页右侧控件底部区域默认黑色**：
+     - [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift)：移除折叠态外层浅色背景覆盖，保持外层容器默认 `Color.black`，使右侧竖向控件与状态栏下方区域统一呈现默认黑色背景。
+     - [PlaybackDetailPageHost.swift](bili/Sources/Features/Player/PlaybackDetailPageHost.swift)：恢复视频详情页默认 `.lightContent` 状态栏样式，与黑色背景保持清晰反白对比。
+  2. **全应用弹窗顶部滚动边缘统一为 `.soft`**：
+     - 共享封装 [CommentSheetPresentation.swift](bili/Sources/Features/VideoDetail/CommentSheetPresentation.swift)（`CommentSheetPresentation`、`VideoDetailBelowPlayerSheetDetentsModifier`）与 [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift) 统一应用 `.scrollEdgeEffectStyle(.soft, for: .top)`。
+     - 独立弹窗 [VideoDetailCompactSelectionSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailCompactSelectionSheet.swift)（内联分栏态）、[VideoDetailSheetHost.swift](bili/Sources/Features/VideoDetail/VideoDetailSheetHost.swift)（投币、网络诊断）、[BiliPlayerViewContent.swift](bili/Sources/Features/Player/BiliPlayerViewContent.swift)（更多播放控制）、[LiveRoomSurfaceCoordinatorView.swift](bili/Sources/Features/Live/LiveRoomSurfaceCoordinatorView.swift)（直播诊断、直播弹幕设置）、[DynamicView.swift](bili/Sources/Features/Dynamic/DynamicView.swift)（UP 主筛选）、[FavoriteFolderManagementContent.swift](bili/Sources/Features/Mine/FavoriteFolderManagementContent.swift)（收藏夹编辑/排序）、[AccountLibraryVideoManagement.swift](bili/Sources/Features/Mine/AccountLibraryVideoManagement.swift)（转移收藏夹）与 [CommentOwnerProfilePresentation.swift](bili/Sources/Features/VideoDetail/CommentOwnerProfilePresentation.swift)（评论作者主页）全部补齐 `.scrollEdgeEffectStyle(.soft, for: .top)`。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - `AdaptiveLayoutAndPlayerIdentityTests`（`/tmp/duo-black-soft-sheet-unit.xcresult`，`** TEST SUCCEEDED **`）：**16/16 通过（0 失败，0 跳过）**。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 已构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `55095`）；折叠态视频详情页右侧黑色底区与各类弹窗顶部 `.soft` 边缘效果待用户在 `iPhone Duo` 上实景确认。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。

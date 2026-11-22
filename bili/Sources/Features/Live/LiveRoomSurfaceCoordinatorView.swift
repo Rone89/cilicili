@@ -396,9 +396,11 @@ private struct LiveRoomSurfaceRoot: View {
         .ignoresSafeArea()
         .sheet(isPresented: $viewModel.isShowingLivePlaybackDiagnostics) {
             LivePlaybackDiagnosticsSheet(viewModel: viewModel)
+                .scrollEdgeEffectStyle(.soft, for: .top)
         }
         .sheet(isPresented: $viewModel.isShowingLiveDanmakuSettings) {
             LiveDanmakuSettingsSheet(viewModel: viewModel)
+                .scrollEdgeEffectStyle(.soft, for: .top)
         }
     }
 }

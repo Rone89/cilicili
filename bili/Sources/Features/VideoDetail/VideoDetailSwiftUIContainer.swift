@@ -1047,11 +1047,6 @@ struct VideoDetailSwiftUIContainer: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-            .background(
-                layout.usesDuoFoldedHorizontalBounds && !layout.usesFullscreenLayout
-                    ? VideoDetailTheme.background
-                    : Color.black
-            )
             .onAppear {
                 DispatchQueue.main.async {
                     model.synchronize(layout: layout)

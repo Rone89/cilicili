@@ -68,6 +68,7 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                         }
                     }
             }
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
             .accessibilityIdentifier("comment.profile.sheet")

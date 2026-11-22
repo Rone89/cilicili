@@ -40,7 +40,6 @@ struct PlaybackDetailPageHost<Content: View>: View {
     let lifecycleActions: PlaybackDetailPageLifecycleActions
     let content: () -> Content
     @State private var isStatusBarContrastActive = false
-    @State private var usesVerticalRightRail = false
 
     init(
         hidesSystemChrome: Binding<Bool>,
@@ -63,23 +62,7 @@ struct PlaybackDetailPageHost<Content: View>: View {
     }
 
     var body: some View {
-        let effectiveStatusBarStyle: UIStatusBarStyle = usesVerticalRightRail ? .default : statusBarStyle
         content()
-            .onGeometryChange(for: Bool.self) { proxy in
-                if AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
-                    containerSize: proxy.size,
-                    safeAreaInsets: proxy.safeAreaInsets
-                ) {
-                    return true
-                }
-                return AdaptiveLayoutPolicy.usesVerticalTrailingChromeRail(
-                    for: UIApplication.shared.playbackDetailForegroundKeyWindow
-                )
-            } action: { nextValue in
-                if usesVerticalRightRail != nextValue {
-                    usesVerticalRightRail = nextValue
-                }
-            }
             .playbackDetailViewChrome(
                 navigationBarVisibility: navigationBarVisibility,
                 hidesBackButton: hidesBackButton
@@ -90,11 +73,11 @@ struct PlaybackDetailPageHost<Content: View>: View {
             }
             .playbackDetailSystemChrome(
                 isHidden: hidesSystemChrome,
-                statusBarStyle: effectiveStatusBarStyle
+                statusBarStyle: statusBarStyle
             )
             .preference(
                 key: VideoDetailStatusBarContrastPreferenceKey.self,
-                value: effectiveStatusBarStyle == .lightContent && isStatusBarContrastActive
+                value: statusBarStyle == .lightContent && isStatusBarContrastActive
             )
             .onAppear {
                 isStatusBarContrastActive = true

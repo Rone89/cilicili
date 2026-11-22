@@ -242,6 +242,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
                     type: viewModel.commentTarget?.type,
                     referer: videoReferer
                 )
+                .scrollEdgeEffectStyle(.soft, for: .top)
         )
     }
 

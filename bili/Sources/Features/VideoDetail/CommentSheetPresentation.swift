@@ -106,6 +106,7 @@ private struct CommentSheetPresentation: ViewModifier {
             )
         if splitSheetDismiss != nil {
             content
+                .scrollEdgeEffectStyle(.soft, for: .top)
                 .environment(\.colorScheme, contentColorScheme)
                 .environment(
                     \.commentSheetToolbarConfiguration,
@@ -113,6 +114,7 @@ private struct CommentSheetPresentation: ViewModifier {
                 )
         } else {
             content
+                .scrollEdgeEffectStyle(.soft, for: .top)
                 .environment(\.colorScheme, contentColorScheme)
                 // The video host can request dark status-bar contrast while its
                 // content stays light. Keep this presentation's UIKit background
@@ -166,10 +168,13 @@ private struct VideoDetailBelowPlayerSheetDetentsModifier: ViewModifier {
         if let maxHeight = belowPlayerMaxHeight ?? splitColumnOverlay?.stackedBelowPlayerSheetMaxHeight,
            maxHeight > 0 {
             content
+                .scrollEdgeEffectStyle(.soft, for: .top)
                 .presentationDetents([.height(maxHeight)])
                 .presentationContentInteraction(.scrolls)
         } else {
-            content.presentationDetents(fallback)
+            content
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .presentationDetents(fallback)
         }
     }
 }

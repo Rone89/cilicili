@@ -92,6 +92,7 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
             }
             .sheet(isPresented: sheetState.isShowingCoinPicker) {
                 VideoDetailCoinSheetHost(viewModel: viewModel)
+                    .scrollEdgeEffectStyle(.soft, for: .top)
             }
             .sheet(isPresented: sheetState.isShowingDanmakuSettings) {
                 VideoDetailDanmakuSettingsSheetHost(
@@ -108,6 +109,7 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                     viewModel: viewModel,
                     libraryStore: libraryStore
                 )
+                .scrollEdgeEffectStyle(.soft, for: .top)
             }
             .onChange(of: viewModel.isShowingSubtitleSelection) { _, isShowing in
                 isShowingSubtitleSelection = isShowing

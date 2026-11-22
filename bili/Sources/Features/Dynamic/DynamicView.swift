@@ -176,6 +176,7 @@ struct DynamicContentRoot: View {
             DynamicUPSelector(api: api, recentOwners: holder.topUploaderStripViewModel?.topUploaderStripItems.map(\.owner) ?? []) { owner in
                 selectedUP = owner
             }
+            .scrollEdgeEffectStyle(.soft, for: .top)
         }
     }
 

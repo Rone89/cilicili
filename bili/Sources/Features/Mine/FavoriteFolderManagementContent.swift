@@ -76,9 +76,11 @@ struct FavoriteFolderManagementModifier: ViewModifier {
             }
             .sheet(isPresented: $showsEditor) {
                 FavoriteFolderEditor(folder: editorFolder, controller: controller) { await viewModel.refreshFavorites() }
+                    .scrollEdgeEffectStyle(.soft, for: .top)
             }
             .sheet(isPresented: $showsSort) {
                 FavoriteFolderSortSheet(folders: viewModel.favoriteFolders, controller: controller) { await viewModel.refreshFavorites() }
+                    .scrollEdgeEffectStyle(.soft, for: .top)
             }
             .confirmationDialog("删除「\(pendingDeletion?.displayTitle ?? "")」？",
                 isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }), titleVisibility: .visible) {

@@ -21,6 +21,7 @@ struct BiliPlayerViewContent: View {
                 configuration: context.configuration,
                 showsRateChoices: $showsRateChoices
             )
+            .scrollEdgeEffectStyle(.soft, for: .top)
         }
     }
 
