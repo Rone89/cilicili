@@ -851,6 +851,78 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         )
     }
 
+    func testDuoFoldedContentHorizontalBoundsConstrainsDisplayToLeft16By9Strip() {
+        // iPhone Duo folded cover display (466x678pt) with ~84pt trailing vertical chrome rail:
+        // left 9:16 portrait strip = floor(678 * 9 / 16) = 381pt.
+        let duoFoldedBounds = CGRect(x: 0, y: 0, width: 466, height: 678)
+        let duoFoldedInsets = EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 84)
+        let resolved = AdaptiveLayoutPolicy.duoFoldedContentHorizontalBounds(
+            containerBounds: duoFoldedBounds,
+            safeAreaInsets: duoFoldedInsets
+        )
+        XCTAssertEqual(resolved?.minX, 0)
+        XCTAssertEqual(resolved?.width, 381)
+
+        // If trailing rail is wider than 466 - 381 (e.g. 92pt), clamp to safeWidth (374pt)
+        // so elements still never overlap the trailing controls.
+        let widerRail = AdaptiveLayoutPolicy.duoFoldedContentHorizontalBounds(
+            containerBounds: duoFoldedBounds,
+            safeAreaInsets: EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 92)
+        )
+        XCTAssertEqual(widerRail?.width, 374)
+
+        // VideoDetailShellLayout constrains player + content to the left 381pt strip while
+        // keeping full-width container bounds for the extended background.
+        let detailLayout = VideoDetailShellLayout.resolve(
+            bounds: duoFoldedBounds,
+            safeAreaTop: 0,
+            safeAreaBottom: 0,
+            safeAreaLeading: 0,
+            safeAreaTrailing: 84,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: nil,
+            isPlaybackActive: true,
+            isLandscape: false,
+            isPortraitFullscreen: false,
+            horizontalSizeClass: .compact,
+            adaptiveLargeScreenEnabled: true
+        )
+        XCTAssertEqual(detailLayout.adaptiveMode, .compactStacked)
+        XCTAssertTrue(detailLayout.usesDuoFoldedHorizontalBounds)
+        XCTAssertEqual(detailLayout.playerFrame.minX, 0)
+        XCTAssertEqual(detailLayout.playerFrame.width, 381)
+        XCTAssertEqual(detailLayout.playerFrame.height, 214) // round(381 * 9 / 16)
+        XCTAssertEqual(detailLayout.contentFrame.minX, 0)
+        XCTAssertEqual(detailLayout.contentFrame.width, 381)
+        XCTAssertEqual(detailLayout.contentFrame.height, 678)
+
+        // Fullscreen playback on Duo cover still fills full bounds.
+        let fullscreenLayout = VideoDetailShellLayout.resolve(
+            bounds: duoFoldedBounds,
+            safeAreaTop: 0,
+            safeAreaBottom: 0,
+            safeAreaLeading: 0,
+            safeAreaTrailing: 84,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: nil,
+            isPlaybackActive: true,
+            isLandscape: false,
+            isPortraitFullscreen: true,
+            horizontalSizeClass: .compact,
+            adaptiveLargeScreenEnabled: true
+        )
+        XCTAssertFalse(fullscreenLayout.usesDuoFoldedHorizontalBounds)
+        XCTAssertEqual(fullscreenLayout.playerFrame.width, 466)
+
+        // Standard iPhone portrait (393x852pt, no trailing chrome rail) is unaffected.
+        XCTAssertNil(
+            AdaptiveLayoutPolicy.duoFoldedContentHorizontalBounds(
+                containerBounds: CGRect(x: 0, y: 0, width: 393, height: 852),
+                safeAreaInsets: EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
+            )
+        )
+    }
+
     private func makeLocalTestVideo() async throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("adaptive-layout-probe-\(UUID().uuidString).mov")

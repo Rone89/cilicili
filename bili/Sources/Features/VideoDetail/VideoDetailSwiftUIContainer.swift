@@ -181,6 +181,8 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         in size: CGSize,
         safeAreaTop: CGFloat,
         safeAreaBottom: CGFloat = 0,
+        safeAreaLeading: CGFloat = 0,
+        safeAreaTrailing: CGFloat = 0,
         horizontalSizeClass: UserInterfaceSizeClass? = nil,
         rotationCoordinator: PlaybackRotationCoordinator
     ) -> VideoDetailShellLayout {
@@ -192,18 +194,30 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             isFullscreenActive: rotationCoordinator.layoutLandscape || rotationCoordinator.isPortraitFullscreen,
             adaptiveEnabled: adaptiveEnabled
         )
+        let effectiveCompactWidth = AdaptiveLayoutPolicy.duoFoldedContentHorizontalBounds(
+            containerBounds: CGRect(origin: .zero, size: size),
+            safeAreaInsets: EdgeInsets(
+                top: safeAreaTop,
+                leading: safeAreaLeading,
+                bottom: safeAreaBottom,
+                trailing: safeAreaTrailing
+            )
+        )?.width ?? size.width
+        let effectiveCompactBounds = CGSize(width: effectiveCompactWidth, height: size.height)
         let effectiveInteractiveOffset =
             (targetMode == .compactStacked && isInteractiveScrollCollapseActive)
             ? interactiveScrollOffset
             : nil
         let effectivePlayerHeight =
             effectiveInteractiveOffset.map {
-                interactivePlayerHeight(forOffset: $0, bounds: size)
+                interactivePlayerHeight(forOffset: $0, bounds: effectiveCompactBounds)
             } ?? currentPlayerHeight
         let layout = VideoDetailShellLayout.resolve(
             bounds: CGRect(origin: .zero, size: size),
             safeAreaTop: safeAreaTop,
             safeAreaBottom: safeAreaBottom,
+            safeAreaLeading: safeAreaLeading,
+            safeAreaTrailing: safeAreaTrailing,
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: effectivePlayerHeight,
             isPlaybackActive: isPlaybackActiveForLayout,
@@ -719,6 +733,8 @@ private struct VideoDetailInteractivePlayerLayer: View {
     let size: CGSize
     let safeAreaTop: CGFloat
     let safeAreaBottom: CGFloat
+    let safeAreaLeading: CGFloat
+    let safeAreaTrailing: CGFloat
     let selectedContentTab: VideoDetailContentTab
     let dependencies: AppDependencies
     let runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -735,16 +751,19 @@ private struct VideoDetailInteractivePlayerLayer: View {
             in: size,
             safeAreaTop: safeAreaTop,
             safeAreaBottom: safeAreaBottom,
+            safeAreaLeading: safeAreaLeading,
+            safeAreaTrailing: safeAreaTrailing,
             horizontalSizeClass: horizontalSizeClass,
             rotationCoordinator: rotationCoordinator
         )
+        let collapsedBounds = layout.contentFrame.size
         let showsCollapsedChrome = model.shouldShowCollapsedChrome(
             for: layout,
-            bounds: size
+            bounds: collapsedBounds
         )
         let collapsedChromeOpacity = model.collapsedChromeOpacity(
             for: layout,
-            bounds: size
+            bounds: collapsedBounds
         )
 
         let suppressesRotationAnimation = rotationCoordinator.isTransitioning || layout.usesFullscreenLayout
@@ -892,6 +911,8 @@ struct VideoDetailSwiftUIContainer: View {
                 in: proxy.size,
                 safeAreaTop: model.rootSafeAreaInsets.top,
                 safeAreaBottom: model.rootSafeAreaInsets.bottom,
+                safeAreaLeading: model.rootSafeAreaInsets.left,
+                safeAreaTrailing: model.rootSafeAreaInsets.right,
                 horizontalSizeClass: horizontalSizeClass,
                 rotationCoordinator: rotationCoordinator
             )
@@ -994,6 +1015,8 @@ struct VideoDetailSwiftUIContainer: View {
                     size: proxy.size,
                     safeAreaTop: model.rootSafeAreaInsets.top,
                     safeAreaBottom: model.rootSafeAreaInsets.bottom,
+                    safeAreaLeading: model.rootSafeAreaInsets.left,
+                    safeAreaTrailing: model.rootSafeAreaInsets.right,
                     selectedContentTab: selectedContentTab,
                     dependencies: dependencies,
                     runtimeSettings: runtimeSettings,
@@ -1024,10 +1047,15 @@ struct VideoDetailSwiftUIContainer: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .background(
+                layout.usesDuoFoldedHorizontalBounds && !layout.usesFullscreenLayout
+                    ? VideoDetailTheme.background
+                    : Color.black
+            )
             .onAppear {
                 DispatchQueue.main.async {
                     model.synchronize(layout: layout)
-                    model.updateCollapsedChrome(bounds: proxy.size)
+                    model.updateCollapsedChrome(bounds: contentBounds)
                 }
             }
         }

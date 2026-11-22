@@ -19,6 +19,7 @@ struct VideoDetailShellLayout: Equatable {
     let contentFrame: CGRect
     let contentTopInset: CGFloat?
     let usesFullscreenLayout: Bool
+    let usesDuoFoldedHorizontalBounds: Bool
 
     static func standardPlayerHeight(forWidth width: CGFloat) -> CGFloat {
         (max(width, 0) * 9 / 16).rounded()
@@ -108,6 +109,8 @@ struct VideoDetailShellLayout: Equatable {
         bounds: CGRect,
         safeAreaTop: CGFloat,
         safeAreaBottom: CGFloat = 0,
+        safeAreaLeading: CGFloat = 0,
+        safeAreaTrailing: CGFloat = 0,
         videoAspectRatio: CGFloat,
         currentPlayerHeight: CGFloat?,
         isPlaybackActive: Bool,
@@ -139,7 +142,8 @@ struct VideoDetailShellLayout: Equatable {
                     height: max(frozenContentSize.height, 1)
                 ),
                 contentTopInset: nil,
-                usesFullscreenLayout: true
+                usesFullscreenLayout: true,
+                usesDuoFoldedHorizontalBounds: false
             )
         }
 
@@ -177,24 +181,38 @@ struct VideoDetailShellLayout: Equatable {
                 danmakuCanvasSize: playerFrame.size,
                 contentFrame: contentFrame,
                 contentTopInset: 0,
-                usesFullscreenLayout: false
+                usesFullscreenLayout: false,
+                usesDuoFoldedHorizontalBounds: false
             )
         }
+
+        let duoFoldedBounds = AdaptiveLayoutPolicy.duoFoldedContentHorizontalBounds(
+            containerBounds: bounds,
+            safeAreaInsets: EdgeInsets(
+                top: safeAreaTop,
+                leading: safeAreaLeading,
+                bottom: safeAreaBottom,
+                trailing: safeAreaTrailing
+            )
+        )
+        let stageMinX = duoFoldedBounds?.minX ?? bounds.minX
+        let stageWidth = duoFoldedBounds?.width ?? bounds.width
+        let stageBoundsSize = CGSize(width: stageWidth, height: bounds.height)
 
         let canInteractivelyCollapse = supportsInteractiveCollapse(
             videoAspectRatio: videoAspectRatio,
             isPlaybackActive: isPlaybackActive
         )
         let playerHeight = resolvedPlayerHeight(
-            bounds: bounds.size,
+            bounds: stageBoundsSize,
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: currentPlayerHeight,
             isPlaybackActive: isPlaybackActive
         )
         let playerFrame = CGRect(
-            x: bounds.minX,
+            x: stageMinX,
             y: bounds.minY + max(0, safeAreaTop),
-            width: bounds.width,
+            width: stageWidth,
             height: max(playerHeight, 0)
         )
         return Self(
@@ -202,22 +220,23 @@ struct VideoDetailShellLayout: Equatable {
             playerStageFrame: playerFrame,
             playerFrame: playerFrame,
             danmakuCanvasSize: CGSize(
-                width: bounds.width,
-                height: expandedPlayerHeight(bounds: bounds.size, videoAspectRatio: videoAspectRatio)
+                width: stageWidth,
+                height: expandedPlayerHeight(bounds: stageBoundsSize, videoAspectRatio: videoAspectRatio)
             ),
             contentFrame: CGRect(
-                x: bounds.minX,
+                x: stageMinX,
                 y: bounds.minY + max(0, safeAreaTop),
-                width: bounds.width,
+                width: stageWidth,
                 height: max(bounds.height - max(0, safeAreaTop), 0)
             ),
             contentTopInset: canInteractivelyCollapse
                 ? expandedPlayerHeight(
-                    bounds: bounds.size,
+                    bounds: stageBoundsSize,
                     videoAspectRatio: videoAspectRatio
                 )
                 : max(playerHeight, 0),
-            usesFullscreenLayout: false
+            usesFullscreenLayout: false,
+            usesDuoFoldedHorizontalBounds: duoFoldedBounds != nil
         )
     }
 }

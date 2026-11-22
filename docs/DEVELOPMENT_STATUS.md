@@ -3187,5 +3187,25 @@
     - 单元测试（`/tmp/video-sheet-height-unit.xcresult`，`Passed`）：`AdaptiveLayoutAndPlayerIdentityTests`（15/15）、`DynamicFeedCategoriesTests`（4/4）、`PlaybackDetailSharedLayoutTests`（47/47）、`RootTabBarVisibilityTests`（3/3）——合计 **69/69 通过（0 失败，0 跳过）**。
     - UI 测试（`/tmp/video-sheet-height-ui.xcresult`，`Passed`）：`AdaptiveLayoutUITests/testAdaptiveVideoDetailSplitAndFullscreenAcrossOrientations`——**1/1 通过（0 失败，0 跳过）**。
 - **未验证与待办（明确区分，不推测通过）**：
-  - `iPhone Duo`（iOS 27.1）模拟器上当前运行的仍是上一提交 `e5838370`，本轮视频下方动态限高改动尚未重新安装到 `iPhone Duo`（或真机）实景验证（需用户指示后再安装）。
+  - 按用户指令已将 `61c43f08` 构建安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `44347`）；竖屏（外屏与展开内屏）视频下方不遮挡限高、横屏双栏右栏 94% 原生液态玻璃弹窗及各类画幅实景效果待用户在 `iPhone Duo` 上体验验收。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（iPhone Duo 折叠态外屏布局规范：背景延伸至右侧控件下方，前景显示元素约束在左侧 16:9 长条区）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `61c43f08` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **统一折叠态左侧高宽比 16:9 内容区策略**：
+     - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)：新增 `duoFoldedContentHorizontalBounds(containerBounds:safeAreaInsets:)`，在检测到 `iPhone Duo` 折叠态外屏右侧竖向系统控件栏（`usesVerticalTrailingChromeRail`）时，返回左侧高宽比 16:9 的内容区水平范围（`width = min(safeWidth, floor(height * 9 / 16))`；如 `466×678pt` + 右侧 `84pt` 控件栏对应 `minX = 0, width = 381pt`），同时允许页面背景继续延伸到右侧控件下方；非折叠态外屏（普通 iPhone、iPad、Duo 展开态）返回 `nil` 保持零影响。
+  2. **视频详情页与直播间接入左侧 16:9 前景约束与背景延伸**：
+     - [VideoDetailShellLayout.swift](bili/Sources/Features/VideoDetail/VideoDetailShellLayout.swift) & [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift)：`VideoDetailShellLayout.resolve` 接入 `safeAreaLeading` / `safeAreaTrailing` 与 `usesDuoFoldedHorizontalBounds`；折叠态非全屏下将播放器舞台、视频画面、弹幕画布和详情/评论内容区统一约束在左侧 16:9 长条区，避免右侧 `<`、`i / 💬`、`📝` 控件和右上角系统状态栏遮挡合集与推荐标题；外层容器背景改为 `VideoDetailTheme.background` 并延伸铺满至右侧控件下方；交互式折叠滚动与折叠顶栏同步基于内容区宽度计算；进入全屏播放仍铺满整屏。
+     - [PlaybackDetailPageHost.swift](bili/Sources/Features/Player/PlaybackDetailPageHost.swift)：折叠态外屏下状态栏位于右侧控件区顶部的页面背景之上，改为 `.default` 状态栏样式并取消强制反白，确保浅色/深色模式下右上角状态栏均清晰可读。
+     - [LiveRoomShellViewController.swift](bili/Sources/Features/Live/LiveRoomShellViewController.swift)：直播间非全屏态保持 `backdropHost` 铺满全宽延伸至右侧控件下方，同时将 `playerContainer` 与 `contentHost` 约束在左侧 16:9 长条区。
+  3. **新增单元测试**：
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testDuoFoldedContentHorizontalBoundsConstrainsDisplayToLeft16By9Strip`，覆盖 `466×678` 折叠态外屏（`width = 381`，`playerFrame = 381×214`）、更宽右侧栏夹紧、全屏恢复整屏宽度以及普通 iPhone 无影响。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - 单元测试（`/tmp/duo-folded-strip-unit.xcresult`，`** TEST SUCCEEDED **`）：`AdaptiveLayoutAndPlayerIdentityTests`（16/16）、`DynamicFeedCategoriesTests`（4/4）、`PlaybackDetailSharedLayoutTests`（47/47）、`RootTabBarVisibilityTests`（3/3）——合计 **70/70 通过（0 失败，0 跳过）**。
+- **未验证与待办（明确区分，不推测通过）**：
+  - `iPhone Duo`（iOS 27.1）模拟器上当前运行的仍是上一提交 `61c43f08`，本轮折叠态左侧 16:9 内容区与右侧背景延伸改动尚未重新安装至 `iPhone Duo`（或真机）实景验证（需用户指示后再安装）。
   - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。

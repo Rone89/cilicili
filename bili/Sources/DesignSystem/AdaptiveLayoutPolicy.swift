@@ -278,6 +278,33 @@ nonisolated enum AdaptiveLayoutPolicy {
         )
     }
 
+    /// Returns the horizontal content bounds (left `height:width = 16:9` strip)
+    /// for an iPhone Duo folded cover display when a vertical system chrome rail
+    /// occupies the trailing edge (e.g. `466×678pt` with ~84pt trailing rail).
+    ///
+    /// Page backgrounds continue to span the full container width underneath the
+    /// right-side controls, while foreground display elements remain inside this
+    /// left 9:16 portrait region and never intersect the trailing chrome rail.
+    /// Returns `nil` when not in folded Duo vertical-rail mode.
+    static func duoFoldedContentHorizontalBounds(
+        containerBounds: CGRect,
+        safeAreaInsets: EdgeInsets
+    ) -> (minX: CGFloat, width: CGFloat)? {
+        guard usesVerticalTrailingChromeRail(
+            containerSize: containerBounds.size,
+            safeAreaInsets: safeAreaInsets
+        ) else {
+            return nil
+        }
+        let safeLeading = max(safeAreaInsets.leading, 0)
+        let safeTrailing = max(safeAreaInsets.trailing, 0)
+        let safeWidth = max(containerBounds.width - safeLeading - safeTrailing, 0)
+        let portrait16By9Width = (containerBounds.height * 9 / 16).rounded(.down)
+        let contentWidth = min(safeWidth, portrait16By9Width)
+        guard contentWidth > 0 else { return nil }
+        return (minX: containerBounds.minX + safeLeading, width: contentWidth)
+    }
+
     /// Whether the active container/window is the unfolded inner display of an
     /// iPhone Duo (phone idiom with short side >= 540pt, covering both portrait
     /// `669×951pt` and landscape `951×669pt`). Excludes the folded Duo cover

@@ -409,20 +409,41 @@ final class LiveRoomShellViewController: UIViewController {
             || isPortraitFullscreen
 
         backdropHost.view.frame = bounds
-        contentHost.view.frame = bounds
         if usesFullscreenLayout {
+            contentHost.view.frame = bounds
             playerContainer.frame = bounds
         } else {
+            let duoFoldedBounds = AdaptiveLayoutPolicy.duoFoldedContentHorizontalBounds(
+                containerBounds: bounds,
+                safeAreaInsets: EdgeInsets(
+                    top: safeAreaTop,
+                    leading: safeAreaInsets.left,
+                    bottom: safeAreaBottom,
+                    trailing: safeAreaInsets.right
+                )
+            )
+            let stageBounds = if let duoFoldedBounds {
+                CGRect(
+                    x: duoFoldedBounds.minX,
+                    y: bounds.minY,
+                    width: duoFoldedBounds.width,
+                    height: bounds.height
+                )
+            } else {
+                bounds
+            }
+            contentHost.view.frame = stageBounds
             playerContainer.frame = liveRoomPlayerFrame(
-                in: bounds,
+                in: stageBounds,
                 safeAreaTop: safeAreaTop,
                 safeAreaBottom: safeAreaBottom
             )
         }
         if publishesContentLayout {
+            let effectiveContentBounds = contentHost.view.frame.size
             contentState.update(
-                layoutWidth: bounds.width,
-                layoutHeight: bounds.height,
+                layoutWidth: effectiveContentBounds.width,
+                layoutHeight: effectiveContentBounds.height,
                 topSafeAreaInset: usesFullscreenLayout ? 0 : safeAreaTop,
                 bottomSafeAreaInset: usesFullscreenLayout ? 0 : safeAreaBottom,
                 playerHeight: !usesFullscreenLayout
