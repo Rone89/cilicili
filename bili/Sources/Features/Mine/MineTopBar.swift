@@ -18,8 +18,6 @@ struct MineTopBar: ToolbarContent {
             .sharedBackgroundVisibility(.hidden)
         }
 
-        DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
-
         if isRootTabContent, let rootHiddenPageSwitcher {
             ToolbarItem(placement: .topBarTrailing) {
                 RootHiddenPageSwitcherButton(switcher: rootHiddenPageSwitcher)

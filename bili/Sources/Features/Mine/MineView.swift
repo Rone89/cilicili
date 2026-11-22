@@ -12,7 +12,6 @@ struct MineView: View {
     let hasBackButton: Bool
     let onOpenRoute: (MineOverlayRoute) -> Void
     @State private var loginSheet: LoginSheet?
-    @State private var isSearching = false
     @StateObject private var titleState = FeedChromeTitleState()
     @State private var loadedMainAccountCredentialVersion: Int?
     @State private var loadedHistoryAccountCredentialVersion: Int?
@@ -36,12 +35,6 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .minimizedToolbarSearch(
-            text: $searchText,
-            isSearching: $isSearching,
-            isFocused: isSearchFocused,
-            prompt: "搜索我的页功能"
-        )
         .toolbar {
             MineTopBar(
                 titleState: titleState,

@@ -19,8 +19,6 @@ struct SearchTopBar: ToolbarContent {
             .sharedBackgroundVisibility(.hidden)
         }
 
-        DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
-
         if isRootTabContent, let viewModel {
             ToolbarItem(placement: .topBarTrailing) {
                 SearchFilterToolbarMenu(viewModel: viewModel, iconPointSize: 18)

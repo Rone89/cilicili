@@ -869,6 +869,7 @@ extension VideoDetailRotationBridgeViewController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard isSystemBackGesture(gestureRecognizer) else { return true }
         guard !rotationCoordinator.isAnyFullscreen else { return false }
+        guard !contentController.hasActiveSplitColumnOverlay else { return false }
         guard let navigationController,
               navigationController.viewControllers.count > 1
         else { return false }
@@ -882,6 +883,7 @@ extension VideoDetailRotationBridgeViewController: UIGestureRecognizerDelegate {
     ) -> Bool {
         guard isSystemBackGesture(gestureRecognizer) else { return true }
         guard !rotationCoordinator.isAnyFullscreen else { return false }
+        guard !contentController.hasActiveSplitColumnOverlay else { return false }
         return !contentController.playerFrame.contains(touch.location(in: view))
     }
 

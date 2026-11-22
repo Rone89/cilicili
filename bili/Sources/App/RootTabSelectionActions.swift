@@ -27,6 +27,9 @@ extension RootTabView {
                 guard tab != selectedTab else {
                     guard activeRootNavigationPathIsEmpty else { return }
                     rootTabScrollRequests[tab] = RootTabScrollRequest()
+                    if tab == .search {
+                        rootSearchActivationRequestID &+= 1
+                    }
                     return
                 }
                 selectAvailableRootTab(tab)

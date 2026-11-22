@@ -804,7 +804,7 @@ struct VideoDetailSwiftUIContainer: View {
     @ObservedObject var rotationCoordinator: PlaybackRotationCoordinator
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
-    let splitColumnOverlay: VideoDetailSplitColumnOverlayController
+    @ObservedObject var splitColumnOverlay: VideoDetailSplitColumnOverlayController
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     let dependencies: AppDependencies
     let onShowNetworkDiagnostics: () -> Void
@@ -841,6 +841,13 @@ struct VideoDetailSwiftUIContainer: View {
                 )
                 : dependencies.libraryStore.standardPageHorizontalInset
             let contentBounds = layout.contentFrame.size
+            let isSplitCommentThreadPresented: Bool = {
+                if case .commentThread = sheetRoute { return true }
+                return false
+            }()
+            let isSplitOverlayPresented = layout.adaptiveMode == .twoColumnSplit
+                && !layout.usesFullscreenLayout
+                && (splitColumnOverlay.hasActiveOverlay || isSplitCommentThreadPresented)
 
             ZStack(alignment: .topLeading) {
                 VideoDetailShellContentView(
@@ -916,6 +923,7 @@ struct VideoDetailSwiftUIContainer: View {
                 .opacity(layout.usesFullscreenLayout ? 0 : 1)
                 .allowsHitTesting(
                     !layout.usesFullscreenLayout
+                        && !isSplitOverlayPresented
                         && !model.contentState.suppressesInteractiveContentActions
                 )
                 .disablingRotationTransaction(
@@ -955,6 +963,8 @@ struct VideoDetailSwiftUIContainer: View {
                         alignment: .bottom
                     )
                     .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
+                    .opacity(isSplitOverlayPresented ? 0 : 1)
+                    .allowsHitTesting(!isSplitOverlayPresented)
                     .zIndex(4)
 
                     VideoDetailSplitColumnSheetHost(
@@ -1286,6 +1296,14 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
     func updateNavigateBackAction(_ action: @escaping () -> Void) {
         onNavigateBack = action
+    }
+
+    var hasActiveSplitColumnOverlay: Bool {
+        if splitColumnOverlay.hasActiveOverlay { return true }
+        if splitColumnOverlay.isSplitColumnMode, case .commentThread = sheetRoute.wrappedValue {
+            return true
+        }
+        return false
     }
 
     func navigateBack() {

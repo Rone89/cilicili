@@ -190,8 +190,8 @@ struct DynamicWaterfallFeedView: View {
     let columnCount: Int
     @StateObject private var planner = DynamicWaterfallLayoutPlanner()
 
-    private let columnSpacing: CGFloat = 10
-    private let rowSpacing: CGFloat = 10
+    private let columnSpacing: CGFloat = 12
+    private let rowSpacing: CGFloat = 12
 
     private var cardWidth: CGFloat {
         let count = CGFloat(max(1, columnCount))
@@ -336,6 +336,16 @@ private struct DynamicWaterfallCard: View {
         return nil
     }
 
+    private let cardCornerRadius: CGFloat = 18
+
+    private var coverShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: cardCornerRadius,
+            topTrailingRadius: cardCornerRadius,
+            style: .continuous
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: openCardDestination) {
@@ -349,9 +359,9 @@ private struct DynamicWaterfallCard: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 9)
-                            .padding(.top, 8)
-                            .padding(.bottom, 4)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 9)
+                            .padding(.bottom, 5)
                     }
                 }
                 .contentShape(Rectangle())
@@ -359,17 +369,12 @@ private struct DynamicWaterfallCard: View {
             .buttonStyle(.plain)
 
             footerRow
-                .padding(.horizontal, 9)
+                .padding(.horizontal, 10)
                 .padding(.top, coverURL == nil ? 8 : 4)
-                .padding(.bottom, 9)
+                .padding(.bottom, 10)
         }
         .frame(width: cardWidth, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-        )
+        .videoCardBorderedSurface(cornerRadius: cardCornerRadius)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dynamic.waterfall.card.\(display.dynamicID)")
     }
@@ -405,7 +410,7 @@ private struct DynamicWaterfallCard: View {
                             Capsule()
                                 .fill(display.live != nil ? Color.pink.opacity(0.88) : Color.black.opacity(0.55))
                         )
-                        .padding(6)
+                        .padding(7)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -419,11 +424,12 @@ private struct DynamicWaterfallCard: View {
                             Capsule()
                                 .fill(Color.black.opacity(0.62))
                         )
-                        .padding(6)
+                        .padding(7)
                 }
             }
+            .videoCardBorderedCover(in: coverShape)
         } else {
-            // Pure-text / forward-without-image card styled as a clean editorial quote card.
+            // Pure-text / forward-without-image card styled cleanly inside the bordered card shell.
             VStack(alignment: .leading, spacing: 6) {
                 if item.isForward || item.original != nil {
                     Text("转发动态")
@@ -431,7 +437,7 @@ private struct DynamicWaterfallCard: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.primary.opacity(0.07)))
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
                 }
                 Text(headline.isEmpty ? "查看动态详情" : headline)
                     .font(.system(size: 13.5, weight: .regular))
@@ -443,7 +449,12 @@ private struct DynamicWaterfallCard: View {
             .padding(11)
             .frame(width: cardWidth, alignment: .topLeading)
             .frame(minHeight: 96, alignment: .topLeading)
-            .background(Color(.tertiarySystemGroupedBackground))
+            .background(Color(.tertiarySystemFill).opacity(0.55))
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color(.separator).opacity(0.22))
+                    .frame(height: 0.5)
+            }
         }
     }
 

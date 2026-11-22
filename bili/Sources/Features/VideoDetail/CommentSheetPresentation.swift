@@ -51,6 +51,7 @@ private struct CommentSheetPresentation: ViewModifier {
     @Environment(\.appContentColorScheme) private var appContentColorScheme
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.videoDetailSplitSheetDismiss) private var splitSheetDismiss
     @AppStorage(CommentInteractionSettings.limitsSheetMaxHeightKey)
     private var limitsSheetMaxHeight = CommentInteractionSettings.defaultLimitsSheetMaxHeight
     @State private var selectedDetent: PresentationDetent = .medium
@@ -64,21 +65,30 @@ private struct CommentSheetPresentation: ViewModifier {
                 limitsMaxHeight: limitsSheetMaxHeight,
                 verticalSizeClass: verticalSizeClass
             )
-        content
-            .environment(\.colorScheme, contentColorScheme)
-            // The video host can request dark status-bar contrast while its
-            // content stays light. Keep this presentation's UIKit background
-            // and its SwiftUI comment text on the same appearance.
-            .preferredColorScheme(contentColorScheme)
-            .commentSheetHeightDetents(
-                limitsHeight: shouldLimitHeight,
-                selectedDetent: $selectedDetent
-            )
-            .presentationDragIndicator(.visible)
-            .environment(
-                \.commentSheetToolbarConfiguration,
-                CommentSheetToolbarConfiguration(onDismiss: onDismiss, onRefresh: onRefresh)
-            )
+        if splitSheetDismiss != nil {
+            content
+                .environment(\.colorScheme, contentColorScheme)
+                .environment(
+                    \.commentSheetToolbarConfiguration,
+                    CommentSheetToolbarConfiguration(onDismiss: onDismiss, onRefresh: onRefresh)
+                )
+        } else {
+            content
+                .environment(\.colorScheme, contentColorScheme)
+                // The video host can request dark status-bar contrast while its
+                // content stays light. Keep this presentation's UIKit background
+                // and its SwiftUI comment text on the same appearance.
+                .preferredColorScheme(contentColorScheme)
+                .commentSheetHeightDetents(
+                    limitsHeight: shouldLimitHeight,
+                    selectedDetent: $selectedDetent
+                )
+                .presentationDragIndicator(.visible)
+                .environment(
+                    \.commentSheetToolbarConfiguration,
+                    CommentSheetToolbarConfiguration(onDismiss: onDismiss, onRefresh: onRefresh)
+                )
+        }
     }
 }
 

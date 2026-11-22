@@ -69,7 +69,8 @@ struct DynamicFeedScreenContent: View {
             }()
             let waterfallColumnCount = AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(
                 containerWidth: proxy.size.width,
-                horizontalInset: horizontalInset
+                horizontalInset: horizontalInset,
+                columnSpacing: 12
             )
 
             DynamicFeedScrollContent(

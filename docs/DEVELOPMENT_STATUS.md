@@ -3103,3 +3103,36 @@
 - **未验证与待办（明确区分，不推测通过）**：
   - 本轮遵循 `AGENTS.md` 规则仅在默认 `iPhone 18 Pro Max`（iOS 27.0）模拟器完成编译与自动化回归；`iPhone Duo`（外屏/展开内屏横屏）与 `iPad` 下的通知页居中留白、横屏分栏右栏弹窗（分P/评论回复/发评键盘抬起）以及多列瀑布流实景视觉效果尚未在对应模拟器或真机上目视核验。
   - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（5 项交互与视觉精修：首页布局改名、横屏弹窗防误退、瀑布流有边框卡片、图库式底部搜索 Tab、「我的」页顶部随页搜索框）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `14fc566` 叠加本轮 5 项精修并提交，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **首页布局名称调整**：
+     - [LibraryStore.swift](bili/Sources/Storage/LibraryStore.swift)：将 `HomeFeedLayout.doubleColumn.title` 改为「自适应布局」，`.borderedDoubleColumn.title` 改为「有边框自适应布局」（保持 `rawValue` 不变，存量设置无缝迁移）。
+  2. **修复横屏双栏点击弹窗内容直接退出视频详情页**：
+     - 根因定位：此前右栏内联宿主（`VideoDetailSplitColumnSheetHost`）直接嵌入了包含 `NavigationStack` 的 `VideoDetailCompactSelectionSheet` 与 `CommentOwnerProfileNavigationContainer`，在已推入外层 `NavigationStack` 的详情页中嵌套 `NavigationStack` 触发 `Update NavigationRequestObserver tried to update multiple times per frame` 并导致外层导航栈误 pop；同时弹窗展开期间底层 `VideoDetailSplitColumnBottomToolbar`（含 `<` 返回液态玻璃按钮）及系统侧滑返回手势未隔离。
+     - [VideoDetailCompactSelectionSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailCompactSelectionSheet.swift)、[CommentOwnerProfilePresentation.swift](bili/Sources/Features/VideoDetail/CommentOwnerProfilePresentation.swift) & [CommentSheetPresentation.swift](bili/Sources/Features/VideoDetail/CommentSheetPresentation.swift)：在右栏内联态（`splitSheetDismiss != nil`）下完全去除嵌套 `NavigationStack`、`.toolbar(.visible, for: .navigationBar)` 及 `.preferredColorScheme`，改用原生风格内联顶栏（关闭/返回、标题、正序倒序/刷新按钮）；竖屏与常规系统 `.sheet` 保持原样。
+     - [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift)、[VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift) & [VideoDetailRotationBridgeViewController.swift](bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift)：将 `VideoDetailSplitSheetCard` 改为上下分离 `VStack`（遮罩仅覆盖卡片上方，不与内容重叠）；`splitColumnOverlay` 升级为 `@ObservedObject` 并新增 `hasActiveOverlay`，有右栏弹窗时自动隐藏并禁交互右栏底栏与底层列表，并暂停系统边缘侧滑返回手势。
+  3. **动态页瀑布流卡片升级为首页「有边框自适应布局」同款效果**：
+     - [DynamicWaterfallFeedView.swift](bili/Sources/Features/Dynamic/DynamicWaterfallFeedView.swift) & [DynamicFeedScreenContent.swift](bili/Sources/Features/Dynamic/DynamicFeedScreenContent.swift)：复用 `.videoCardBorderedSurface(cornerRadius: 18)`（`.ultraThinMaterial` 底色 + `18pt` 圆角 + `1pt` 亮暗自适应描边 + 双层投影）与 `.videoCardBorderedCover(in:)`，并将列/行间距对齐为 `12pt`；纯文字/转发卡片增加浅色顶栏底衬与底部分割线以强化卡片轮廓。
+  4. **底部搜索 Tab 改为类系统图库点击直唤搜索框**：
+     - [RootTabView.swift](bili/Sources/App/RootTabView.swift)、[RootTabSelectionActions.swift](bili/Sources/App/RootTabSelectionActions.swift)、[SearchView.swift](bili/Sources/Features/Search/SearchView.swift) & [SearchTopBar.swift](bili/Sources/Features/Search/SearchTopBar.swift)：在显示搜索 Tab 时将 `.searchable(text:isPresented:prompt:)` + `.searchFocused` 提升至 `TabView` 自身并与 `Tab(value: .search, role: .search)` 原生配对（移除顶部 `DefaultToolbarItem(kind: .search)` 与 `.searchToolbarBehavior(.minimize)` 及对搜索 Tab 点击的拦截），切入或再次点按底部独立圆形搜索按钮时立即展开底部搜索框并聚焦拉起键盘；若用户在设置中隐藏搜索 Tab，则自动回退由 `SearchView` 自行承载 `.searchable`。
+  5. **「我的」页搜索框改为顶部普通样式、随页面上下滑动**：
+     - [MineView.swift](bili/Sources/Features/Mine/MineView.swift)、[MineTopBar.swift](bili/Sources/Features/Mine/MineTopBar.swift) & [MineContentView.swift](bili/Sources/Features/Mine/MineContentView.swift)：移除顶部导航栏 `.minimizedToolbarSearch` 与搜索图标，在 `MineContentView` 的 `Form` 最顶部新增普通样式内联搜索栏（`mine.search.field`，含放大镜图标、清除按钮与取消按钮，移除会抢夺焦点的全局 `simultaneousGesture`），随列表自然上下滚动并保留 `.scrollDismissesKeyboard(.interactively)`。
+  6. **测试更新**：
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testHomeFeedLayoutTitlesReflectAdaptiveNaming` 及 `hasActiveOverlay` 断言。
+     - [AdaptiveLayoutUITests.swift](biliUITests/AdaptiveLayoutUITests.swift) & [MineTopBarUITests.swift](biliUITests/MineTopBarUITests.swift)：补充验证底部搜索 Tab 点击即出现 `SearchField`、「我的」页顶部搜索框可见、筛选/清空正常且随页面滚动上移。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存，`build/logs/adaptive-5fixes-v2.xcresult`，`** TEST SUCCEEDED **`）**：
+    - `AdaptiveLayoutAndPlayerIdentityTests`：**13/13 通过**
+    - `DynamicFeedCategoriesTests`：**4/4 通过**
+    - `PlaybackDetailSharedLayoutTests`：**47/47 通过**
+    - `RootTabBarVisibilityTests`：**3/3 通过**
+    - `AdaptiveLayoutUITests`：**2/2 通过**
+    - `MineTopBarUITests`：**2/2 通过**
+    - 合计 **71/71 通过（0 失败，0 跳过）**。（注：全部用例通过后 Xcode 模拟器诊断采集出现既有 600s 超时日志，测试结论为 `Passed`。）
+- **未验证与待办（明确区分，不推测通过）**：
+  - 本轮验证按默认模拟器规则在 `iPhone 18 Pro Max`（iOS 27.0）执行；`iPhone Duo`（iOS 27.1）模拟器上当前安装的仍是上一提交 `14fc566`，尚未重新安装本轮修复包并目视复核横屏弹窗与瀑布流边框效果。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。

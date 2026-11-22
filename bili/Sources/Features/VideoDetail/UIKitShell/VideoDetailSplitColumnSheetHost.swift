@@ -35,6 +35,10 @@ final class VideoDetailSplitColumnOverlayController: ObservableObject {
     @Published var commentDialogSheet: VideoDetailSplitCommentDialogPayload?
     @Published var inlineComposer: VideoDetailSplitInlineComposerPayload?
 
+    var hasActiveOverlay: Bool {
+        selectionSheet != nil || commentDialogSheet != nil || inlineComposer != nil
+    }
+
     func setSplitColumnMode(_ active: Bool) {
         guard isSplitColumnMode != active else { return }
         isSplitColumnMode = active
@@ -231,9 +235,11 @@ private struct VideoDetailSplitSheetCard<Content: View>: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let cardHeight = max(280, (proxy.size.height * heightFraction).rounded())
-            ZStack(alignment: .bottom) {
+            let cardHeight = max(280, min(proxy.size.height - 20, (proxy.size.height * heightFraction).rounded()))
+            let backdropHeight = max(0, proxy.size.height - cardHeight)
+            VStack(spacing: 0) {
                 Color.black.opacity(0.26)
+                    .frame(width: proxy.size.width, height: backdropHeight + max(0, dragOffset))
                     .contentShape(Rectangle())
                     .onTapGesture { onDismiss() }
 
@@ -262,8 +268,9 @@ private struct VideoDetailSplitSheetCard<Content: View>: View {
                     )
                 )
                 .shadow(color: Color.black.opacity(0.18), radius: 16, y: -4)
-                .offset(y: max(0, dragOffset))
             }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            .clipped()
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("video.detail.splitSheet")

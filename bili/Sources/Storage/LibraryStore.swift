@@ -1786,9 +1786,9 @@ enum HomeFeedLayout: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .doubleColumn:
-            return "双列"
+            return "自适应布局"
         case .borderedDoubleColumn:
-            return "有边框双列"
+            return "有边框自适应布局"
         case .borderedSingleColumn:
             return "有边框单列"
         case .singleColumn:

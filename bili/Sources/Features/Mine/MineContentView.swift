@@ -15,6 +15,8 @@ struct MineContentView: View {
 
     var body: some View {
         Form {
+            inlineSearchSection
+
             if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 normalSections
             } else {
@@ -39,9 +41,59 @@ struct MineContentView: View {
         }
         .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
         .scrollDismissesKeyboard(.interactively)
-        .simultaneousGesture(TapGesture().onEnded {
-            isSearchFocused.wrappedValue = false
-        })
+    }
+
+    private var inlineSearchSection: some View {
+        Section {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
+                TextField("搜索我的页功能", text: $searchText)
+                    .focused(isSearchFocused)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .onSubmit {
+                        isSearchFocused.wrappedValue = false
+                    }
+                    .accessibilityIdentifier("mine.search.field")
+
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清除搜索")
+                    .accessibilityIdentifier("mine.search.clear")
+                }
+
+                if isSearchFocused.wrappedValue || !searchText.isEmpty {
+                    Button("取消") {
+                        searchText = ""
+                        isSearchFocused.wrappedValue = false
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("mine.search.cancel")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.tertiarySystemFill))
+            )
+            .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 2, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
     }
 
     @ViewBuilder

@@ -614,12 +614,14 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
 
         overlay.setSplitColumnMode(true)
         XCTAssertTrue(overlay.isSplitColumnMode)
+        XCTAssertFalse(overlay.hasActiveOverlay)
 
         overlay.selectionSheet = VideoDetailSplitSelectionSheetPayload(
             sectionTitle: "分P",
             items: [],
             selectItem: { _ in }
         )
+        XCTAssertTrue(overlay.hasActiveOverlay)
         overlay.presentInlineComposer(
             ownerID: ObjectIdentifier(ownerA),
             targetID: "root-1",
@@ -636,10 +638,18 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         // Exiting split column mode clears all split overlays and invokes composer onDismiss.
         overlay.setSplitColumnMode(false)
         XCTAssertFalse(overlay.isSplitColumnMode)
+        XCTAssertFalse(overlay.hasActiveOverlay)
         XCTAssertNil(overlay.selectionSheet)
         XCTAssertNil(overlay.commentDialogSheet)
         XCTAssertNil(overlay.inlineComposer)
         XCTAssertEqual(dismissedCount, 1)
+    }
+
+    func testHomeFeedLayoutTitlesReflectAdaptiveNaming() {
+        XCTAssertEqual(HomeFeedLayout.doubleColumn.title, "自适应布局")
+        XCTAssertEqual(HomeFeedLayout.borderedDoubleColumn.title, "有边框自适应布局")
+        XCTAssertEqual(HomeFeedLayout.singleColumn.title, "单列")
+        XCTAssertEqual(HomeFeedLayout.borderedSingleColumn.title, "有边框单列")
     }
 
     func testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle() {

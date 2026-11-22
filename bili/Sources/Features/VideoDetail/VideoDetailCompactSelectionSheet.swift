@@ -187,60 +187,105 @@ struct VideoDetailCompactSelectionSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(displayedItems.enumerated()), id: \.element.id) { index, item in
-                        VideoDetailCompactSelectionRow(
-                            item: item,
-                            select: { selectItem(item) }
-                        )
-                        if index < displayedItems.count - 1 {
-                            Divider()
+        Group {
+            if splitSheetDismiss != nil {
+                VStack(spacing: 0) {
+                    inlineSplitHeader
+                    Divider()
+                    selectionScrollView
+                }
+                .background(Color(.systemBackground))
+            } else {
+                NavigationStack {
+                    selectionScrollView
+                        .hiddenInlineNavigationTitle()
+                        .nativeTopScrollEdgeEffect()
+                        .scrollContentBackground(.hidden)
+                        .background(.clear)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                closeToolbarButton
+                            }
+                            ToolbarItem(placement: .topBarTrailing) {
+                                reverseOrderToolbarButton
+                            }
                         }
-                    }
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
-                .padding(.bottom, 18)
-            }
-            .hiddenInlineNavigationTitle()
-            .nativeTopScrollEdgeEffect()
-            .scrollContentBackground(.hidden)
-            .background(.clear)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        closeSheet()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .tint(.secondary)
-                    .accessibilityLabel("关闭")
-                    .accessibilityIdentifier("video.detail.pageSheet.close")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        withAnimation(.smooth(duration: 0.2)) {
-                            isReverseOrder.toggle()
-                        }
-                    } label: {
-                        Image(systemName: isReverseOrder ? "arrow.down" : "arrow.up")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .tint(.secondary)
-                    .accessibilityLabel(isReverseOrder ? "正序" : "倒序")
-                    .accessibilityIdentifier("video.detail.pageSheet.order")
-                }
+                .presentationDetents([.fraction(0.7)])
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(.clear)
             }
         }
         .accessibilityIdentifier("video.detail.pageSheet")
-        .presentationDetents([.fraction(0.7)])
-        .presentationDragIndicator(.hidden)
-        .presentationBackground(.clear)
+    }
+
+    private var inlineSplitHeader: some View {
+        HStack(spacing: 12) {
+            closeToolbarButton
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(Color(.secondarySystemFill)))
+
+            Text(sectionTitle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+
+            reverseOrderToolbarButton
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(Color(.secondarySystemFill)))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private var selectionScrollView: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(displayedItems.enumerated()), id: \.element.id) { index, item in
+                    VideoDetailCompactSelectionRow(
+                        item: item,
+                        select: { selectItem(item) }
+                    )
+                    if index < displayedItems.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 18)
+        }
+    }
+
+    private var closeToolbarButton: some View {
+        Button {
+            closeSheet()
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .tint(.secondary)
+        .accessibilityLabel("关闭")
+        .accessibilityIdentifier("video.detail.pageSheet.close")
+    }
+
+    private var reverseOrderToolbarButton: some View {
+        Button {
+            withAnimation(.smooth(duration: 0.2)) {
+                isReverseOrder.toggle()
+            }
+        } label: {
+            Image(systemName: isReverseOrder ? "arrow.down" : "arrow.up")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .tint(.secondary)
+        .accessibilityLabel(isReverseOrder ? "正序" : "倒序")
+        .accessibilityIdentifier("video.detail.pageSheet.order")
     }
 }
 

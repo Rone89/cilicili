@@ -25,6 +25,8 @@ struct RootTabView: View {
     @State var liveNavigationPath = NavigationPath()
     @State var mineNavigationPath = NavigationPath()
     @State var rootSearchQueryBuffer = ""
+    @State var isRootSearchPresented = false
+    @State var rootSearchActivationRequestID = 0
     @FocusState private var isRootSearchFocused: Bool
     @State var mineSearchQuery = ""
     @FocusState var isMineSearchFocused: Bool
@@ -147,11 +149,21 @@ struct RootTabView: View {
             }
         }
         .onChange(of: selectedTab) { _, tab in
-            if tab != .search {
+            if tab == .search {
+                if searchNavigationPath.isEmpty {
+                    activateRootSearchField()
+                }
+            } else {
                 isRootSearchFocused = false
+                isRootSearchPresented = false
             }
             if tab != .mine {
                 isMineSearchFocused = false
+            }
+        }
+        .onChange(of: rootSearchActivationRequestID) { _, _ in
+            if selectedTab == .search, searchNavigationPath.isEmpty {
+                activateRootSearchField()
             }
         }
         .onChange(of: searchNavigationPath.count) { _, count in
@@ -215,6 +227,16 @@ struct RootTabView: View {
                     }
                 }
                 .adaptiveRootTabViewStyle(isEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled)
+                .modifier(
+                    RootTabBarSearchableModifier(
+                        isEnabled: displayedRootTabs.contains(.search),
+                        text: rootSearchQueryBinding,
+                        isPresented: $isRootSearchPresented,
+                        isFocused: $isRootSearchFocused,
+                        prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
+                        onSubmit: submitRootSearch
+                    )
+                )
             }
         }
         .toolbarVisibility(visibleRootTabs.count == 1 ? .hidden : .automatic, for: .tabBar)
@@ -306,8 +328,8 @@ struct RootTabView: View {
             isDetailPresented: !detailPath.wrappedValue.isEmpty,
             hidesRootTabBar: visibleRootTabs.count == 1,
             onRootTabTap: selectedTab == tab ? { tabSelection.wrappedValue = showsPageSwitcher ? .home : tab } : nil,
-            capturesSelectedTabTap: tab == .search || showsPageSwitcher,
-            isSearchTab: tab == .search
+            capturesSelectedTabTap: showsPageSwitcher,
+            isSearchTab: false
         )
         .navigationHistoryStack(path: detailPath, rootTitle: tab.title)
         // Configure the native scrolling boundary without adding an overlay or changing safe areas.
@@ -371,6 +393,8 @@ struct RootTabView: View {
                 accessoryStore: searchBottomAccessoryStore,
                 searchText: rootSearchQueryBinding,
                 isSearchFocused: $isRootSearchFocused,
+                activationRequestID: rootSearchActivationRequestID,
+                handlesOwnSearchable: !displayedRootTabs.contains(.search),
                 onSubmit: submitRootSearch
             )
         }
@@ -439,6 +463,20 @@ struct RootTabView: View {
             viewModel.queryChanged()
         } else {
             rootSearchQueryBuffer = viewModel.query
+        }
+    }
+
+    private func activateRootSearchField() {
+        isRootSearchPresented = true
+        Task { @MainActor in
+            await Task.yield()
+            guard selectedTab == .search, searchNavigationPath.isEmpty else { return }
+            isRootSearchFocused = true
+            try? await Task.sleep(for: .milliseconds(90))
+            guard selectedTab == .search, searchNavigationPath.isEmpty, isRootSearchPresented else { return }
+            if !isRootSearchFocused {
+                isRootSearchFocused = true
+            }
         }
     }
 
@@ -519,6 +557,38 @@ private extension View {
             tabViewStyle(.sidebarAdaptable)
         } else {
             self
+        }
+    }
+}
+
+private struct RootTabBarSearchableModifier: ViewModifier {
+    let isEnabled: Bool
+    @Binding var text: String
+    @Binding var isPresented: Bool
+    var isFocused: FocusState<Bool>.Binding
+    let prompt: String
+    let onSubmit: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .searchable(
+                    text: $text,
+                    isPresented: $isPresented,
+                    prompt: prompt
+                )
+                .searchFocused(isFocused)
+                .onSubmit(of: .search) {
+                    isFocused.wrappedValue = false
+                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        isPresented = false
+                    } else {
+                        onSubmit()
+                    }
+                }
+        } else {
+            content
         }
     }
 }

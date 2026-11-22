@@ -247,9 +247,19 @@ final class AdaptiveLayoutUITests: XCTestCase {
         attachScreenshot(app.screenshot(), name: "adaptive-root-dynamic")
 
         tapRootTab(named: "搜索", in: app)
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5), app.debugDescription)
         attachScreenshot(app.screenshot(), name: "adaptive-root-search")
+        let closeSearchButton = app.buttons.matching(
+            NSPredicate(format: "label IN %@", ["Close", "Cancel", "关闭", "取消"])
+        ).firstMatch
+        if closeSearchButton.exists && closeSearchButton.isHittable {
+            closeSearchButton.tap()
+        }
 
         tapRootTab(named: "我的", in: app)
+        let mineSearchField = app.textFields["mine.search.field"].firstMatch
+        XCTAssertTrue(mineSearchField.waitForExistence(timeout: 5), app.debugDescription)
         let settingsHeader = app.staticTexts["设置"]
         let interfaceRow = app.buttons["mine.settings.interface"]
         for _ in 0..<4 where !settingsHeader.exists && !interfaceRow.exists {
