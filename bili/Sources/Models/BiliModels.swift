@@ -263,11 +263,11 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
             return false
         }
         let lower = raw.lowercased()
-        return lower.contains("充电专属")
-            || lower.contains("充电视频")
-            || lower.contains("需充电")
+        // Only invoked on structural API badge / tag / pub_action fields (never user titles).
+        return lower.contains("充电")
             || lower.contains("upower")
-            || lower == "充电"
+            || lower.contains("onlyfans")
+            || lower.contains("动态专属")
     }
 
     nonisolated func mergingFilledValues(from fullDetail: VideoItem) -> VideoItem {
@@ -5372,7 +5372,8 @@ nonisolated struct DynamicFeedItem: Identifiable, Decodable, Hashable {
         if archive?.isChargingExclusive == true {
             return true
         }
-        if VideoItem.isChargingBadgeText(author?.pubAction) {
+        if VideoItem.isChargingBadgeText(author?.pubAction)
+            || VideoItem.isChargingBadgeText(modules?.moduleTag?.content) {
             return true
         }
         if let originalPaid = original?.paidContent,
@@ -5386,6 +5387,7 @@ nonisolated struct DynamicFeedItem: Identifiable, Decodable, Hashable {
             return true
         }
         return VideoItem.isChargingBadgeText(original?.author?.pubAction)
+            || VideoItem.isChargingBadgeText(original?.modules?.moduleTag?.content)
     }
 
     var replyCount: Int? {
@@ -5607,11 +5609,13 @@ nonisolated struct DynamicModules: Decodable, Hashable {
     let moduleAuthor: DynamicAuthor?
     let moduleDynamic: DynamicModuleDynamic?
     let moduleStat: DynamicModuleStat?
+    let moduleTag: RecommendFeedReason?
 
     enum CodingKeys: String, CodingKey {
         case moduleAuthor = "module_author"
         case moduleDynamic = "module_dynamic"
         case moduleStat = "module_stat"
+        case moduleTag = "module_tag"
     }
 }
 

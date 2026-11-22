@@ -42,7 +42,7 @@ struct DynamicFeedScrollContent: View {
         .environment(\.dynamicArticleFeedContext, viewModel.feedKind == .article)
         .modifier(DynamicFeedScrollRestoration(
             viewModel: viewModel,
-            canRefresh: isLoggedIn && !viewModel.isRefreshing && !viewModel.state.isLoading,
+            canRefresh: isLoggedIn && !viewModel.isRefreshing,
             refresh: { refreshRequestID &+= 1 }
         ))
         .contentMargins(.top, 0, for: .scrollContent)
@@ -81,7 +81,7 @@ struct DynamicFeedScrollContent: View {
     }
 
     private func refreshFromNativePull() async {
-        guard isLoggedIn, !viewModel.isRefreshing, !viewModel.state.isLoading else { return }
+        guard isLoggedIn, !viewModel.isRefreshing else { return }
         if viewModel.feedKind != .all {
             topUploaderStripViewModel?.refreshTopUploaderStrip()
         }

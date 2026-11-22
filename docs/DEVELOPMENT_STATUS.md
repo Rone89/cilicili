@@ -3326,3 +3326,19 @@
   - Release 真机编译与 `codesign --verify --deep --strict`：通过。
 - **未验证与待办（明确区分，不推测通过）**：
   - 已原位更新安装并启动至真机 `RCe2027`（`app.bamboo2779.brussels691`），动态页充电视频屏蔽效果待用户在真机下拉刷新复测；未签名 IPA 与 `iPhone Duo` 模拟器仍停留在 `5cfa45f`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（修复动态页下拉刷新易被取消/阻塞，并扩展「充电抢先看 / 动态专属 / module_tag」识别）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `29d7f41` 提交本轮修复，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **动态页下拉刷新防取消与不阻塞**：
+     - [DynamicViewModel.swift](bili/Sources/Features/Dynamic/DynamicViewModel.swift) & [DynamicFeedScrollContent.swift](bili/Sources/Features/Dynamic/DynamicFeedScrollContent.swift)：移除 `refresh()` / `refreshFromNativePull()` 上会被底部 `loadMore` 阻塞的 `!state.isLoading` 守卫；将 `lifecycleCoordinator.refreshPage()` 放入独立的非结构化 MainActor `Task`（`activeRefreshTask`），避免 SwiftUI `.refreshable` 手势或视图更新中途取消在途刷新请求；若刷新出错且已有列表，保持 `.loaded` 状态而非陷入静默 `.failed`。
+  2. **扩展动态页充电视频结构化角标与 `module_tag` 识别**：
+     - [BiliModels.swift](bili/Sources/Models/BiliModels.swift)：`VideoItem.isChargingBadgeText`（仅用于结构化 API 角标/标签/动作字段，不作用于标题）扩展为匹配 `充电`（含「充电抢先看」「充电专属」「充电视频」「充电解锁」「仅充电可见」）、`upower`、`onlyfans`、`动态专属`；`DynamicModules` 新增 `module_tag` 解析并纳入 `DynamicFeedItem.isChargingVideo`。
+     - [VideoRecommendationFilterTests.swift](biliTests/VideoRecommendationFilterTests.swift)：补充 `充电抢先看` 与 `module_tag` 单元测试。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`VideoRecommendationFilterTests`（5/5）与 `DynamicVideoFilterTests`（3/3）共 **8/8 通过（0 失败，0 跳过）**。
+  - Release 真机编译、`codesign --verify --deep --strict` 与原位安装至 `RCe2027`（`app.bamboo2779.brussels691`）：通过（自动拉起时手机处于锁屏状态，需解锁后手动点开）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 动态页下拉刷新与充电视频屏蔽的真机实景效果待用户在 `RCe2027` 解锁打开后复测；未签名 IPA 与 `iPhone Duo` 模拟器仍停留在 `5cfa45f`；尚未推送远端或合入 `main`。

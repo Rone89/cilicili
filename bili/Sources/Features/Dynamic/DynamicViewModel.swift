@@ -27,6 +27,7 @@ final class DynamicViewModel: ObservableObject {
     private var filterCancellable: AnyCancellable?
     private var loadRequestRevision = 0
     private var cachedInitialRefreshTask: Task<Void, Never>?
+    private var activeRefreshTask: Task<Void, Never>?
 
     var hasMoreItems: Bool {
         lifecycleCoordinator.hasMoreItems
@@ -66,6 +67,7 @@ final class DynamicViewModel: ObservableObject {
 
     deinit {
         cachedInitialRefreshTask?.cancel()
+        activeRefreshTask?.cancel()
     }
 
     func loadInitial() async {
@@ -103,32 +105,48 @@ final class DynamicViewModel: ObservableObject {
     }
 
     func refresh() async {
-        guard lifecycleCoordinator.isLoggedIn, !isRefreshing else {
-            if !lifecycleCoordinator.isLoggedIn {
-                prepareLoggedOutState()
-            }
+        guard lifecycleCoordinator.isLoggedIn else {
+            prepareLoggedOutState()
             return
         }
-        guard !state.isLoading else { return }
+        if let existingTask = activeRefreshTask {
+            await existingTask.value
+            return
+        }
         loadRequestRevision &+= 1
         let requestRevision = loadRequestRevision
         cachedInitialRefreshTask?.cancel()
         cachedInitialRefreshTask = nil
         isRefreshing = true
-        defer {
-            isRefreshing = false
-        }
         state = .loading
         refreshTopUploaderStrip()
-        do {
-            let refreshedItems = try await lifecycleCoordinator.refreshPage()
-            guard requestRevision == loadRequestRevision else { return }
-            items = refreshedItems
-            state = .loaded
-        } catch {
-            guard requestRevision == loadRequestRevision else { return }
-            state = .failed(error.localizedDescription)
+
+        // Run the actual network refresh in an unstructured MainActor task so
+        // SwiftUI's `.refreshable` gesture teardown cannot cancel an in-flight
+        // user pull-to-refresh before new items commit.
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if requestRevision == self.loadRequestRevision {
+                    self.isRefreshing = false
+                    self.activeRefreshTask = nil
+                }
+            }
+            do {
+                let refreshedItems = try await self.lifecycleCoordinator.refreshPage()
+                guard requestRevision == self.loadRequestRevision else { return }
+                self.items = refreshedItems
+                self.state = .loaded
+            } catch is CancellationError {
+                guard requestRevision == self.loadRequestRevision else { return }
+                self.state = self.items.isEmpty ? .idle : .loaded
+            } catch {
+                guard requestRevision == self.loadRequestRevision else { return }
+                self.state = self.items.isEmpty ? .failed(error.localizedDescription) : .loaded
+            }
         }
+        activeRefreshTask = task
+        await task.value
     }
 
     func loadMoreIfNeeded(current item: DynamicFeedItem?) async {
@@ -162,6 +180,9 @@ final class DynamicViewModel: ObservableObject {
         loadRequestRevision &+= 1
         cachedInitialRefreshTask?.cancel()
         cachedInitialRefreshTask = nil
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        isRefreshing = false
         lifecycleCoordinator.prepareLoggedOutState()
         items = []
         savedScrollOffset = 0

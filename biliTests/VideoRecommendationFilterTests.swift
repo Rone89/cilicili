@@ -238,6 +238,25 @@ final class VideoRecommendationFilterTests: XCTestCase {
         """.data(using: .utf8)!
         let dynamicNormal = try JSONDecoder().decode(DynamicFeedItem.self, from: dynamicNormalJSON)
         XCTAssertFalse(dynamicNormal.isChargingVideo)
+
+        let dynamicEarlyAccessJSON = """
+        {
+          "id_str": "dyn-early-access",
+          "type": "DYNAMIC_TYPE_AV",
+          "modules": {
+            "module_author": {"mid": 1, "name": "UP", "pub_action": "投稿了视频"},
+            "module_tag": {"text": "充电抢先看"},
+            "module_dynamic": {
+              "major": {
+                "type": "MAJOR_TYPE_ARCHIVE",
+                "archive": {"bvid": "BV1early", "title": "普通标题", "type": 1, "badge": {"text": "充电抢先看"}}
+              }
+            }
+          }
+        }
+        """.data(using: .utf8)!
+        let dynamicEarlyAccess = try JSONDecoder().decode(DynamicFeedItem.self, from: dynamicEarlyAccessJSON)
+        XCTAssertTrue(dynamicEarlyAccess.isChargingVideo)
     }
 
     private func video(
