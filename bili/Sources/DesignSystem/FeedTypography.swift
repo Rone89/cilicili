@@ -311,7 +311,7 @@ private struct StandardPageHorizontalContentMarginsModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.width
+                AdaptiveLayoutPolicy.safeContentWidth(for: proxy)
             } action: { width in
                 if abs(containerWidth - width) > 0.5 {
                     containerWidth = width

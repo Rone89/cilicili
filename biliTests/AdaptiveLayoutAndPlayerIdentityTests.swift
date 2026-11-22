@@ -921,6 +921,35 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
                 safeAreaInsets: EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
             )
         )
+
+        // ScrollView GeometryProxy on Duo folded cover may report full 466pt width
+        // (with or without horizontal safeAreaInsets); safeContentWidth must resolve
+        // to the 381pt left 9:16 strip without double-subtracting.
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.safeContentWidth(
+                containerSize: duoFoldedBounds.size,
+                safeAreaInsets: duoFoldedInsets
+            ),
+            381
+        )
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.safeContentWidth(
+                containerSize: duoFoldedBounds.size,
+                safeAreaInsets: EdgeInsets(),
+                windowBoundsSize: duoFoldedBounds.size,
+                windowSafeAreaInsets: duoFoldedInsets
+            ),
+            381
+        )
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.safeContentWidth(
+                containerSize: CGSize(width: 382, height: 678),
+                safeAreaInsets: EdgeInsets(),
+                windowBoundsSize: duoFoldedBounds.size,
+                windowSafeAreaInsets: duoFoldedInsets
+            ),
+            381
+        )
     }
 
     private func makeLocalTestVideo() async throws -> URL {

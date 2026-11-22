@@ -305,6 +305,61 @@ nonisolated enum AdaptiveLayoutPolicy {
         return (minX: containerBounds.minX + safeLeading, width: contentWidth)
     }
 
+    /// Resolves the usable horizontal content width from a container's size and
+    /// safe area insets, ensuring scroll views whose background extends under
+    /// iPhone Duo's folded trailing chrome rail still measure only the left
+    /// `height:width = 16:9` foreground region without double-subtracting insets.
+    static func safeContentWidth(
+        containerSize: CGSize,
+        safeAreaInsets: EdgeInsets,
+        windowBoundsSize: CGSize? = nil,
+        windowSafeAreaInsets: EdgeInsets? = nil
+    ) -> CGFloat {
+        let containerBounds = CGRect(origin: .zero, size: containerSize)
+        if let duoBounds = duoFoldedContentHorizontalBounds(
+            containerBounds: containerBounds,
+            safeAreaInsets: safeAreaInsets
+        ) {
+            return duoBounds.width
+        }
+        let horizontalInset = max(safeAreaInsets.leading, 0) + max(safeAreaInsets.trailing, 0)
+        var resolvedWidth = max(containerSize.width - horizontalInset, 0)
+        if let windowBoundsSize,
+           let windowSafeAreaInsets,
+           let windowDuoBounds = duoFoldedContentHorizontalBounds(
+               containerBounds: CGRect(origin: .zero, size: windowBoundsSize),
+               safeAreaInsets: windowSafeAreaInsets
+           ) {
+            // If `containerSize.width` spans the full window (e.g. a ScrollView
+            // extending under the right chrome rail without propagating horizontal
+            // safeAreaInsets into its GeometryProxy), clamp directly to the left
+            // 9:16 Duo folded content width. Even when already safe-area-inset
+            // (e.g. 382pt vs 381pt), `min` keeps content within the 16:9 strip.
+            resolvedWidth = min(resolvedWidth, windowDuoBounds.width)
+        }
+        return resolvedWidth
+    }
+
+    @MainActor
+    static func safeContentWidth(for geometry: GeometryProxy) -> CGFloat {
+        let window = UIApplication.shared.playbackDetailForegroundKeyWindow
+        let windowSafeAreaInsets = window.map {
+            let insets = $0.safeAreaInsets
+            return EdgeInsets(
+                top: insets.top,
+                leading: insets.left,
+                bottom: insets.bottom,
+                trailing: insets.right
+            )
+        }
+        return safeContentWidth(
+            containerSize: geometry.size,
+            safeAreaInsets: geometry.safeAreaInsets,
+            windowBoundsSize: window?.bounds.size,
+            windowSafeAreaInsets: windowSafeAreaInsets
+        )
+    }
+
     /// Whether the active container/window is the unfolded inner display of an
     /// iPhone Duo (phone idiom with short side >= 540pt, covering both portrait
     /// `669×951pt` and landscape `951×669pt`). Excludes the folded Duo cover

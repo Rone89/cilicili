@@ -48,7 +48,10 @@ struct LiveFeedView: View {
             }
         }
         .onGeometryChange(for: CGSize.self) { geometry in
-            geometry.size
+            CGSize(
+                width: AdaptiveLayoutPolicy.safeContentWidth(for: geometry),
+                height: geometry.size.height
+            )
         } action: { _, size in
             let rounded = CGSize(width: size.width.rounded(.down), height: size.height.rounded(.down))
             guard abs(rounded.width - containerSize.width) > 0.5

@@ -3207,5 +3207,22 @@
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
     - 单元测试（`/tmp/duo-folded-strip-unit.xcresult`，`** TEST SUCCEEDED **`）：`AdaptiveLayoutAndPlayerIdentityTests`（16/16）、`DynamicFeedCategoriesTests`（4/4）、`PlaybackDetailSharedLayoutTests`（47/47）、`RootTabBarVisibilityTests`（3/3）——合计 **70/70 通过（0 失败，0 跳过）**。
 - **未验证与待办（明确区分，不推测通过）**：
-  - `iPhone Duo`（iOS 27.1）模拟器上当前运行的仍是上一提交 `61c43f08`，本轮折叠态左侧 16:9 内容区与右侧背景延伸改动尚未重新安装至 `iPhone Duo`（或真机）实景验证（需用户指示后再安装）。
+  - 按用户指令已将 `9d92626` 构建安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `50714`）；折叠态外屏左侧高宽比 16:9 前景约束、右侧控件下方背景延伸以及浅色/深色模式状态栏可读性待用户在 `iPhone Duo` 上实景体验验收。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（修复 iPhone Duo 折叠态动态详情页左右裁切与滚动容器安全宽度测量）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `9d92626` 提交本轮修复，未推送远端、未合入 `main`）。
+- **根因与已实现改动**：
+  1. **根因**：`iPhone Duo` 折叠态外屏上 `ScrollView` 为让背景延伸到右侧 `84pt` 控件栏下方，自身外框宽为 `466pt`（仅内部滚动内容安全区自动收窄至 `382pt`）；`DynamicDetailView` 的 `.onGeometryChange` 直接取 `geometry.size.width`（`466pt`）计算 `detailContentWidth`，把 `DynamicFeedCard` 与外层 `VStack` 撑宽至 `466pt`，再经 `.adaptiveReadableWidth()` 在 `382pt` 内容区内居中，导致动态正文和下方评论区整体左右各溢出约 `42pt`。
+  2. **修复**：
+     - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)：新增 `safeContentWidth(containerSize:safeAreaInsets:windowBoundsSize:windowSafeAreaInsets:)` 与 `safeContentWidth(for: GeometryProxy)`，在折叠态外屏下统一将滚动容器可用前景宽度收口至左侧高宽比 16:9 长条区（`381pt`），且不重复扣除已应用的安全区。
+     - [DynamicFeedCard.swift](bili/Sources/Features/Dynamic/DynamicFeedCard.swift)、[LiveFeedView.swift](bili/Sources/Features/Live/LiveFeedView.swift)、[SearchListView.swift](bili/Sources/Features/Search/SearchListView.swift) & [FeedTypography.swift](bili/Sources/DesignSystem/FeedTypography.swift)：将挂在滚动容器上的宽度测量统一切换为 `AdaptiveLayoutPolicy.safeContentWidth(for:)`。
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：补充 `safeContentWidth` 在全宽带安全区、全宽无安全区回退窗口安全区以及已扣除安全区三种场景的单元测试断言。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - `AdaptiveLayoutAndPlayerIdentityTests`（`/tmp/duo-dynamic-detail-unit.xcresult`，`** TEST SUCCEEDED **`）：**16/16 通过（0 失败，0 跳过）**。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 已将本轮修复增量构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `53391`）；动态详情页、直播列表与搜索页在折叠态外屏上的实景显示待用户确认。
   - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
