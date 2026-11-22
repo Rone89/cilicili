@@ -24,11 +24,12 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                 // NavigationStack inside the parent VideoDetail NavigationStack destination.
                 VStack(spacing: 0) {
                     inlineSplitHeader
-                    Divider()
                     commentContent
+                        .scrollContentBackground(.hidden)
+                        .background(.clear)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .background(Color(.systemBackground))
+                .background(.clear)
             } else {
                 NavigationStack {
                     commentContent
@@ -88,10 +89,11 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color(.secondarySystemFill)))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel("返回")
 
             Spacer()
@@ -100,14 +102,16 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color(.secondarySystemFill)))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
             .accessibilityLabel("刷新评论")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
     }
 
     private func openProfile(_ owner: VideoOwner) {

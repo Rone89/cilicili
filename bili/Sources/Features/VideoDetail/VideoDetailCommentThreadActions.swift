@@ -135,7 +135,10 @@ extension VideoDetailViewModel {
     }
 
     func loadReplies(for comment: Comment) async {
-        guard replyThreads[comment.id] == nil else { return }
+        guard !(replyThreadStates[comment.id]?.isLoading ?? false) else { return }
+        if replyThreads[comment.id] != nil, replyThreadStates[comment.id] == .loaded {
+            return
+        }
         replyThreadPages[comment.id] = 0
         replyThreadHasMore[comment.id] = true
         await loadReplyPage(for: comment, reset: true)

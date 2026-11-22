@@ -32,6 +32,13 @@ extension VideoDetailViewModel {
             replyThreadHasMore[comment.id] = page.hasMoreReplyPages(requestedPage: nextPage)
             replyThreadStates[comment.id] = .loaded
         } catch {
+            if Self.isCommentLoadCancellation(error) {
+                if isCurrentReplyThreadLoad(commentID: comment.id, token: token, target: target),
+                   replyThreadStates[comment.id]?.isLoading == true {
+                    replyThreadStates[comment.id] = .idle
+                }
+                return
+            }
             guard isCurrentReplyThreadLoad(commentID: comment.id, token: token, target: target) else {
                 return
             }
@@ -41,5 +48,25 @@ extension VideoDetailViewModel {
             // Preserve the last successful page so retry requests the same next page.
             replyThreadStates[comment.id] = .failed(error.localizedDescription)
         }
+    }
+
+    static func isCommentLoadCancellation(_ error: Error) -> Bool {
+        if Task.isCancelled || error is CancellationError {
+            return true
+        }
+        if let urlError = error as? URLError, urlError.code == .cancelled {
+            return true
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+            return true
+        }
+        if nsError.domain == "Swift.CancellationError" {
+            return true
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isCommentLoadCancellation(underlying)
+        }
+        return false
     }
 }

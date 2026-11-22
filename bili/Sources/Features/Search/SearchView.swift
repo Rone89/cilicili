@@ -9,7 +9,7 @@ struct SearchView: View {
     @Binding var searchText: String
     var isSearchFocused: FocusState<Bool>.Binding
     let activationRequestID: Int
-    let handlesOwnSearchable: Bool
+    let usesTabBarSearchIntegration: Bool
     let onSubmit: () -> Void
     @State private var isSearching = false
     @State private var handledActivationRequestID = 0
@@ -21,7 +21,7 @@ struct SearchView: View {
         searchText: Binding<String>,
         isSearchFocused: FocusState<Bool>.Binding,
         activationRequestID: Int = 0,
-        handlesOwnSearchable: Bool = true,
+        usesTabBarSearchIntegration: Bool = false,
         onSubmit: @escaping () -> Void
     ) {
         self.holder = holder
@@ -29,55 +29,67 @@ struct SearchView: View {
         _searchText = searchText
         self.isSearchFocused = isSearchFocused
         self.activationRequestID = activationRequestID
-        self.handlesOwnSearchable = handlesOwnSearchable
+        self.usesTabBarSearchIntegration = usesTabBarSearchIntegration
         self.onSubmit = onSubmit
     }
 
     var body: some View {
-        Group {
-            if let viewModel = holder.viewModel {
-                SearchContentView(
-                    viewModel: viewModel,
-                    showsHotSearches: libraryStore.showsHotSearches,
-                    accessoryStore: accessoryStore,
-                    titleState: titleState
-                )
-            } else {
-                SearchLoadingList()
-                    .task {
-                        holder.configure(api: dependencies.api)
+        if usesTabBarSearchIntegration {
+            searchContent
+                .toolbar {
+                    SearchTopBar(
+                        titleState: titleState,
+                        isRootTabContent: isRootTabContent,
+                        viewModel: holder.viewModel
+                    )
                 }
-            }
+                .toolbarVisibility(.visible, for: .navigationBar)
+                .toolbarTitleDisplayMode(.inline)
+        } else {
+            searchContent
+                .toolbar {
+                    SearchTopBar(
+                        titleState: titleState,
+                        isRootTabContent: isRootTabContent,
+                        viewModel: holder.viewModel
+                    )
+                }
+                .toolbarVisibility(.visible, for: .navigationBar)
+                .toolbarTitleDisplayMode(.inline)
+                .modifier(
+                    SearchViewSearchableModifier(
+                        usesTabBarSearchIntegration: false,
+                        searchText: $searchText,
+                        isSearching: $isSearching,
+                        isSearchFocused: isSearchFocused,
+                        prompt: holder.viewModel?.searchPrompt ?? "搜索",
+                        onSubmit: onSubmit
+                    )
+                )
+                .onAppear {
+                    activateSearchIfRequested()
+                }
+                .onChange(of: activationRequestID) { _, _ in
+                    activateSearchIfRequested()
+                }
         }
-        .modifier(
-            SearchViewOwnSearchableModifier(
-                isEnabled: handlesOwnSearchable,
-                searchText: $searchText,
-                isSearching: $isSearching,
-                isSearchFocused: isSearchFocused,
-                prompt: holder.viewModel?.searchPrompt ?? "搜索",
-                onSubmit: onSubmit
+    }
+
+    @ViewBuilder
+    private var searchContent: some View {
+        if let viewModel = holder.viewModel {
+            SearchContentView(
+                viewModel: viewModel,
+                showsHotSearches: libraryStore.showsHotSearches,
+                accessoryStore: accessoryStore,
+                titleState: titleState
             )
-        )
-        .onAppear {
-            if handlesOwnSearchable {
-                activateSearchIfRequested()
-            }
+        } else {
+            SearchLoadingList()
+                .task {
+                    holder.configure(api: dependencies.api)
+                }
         }
-        .onChange(of: activationRequestID) { _, _ in
-            if handlesOwnSearchable {
-                activateSearchIfRequested()
-            }
-        }
-        .toolbar {
-            SearchTopBar(
-                titleState: titleState,
-                isRootTabContent: isRootTabContent,
-                viewModel: holder.viewModel
-            )
-        }
-        .toolbarVisibility(.visible, for: .navigationBar)
-        .toolbarTitleDisplayMode(.inline)
     }
 
     private func activateSearchIfRequested() {
@@ -97,8 +109,8 @@ struct SearchView: View {
     }
 }
 
-private struct SearchViewOwnSearchableModifier: ViewModifier {
-    let isEnabled: Bool
+private struct SearchViewSearchableModifier: ViewModifier {
+    let usesTabBarSearchIntegration: Bool
     @Binding var searchText: String
     @Binding var isSearching: Bool
     var isSearchFocused: FocusState<Bool>.Binding
@@ -107,7 +119,11 @@ private struct SearchViewOwnSearchableModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if isEnabled {
+        if usesTabBarSearchIntegration {
+            // Search is owned by the root `TabView` (`Tab(role: .search)` + `.searchable`) so iOS 26/27
+            // morphs the bottom TabBar into the Liquid Glass search field without duplicating a top bar.
+            content
+        } else {
             content
                 .searchable(
                     text: $searchText,
@@ -129,8 +145,6 @@ private struct SearchViewOwnSearchableModifier: ViewModifier {
                         onSubmit()
                     }
                 }
-        } else {
-            content
         }
     }
 }

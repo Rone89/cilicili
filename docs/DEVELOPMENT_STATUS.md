@@ -3136,3 +3136,31 @@
 - **未验证与待办（明确区分，不推测通过）**：
   - 本轮验证按默认模拟器规则在 `iPhone 18 Pro Max`（iOS 27.0）执行；`iPhone Duo`（iOS 27.1）模拟器上当前安装的仍是上一提交 `14fc566`，尚未重新安装本轮修复包并目视复核横屏弹窗与瀑布流边框效果。
   - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（3 项精修：底部 TabBar 原生液态玻璃搜索栏、横屏右栏独立 UIKit 液态玻璃弹窗重构、评论回复弹窗自动加载修复）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `822850d` 提交本轮 3 项修复，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **底部 TabBar 原生液态玻璃搜索栏（系统「照片」同款交互）**：
+     - 根因定位：iOS 26/27 的 `UISearchTab` 底部 TabBar 变形需要同时满足 4 个条件——（a）`Tab(value: .search, role: .search)` 不传自定义 `label:`；（b）兄弟 Tab 不能用 `ForEach` 动态生成而需静态条件分支声明；（c）`UISearchTab` 直接承载 `NavigationStack`（不能在 `NavigationStack` 外层包裹 `.coordinatesRootTabBarTransitions(...)` 这类 `UIViewControllerRepresentable`）；（d）`.searchable(...)` 无条件挂在搜索 `NavigationStack` 根视图上、位于顶部 `.toolbar` 之后、`.navigationDestination` 之前，并配合 `TabView` 上的 `.tabViewSearchActivation(.searchTabSelection)`。
+     - [RootTabView.swift](bili/Sources/App/RootTabView.swift) & [SearchView.swift](bili/Sources/Features/Search/SearchView.swift)：将 `TabView` 拆为按可见 Tab 静态 `if` 声明 + 无自定义标签 `Tab(value: .search, role: .search)`；新增专属 `searchRootTabNavigationStack` 将 `.coordinatesRootTabBarTransitions(...)` 移入 `NavigationStack` 内部并直接挂载 `.searchable(...)` + `.searchPresentationToolbarBehavior(.avoidHidingContent)`；首页/动态/我的顶部完全无搜索条泄漏，右下角呈现独立圆形液态玻璃 `[🔍]` 按钮，点击后底部 TabBar 原生变形为 `[🔍 搜索视频]` + `[✕]`（保留顶部「搜索」与筛选按钮），点 `[✕]` 自动恢复上一个 Tab；隐藏搜索 Tab 时仍由 `SearchView` 回退承载搜索。
+  2. **横屏双栏视频详情右栏弹窗重构为原生 UIKit 液态玻璃独立宿主（解决无玻璃质感与掉帧卡顿）**：
+     - 根因定位：原先横屏右栏弹窗是嵌在 `VideoDetailSwiftUIContainer.body` 里的自定义不透明 SwiftUI 卡片，且 `VideoDetailSwiftUIContainer` 直接 `@ObservedObject` 监听 `splitColumnOverlay`、加上 `updateSheetRoute` 每次都重建 `hostingController.rootView = makeRootView()`，导致拖拽/滚动触发整页 SwiftUI 重绘卡顿并取消子视图 `.task`。
+     - [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift)：重构为独立兄弟 UIKit 容器 `VideoDetailSplitColumnSheetContainerController` + `PassthroughSplitOverlayView` + `SplitLiquidGlassSheetPresenter`，采用 iOS 26/27 原生 `UIVisualEffectView(effect: UIGlassEffect(style: .regular))`（`28pt` 连续顶部圆角 + 环境投影 + 抓手条），并用 `UIPanGestureRecognizer` + `UIViewPropertyAnimator` 直接在 `CALayer` `transform` 层驱动 120Hz 跟手拖拽与弹簧收放（支持选集/评论楼中楼/二级对话/发评输入 4 层独立呈现，且严格裁切在右侧 `layout.contentFrame` 不遮挡左侧播放器）。
+     - [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift)：移除 `body` 内的 SwiftUI 弹窗层与对 `splitColumnOverlay` 的直接观察；将 `splitSheetContainer` 挂载为 `hostingController` 之上的同级子控制器；`updateSheetRoute` 直接转发到 `splitSheetContainer` 而不再重建 `hostingController.rootView`。
+     - [VideoDetailCompactSelectionSheet.swift](bili/Sources/Features/VideoDetail/VideoDetailCompactSelectionSheet.swift) & [CommentOwnerProfilePresentation.swift](bili/Sources/Features/VideoDetail/CommentOwnerProfilePresentation.swift)：右栏内联态顶栏与列表背景设为透明（`.background(.clear)` + `.scrollContentBackground(.hidden)`），关闭/排序/刷新按钮采用原生圆形 `.glassEffect(.regular.interactive(), in: .circle)`。
+  3. **修复视频评论区评论弹窗需手动点刷新才显示回复**：
+     - 根因定位：弹窗切换/首帧布局引发初始 `.task` 取消时，`loadReplyPage` / `loadDialogPage` 的 `catch` 未识别取消错误（含 `URLSession` 桥接后的 `URLError.cancelled` / `NSError(domain: "Swift.CancellationError")`），错误写入 `replyThreads[comment.id] = []`（非 `nil`）并置 `.failed`，导致后续 `loadReplies` 命中缓存短路不再自动请求；同时 `updateSheetRoute` 重建 `rootView` 也会打断首轮 `.task`。
+     - [VideoDetailCommentReplyPageActions.swift](bili/Sources/Features/VideoDetail/VideoDetailCommentReplyPageActions.swift)、[VideoDetailCommentThreadActions.swift](bili/Sources/Features/VideoDetail/VideoDetailCommentThreadActions.swift) & [VideoDetailCommentDialogActions.swift](bili/Sources/Features/VideoDetail/VideoDetailCommentDialogActions.swift)：新增 `isCommentLoadCancellation(_:)` 统一识别 `Task.isCancelled`、`CancellationError`、`URLError.cancelled` 及桥接底层取消错误，取消时将 `.loading` 干净复位为 `.idle` 且不写入空数组；`loadReplies` / `loadDialog` 仅在已 `.loaded` 时短路，打开评论弹窗即自动加载完整回复。
+  4. **测试补充**：
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testCancelledCommentReplyLoadResetsToIdleAndAutoLoadsOnRetry` 验证取消复位与二次自动加载。
+     - [AdaptiveLayoutUITests.swift](biliUITests/AdaptiveLayoutUITests.swift)：补充紧凑屏搜索框必须位于屏幕下半区底部 TabBar 内的坐标断言（`searchField.frame.minY > rootWindow.frame.midY`），并兼容 `DefaultTabLabel` 的中英文标签。
+- **已验证（于最后一次代码改动后在模拟器执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - 单元测试（`/tmp/adaptive-final-unit.xcresult`，`Passed`）：`AdaptiveLayoutAndPlayerIdentityTests`（14/14）、`DynamicFeedCategoriesTests`（4/4）、`PlaybackDetailSharedLayoutTests`（47/47）、`RootTabBarVisibilityTests`（3/3）——合计 **68/68 通过（0 失败，0 跳过）**。
+    - UI 测试（`/tmp/adaptive-final-ui.xcresult`，`Passed`）：`AdaptiveLayoutUITests`（2/2）、`MineTopBarUITests`（2/2）——合计 **4/4 通过（0 失败，0 跳过）**。
+    - 总计 **72/72 通过（0 失败，0 跳过）**，并已目视核对导出的 `iPhone 18 Pro Max` 首页/动态/搜索/我的截图（首页/动态/我的顶部无搜索条且右下角为独立液态玻璃 `[🔍]`；搜索页保留顶部「搜索」+ 筛选按钮且底部 TabBar 原生变形为液态玻璃 `[🔍 搜索视频]` + `[✕]`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 本轮遵循 `AGENTS.md` 默认模拟器约束，仅在 `iPhone 18 Pro Max`（iOS 27.0）完成自动化与截图验证；`iPhone Duo`（iOS 27.1）与 `iPad` 横屏双栏下的右栏 `UIGlassEffect` 液态玻璃弹窗手感、拖拽流畅度以及评论弹窗真实网络加载体验尚未安装到 `iPhone Duo` 模拟器或真机目视实测（待用户明确指令后再安装）。
+  - 真机 `RCe2027` 仍停留在 `21f8e57`；尚未推送远端或合入 `main`。

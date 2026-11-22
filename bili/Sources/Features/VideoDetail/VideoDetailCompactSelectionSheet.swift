@@ -191,10 +191,11 @@ struct VideoDetailCompactSelectionSheet: View {
             if splitSheetDismiss != nil {
                 VStack(spacing: 0) {
                     inlineSplitHeader
-                    Divider()
                     selectionScrollView
+                        .scrollContentBackground(.hidden)
+                        .background(.clear)
                 }
-                .background(Color(.systemBackground))
+                .background(.clear)
             } else {
                 NavigationStack {
                     selectionScrollView
@@ -222,8 +223,8 @@ struct VideoDetailCompactSelectionSheet: View {
     private var inlineSplitHeader: some View {
         HStack(spacing: 12) {
             closeToolbarButton
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(Color(.secondarySystemFill)))
+                .frame(width: 36, height: 36)
+                .glassEffect(.regular.interactive(), in: .circle)
 
             Text(sectionTitle)
                 .font(.subheadline.weight(.semibold))
@@ -232,11 +233,12 @@ struct VideoDetailCompactSelectionSheet: View {
                 .frame(maxWidth: .infinity)
 
             reverseOrderToolbarButton
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(Color(.secondarySystemFill)))
+                .frame(width: 36, height: 36)
+                .glassEffect(.regular.interactive(), in: .circle)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
     }
 
     private var selectionScrollView: some View {

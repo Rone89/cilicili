@@ -246,9 +246,16 @@ final class AdaptiveLayoutUITests: XCTestCase {
         tapRootTab(named: "动态", in: app)
         attachScreenshot(app.screenshot(), name: "adaptive-root-dynamic")
 
-        tapRootTab(named: "搜索", in: app)
+        tapRootTab(named: "搜索", aliases: ["Search"], in: app)
         let searchField = app.searchFields.firstMatch
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), app.debugDescription)
+        if rootWindow.frame.width < 700 {
+            XCTAssertGreaterThan(
+                searchField.frame.minY,
+                rootWindow.frame.midY,
+                "Search field should morph into the bottom TabBar on iPhone: field=\(searchField.frame) window=\(rootWindow.frame)"
+            )
+        }
         attachScreenshot(app.screenshot(), name: "adaptive-root-search")
         let closeSearchButton = app.buttons.matching(
             NSPredicate(format: "label IN %@", ["Close", "Cancel", "关闭", "取消"])
@@ -273,20 +280,28 @@ final class AdaptiveLayoutUITests: XCTestCase {
         attachScreenshot(app.screenshot(), name: "adaptive-root-mine")
     }
 
-    private func tapRootTab(named title: String, in app: XCUIApplication) {
-        let tabBarButton = app.tabBars.buttons[title].firstMatch
-        if tabBarButton.exists && tabBarButton.isHittable {
-            tabBarButton.tap()
-            return
+    private func tapRootTab(named title: String, aliases: [String] = [], in app: XCUIApplication) {
+        let candidates = [title] + aliases
+        for name in candidates {
+            let tabBarButton = app.tabBars.buttons[name].firstMatch
+            if tabBarButton.exists && tabBarButton.isHittable {
+                tabBarButton.tap()
+                return
+            }
         }
-        let button = app.buttons[title].firstMatch
-        if button.waitForExistence(timeout: 3) && button.isHittable {
-            button.tap()
-            return
+        for name in candidates {
+            let button = app.buttons[name].firstMatch
+            if button.waitForExistence(timeout: 2) && button.isHittable {
+                button.tap()
+                return
+            }
         }
-        let staticText = app.staticTexts[title].firstMatch
-        if staticText.waitForExistence(timeout: 3) {
-            staticText.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        for name in candidates {
+            let staticText = app.staticTexts[name].firstMatch
+            if staticText.waitForExistence(timeout: 2) {
+                staticText.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                return
+            }
         }
     }
 

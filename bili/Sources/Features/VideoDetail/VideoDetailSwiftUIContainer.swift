@@ -21,6 +21,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     @Published private(set) var isBareSurfaceTransitionActive = false
     @Published private(set) var retainsChromeDuringBareSurfaceTransition = false
     private(set) var playerFrame = CGRect.zero
+    private(set) var splitContentFrame = CGRect.zero
+    private(set) var isTwoColumnSplitActive = false
+    var onSplitContentGeometryChange: ((CGRect, Bool) -> Void)?
     #if DEBUG
         let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
     #endif
@@ -258,6 +261,12 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             #if DEBUG
                 playerFrameUpdates.send(playerFrame)
             #endif
+        }
+        let nextSplitActive = layout.adaptiveMode == .twoColumnSplit && !layout.usesFullscreenLayout
+        if splitContentFrame != layout.contentFrame || isTwoColumnSplitActive != nextSplitActive {
+            splitContentFrame = layout.contentFrame
+            isTwoColumnSplitActive = nextSplitActive
+            onSplitContentGeometryChange?(layout.contentFrame, nextSplitActive)
         }
         if contentState.hidesBottomToolbar != layout.usesFullscreenLayout {
             contentState.hidesBottomToolbar = layout.usesFullscreenLayout
@@ -804,7 +813,7 @@ struct VideoDetailSwiftUIContainer: View {
     @ObservedObject var rotationCoordinator: PlaybackRotationCoordinator
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
-    @ObservedObject var splitColumnOverlay: VideoDetailSplitColumnOverlayController
+    let splitColumnOverlay: VideoDetailSplitColumnOverlayController
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     let dependencies: AppDependencies
     let onShowNetworkDiagnostics: () -> Void
@@ -841,13 +850,6 @@ struct VideoDetailSwiftUIContainer: View {
                 )
                 : dependencies.libraryStore.standardPageHorizontalInset
             let contentBounds = layout.contentFrame.size
-            let isSplitCommentThreadPresented: Bool = {
-                if case .commentThread = sheetRoute { return true }
-                return false
-            }()
-            let isSplitOverlayPresented = layout.adaptiveMode == .twoColumnSplit
-                && !layout.usesFullscreenLayout
-                && (splitColumnOverlay.hasActiveOverlay || isSplitCommentThreadPresented)
 
             ZStack(alignment: .topLeading) {
                 VideoDetailShellContentView(
@@ -923,7 +925,6 @@ struct VideoDetailSwiftUIContainer: View {
                 .opacity(layout.usesFullscreenLayout ? 0 : 1)
                 .allowsHitTesting(
                     !layout.usesFullscreenLayout
-                        && !isSplitOverlayPresented
                         && !model.contentState.suppressesInteractiveContentActions
                 )
                 .disablingRotationTransaction(
@@ -963,24 +964,7 @@ struct VideoDetailSwiftUIContainer: View {
                         alignment: .bottom
                     )
                     .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
-                    .opacity(isSplitOverlayPresented ? 0 : 1)
-                    .allowsHitTesting(!isSplitOverlayPresented)
                     .zIndex(4)
-
-                    VideoDetailSplitColumnSheetHost(
-                        overlay: splitColumnOverlay,
-                        viewModel: viewModel,
-                        libraryStore: dependencies.libraryStore,
-                        sheetRoute: $sheetRoute,
-                        submitReply: submitReply
-                    )
-                    .frame(
-                        width: layout.contentFrame.width,
-                        height: layout.contentFrame.height
-                    )
-                    .clipped()
-                    .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
-                    .zIndex(5)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
@@ -988,14 +972,6 @@ struct VideoDetailSwiftUIContainer: View {
                 DispatchQueue.main.async {
                     model.synchronize(layout: layout)
                     model.updateCollapsedChrome(bounds: proxy.size)
-                    splitColumnOverlay.setSplitColumnMode(
-                        layout.adaptiveMode == .twoColumnSplit && !layout.usesFullscreenLayout
-                    )
-                }
-            }
-            .onChange(of: layout.adaptiveMode == .twoColumnSplit && !layout.usesFullscreenLayout) { _, isSplit in
-                DispatchQueue.main.async {
-                    splitColumnOverlay.setSplitColumnMode(isSplit)
                 }
             }
         }
@@ -1070,6 +1046,21 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
     private lazy var hostingController: UIHostingController<VideoDetailSwiftUIContainer> = {
         UIHostingController(rootView: makeRootView())
+    }()
+
+    private lazy var splitSheetContainer: VideoDetailSplitColumnSheetContainerController = {
+        VideoDetailSplitColumnSheetContainerController(
+            overlay: splitColumnOverlay,
+            viewModel: viewModel,
+            dependencies: dependencies,
+            submitReply: submitReply,
+            onDismissCommentThreadRoute: { [weak self] in
+                guard let self else { return }
+                if case .commentThread = self.sheetRoute.wrappedValue {
+                    self.sheetRoute.wrappedValue = nil
+                }
+            }
+        )
     }()
 
     init(
@@ -1147,6 +1138,15 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         hostingController.didMove(toParent: self)
+        addChild(splitSheetContainer)
+        splitSheetContainer.view.frame = contentModel.splitContentFrame
+        splitSheetContainer.view.isHidden = !contentModel.isTwoColumnSplitActive
+        view.addSubview(splitSheetContainer.view)
+        splitSheetContainer.didMove(toParent: self)
+        contentModel.onSplitContentGeometryChange = { [weak self] frame, isSplitActive in
+            self?.splitSheetContainer.updateGeometry(frame: frame, isSplitActive: isSplitActive)
+        }
+        syncSplitSheetCommentThread()
         #if DEBUG
             rotationDiagnosticsAccessibilityView.isAccessibilityElement = true
             rotationDiagnosticsAccessibilityView.accessibilityIdentifier = "ui.videoDetail.rotationDiagnostics"
@@ -1299,11 +1299,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     }
 
     var hasActiveSplitColumnOverlay: Bool {
-        if splitColumnOverlay.hasActiveOverlay { return true }
-        if splitColumnOverlay.isSplitColumnMode, case .commentThread = sheetRoute.wrappedValue {
-            return true
-        }
-        return false
+        splitSheetContainer.hasVisibleOverlay || splitColumnOverlay.hasActiveOverlay
     }
 
     func navigateBack() {
@@ -1366,7 +1362,15 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         sheetRoute = binding
         guard nextID != lastSheetRouteID else { return }
         lastSheetRouteID = nextID
-        hostingController.rootView = makeRootView()
+        syncSplitSheetCommentThread()
+    }
+
+    private func syncSplitSheetCommentThread() {
+        if case .commentThread(let presentation) = sheetRoute.wrappedValue {
+            splitSheetContainer.updateCommentThreadPresentation(presentation)
+        } else {
+            splitSheetContainer.updateCommentThreadPresentation(nil)
+        }
     }
 
     private func makeRootView() -> VideoDetailSwiftUIContainer {

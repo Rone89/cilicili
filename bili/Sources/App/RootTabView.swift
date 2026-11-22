@@ -25,7 +25,6 @@ struct RootTabView: View {
     @State var liveNavigationPath = NavigationPath()
     @State var mineNavigationPath = NavigationPath()
     @State var rootSearchQueryBuffer = ""
-    @State var isRootSearchPresented = false
     @State var rootSearchActivationRequestID = 0
     @FocusState private var isRootSearchFocused: Bool
     @State var mineSearchQuery = ""
@@ -149,13 +148,8 @@ struct RootTabView: View {
             }
         }
         .onChange(of: selectedTab) { _, tab in
-            if tab == .search {
-                if searchNavigationPath.isEmpty {
-                    activateRootSearchField()
-                }
-            } else {
+            if tab != .search {
                 isRootSearchFocused = false
-                isRootSearchPresented = false
             }
             if tab != .mine {
                 isMineSearchFocused = false
@@ -163,7 +157,7 @@ struct RootTabView: View {
         }
         .onChange(of: rootSearchActivationRequestID) { _, _ in
             if selectedTab == .search, searchNavigationPath.isEmpty {
-                activateRootSearchField()
+                isRootSearchFocused = true
             }
         }
         .onChange(of: searchNavigationPath.count) { _, count in
@@ -217,26 +211,40 @@ struct RootTabView: View {
                 // navigation stack cannot resurrect a tab bar during a pop.
                 rootTabSlot(.home)
             } else {
+                // Declare tabs with static conditional branches instead of `ForEach`:
+                // iOS 26/27 `UISearchTab` only activates the bottom TabBar morph when sibling tabs
+                // are declared statically alongside `Tab(value: .search, role: .search)`.
                 TabView(selection: tabSelection) {
-                    ForEach(displayedRootTabs) { tab in
-                        Tab(value: tab, role: tab == .search ? .search : nil) {
-                            rootTabSlot(tab)
-                        } label: {
-                            Label(tab.title, systemImage: tab.systemImage)
+                    if displayedRootTabs.contains(.home) {
+                        Tab(AppTab.home.title, systemImage: AppTab.home.systemImage, value: AppTab.home) {
+                            rootTabSlot(.home)
+                        }
+                    }
+                    if displayedRootTabs.contains(.dynamic) {
+                        Tab(AppTab.dynamic.title, systemImage: AppTab.dynamic.systemImage, value: AppTab.dynamic) {
+                            rootTabSlot(.dynamic)
+                        }
+                    }
+                    if displayedRootTabs.contains(.live) {
+                        Tab(AppTab.live.title, systemImage: AppTab.live.systemImage, value: AppTab.live) {
+                            rootTabSlot(.live)
+                        }
+                    }
+                    if displayedRootTabs.contains(.mine) {
+                        Tab(AppTab.mine.title, systemImage: AppTab.mine.systemImage, value: AppTab.mine) {
+                            rootTabSlot(.mine)
+                        }
+                    }
+                    if displayedRootTabs.contains(.search) {
+                        Tab(value: AppTab.search, role: .search) {
+                            searchRootTabNavigationStack(
+                                detailPath: rootNavigationPathBinding(for: .search)
+                            )
                         }
                     }
                 }
+                .tabViewSearchActivation(.searchTabSelection)
                 .adaptiveRootTabViewStyle(isEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled)
-                .modifier(
-                    RootTabBarSearchableModifier(
-                        isEnabled: displayedRootTabs.contains(.search),
-                        text: rootSearchQueryBinding,
-                        isPresented: $isRootSearchPresented,
-                        isFocused: $isRootSearchFocused,
-                        prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
-                        onSubmit: submitRootSearch
-                    )
-                )
             }
         }
         .toolbarVisibility(visibleRootTabs.count == 1 ? .hidden : .automatic, for: .tabBar)
@@ -336,6 +344,77 @@ struct RootTabView: View {
         .nativeBottomScrollEdgeBlur()
     }
 
+    /// Dedicated root `NavigationStack` for `Tab(value: .search, role: .search)`.
+    /// Keeps `.searchable` unconditional, directly after the navigation bar chrome and before
+    /// `navigationDestination`, so iOS 26/27 `UISearchTab` automatically activates and morphs
+    /// the bottom TabBar into the integrated Liquid Glass search field.
+    private func searchRootTabNavigationStack(
+        detailPath: Binding<NavigationPath>
+    ) -> some View {
+        let navigationBarColorScheme = runtimeSettings.appearanceMode.preferredColorScheme
+            ?? videoContentColorScheme ?? systemColorScheme
+        return NavigationStack(path: detailPath) {
+            SearchView(
+                holder: searchViewModelHolder,
+                accessoryStore: searchBottomAccessoryStore,
+                searchText: rootSearchQueryBinding,
+                isSearchFocused: $isRootSearchFocused,
+                activationRequestID: rootSearchActivationRequestID,
+                usesTabBarSearchIntegration: true,
+                onSubmit: submitRootSearch
+            )
+            .environment(\.isRootTabContent, true)
+            .adaptiveDuoFullscreenChrome(isHidden: isDuoInnerFullscreenActive)
+            .environment(\.rootTabScrollRequest, rootTabScrollRequests[.search])
+            .environment(\.showsHiddenRootPageSwitcher, false)
+            .environment(\.rootHiddenPageSwitcher, nil)
+            .toolbarBackground(.automatic, for: .navigationBar)
+            .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
+            .navigationTitle("")
+            .navigationHistoryTitle(AppTab.search.title)
+            .toolbarTitleDisplayMode(.inline)
+            .searchable(
+                text: rootSearchQueryBinding,
+                prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索"
+            )
+            .searchPresentationToolbarBehavior(.avoidHidingContent)
+            .searchFocused($isRootSearchFocused)
+            .onSubmit(of: .search) {
+                isRootSearchFocused = false
+                submitRootSearch()
+            }
+            .navigationDestination(for: MineOverlayRoute.self) { route in
+                RootMineNavigationDestination(
+                    route: route,
+                    holder: mineViewModelHolder,
+                    libraryStore: libraryStore,
+                    sessionStore: dependencies.sessionStore,
+                    api: dependencies.api
+                )
+                .adaptiveDuoFullscreenChrome(isHidden: isDuoInnerFullscreenActive)
+                .toolbarColorScheme(navigationBarColorScheme, for: .navigationBar)
+                .navigationHistoryTitle(route.navigationDisplayTitle)
+            }
+            .videoDestinations(
+                usesTransparentNavigationBar: true,
+                navigationBarColorScheme: navigationBarColorScheme
+            )
+            .dynamicDetailDestinations(
+                path: detailPath,
+                api: dependencies.api
+            )
+            .coordinatesRootTabBarTransitions(
+                isDetailPresented: !detailPath.wrappedValue.isEmpty,
+                hidesRootTabBar: visibleRootTabs.count == 1,
+                onRootTabTap: selectedTab == .search ? { tabSelection.wrappedValue = .search } : nil,
+                capturesSelectedTabTap: false,
+                isSearchTab: false
+            )
+        }
+        .navigationHistoryStack(path: detailPath, rootTitle: AppTab.search.title)
+        .nativeBottomScrollEdgeBlur()
+    }
+
     @ViewBuilder
     private func rootTabContentWithChrome(
         for tab: AppTab,
@@ -394,7 +473,7 @@ struct RootTabView: View {
                 searchText: rootSearchQueryBinding,
                 isSearchFocused: $isRootSearchFocused,
                 activationRequestID: rootSearchActivationRequestID,
-                handlesOwnSearchable: !displayedRootTabs.contains(.search),
+                usesTabBarSearchIntegration: displayedRootTabs.contains(.search),
                 onSubmit: submitRootSearch
             )
         }
@@ -463,20 +542,6 @@ struct RootTabView: View {
             viewModel.queryChanged()
         } else {
             rootSearchQueryBuffer = viewModel.query
-        }
-    }
-
-    private func activateRootSearchField() {
-        isRootSearchPresented = true
-        Task { @MainActor in
-            await Task.yield()
-            guard selectedTab == .search, searchNavigationPath.isEmpty else { return }
-            isRootSearchFocused = true
-            try? await Task.sleep(for: .milliseconds(90))
-            guard selectedTab == .search, searchNavigationPath.isEmpty, isRootSearchPresented else { return }
-            if !isRootSearchFocused {
-                isRootSearchFocused = true
-            }
         }
     }
 
@@ -557,38 +622,6 @@ private extension View {
             tabViewStyle(.sidebarAdaptable)
         } else {
             self
-        }
-    }
-}
-
-private struct RootTabBarSearchableModifier: ViewModifier {
-    let isEnabled: Bool
-    @Binding var text: String
-    @Binding var isPresented: Bool
-    var isFocused: FocusState<Bool>.Binding
-    let prompt: String
-    let onSubmit: () -> Void
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content
-                .searchable(
-                    text: $text,
-                    isPresented: $isPresented,
-                    prompt: prompt
-                )
-                .searchFocused(isFocused)
-                .onSubmit(of: .search) {
-                    isFocused.wrappedValue = false
-                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        isPresented = false
-                    } else {
-                        onSubmit()
-                    }
-                }
-        } else {
-            content
         }
     }
 }

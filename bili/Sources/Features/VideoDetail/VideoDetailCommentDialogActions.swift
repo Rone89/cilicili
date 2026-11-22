@@ -12,7 +12,10 @@ extension VideoDetailViewModel {
 
     func loadDialog(for root: Comment, reply: Comment) async {
         let key = dialogKey(root: root, reply: reply)
-        guard dialogThreads[key] == nil else { return }
+        guard !(dialogThreadStates[key]?.isLoading ?? false) else { return }
+        if dialogThreads[key] != nil, dialogThreadStates[key] == .loaded {
+            return
+        }
         await loadDialogPage(for: root, reply: reply)
     }
 
@@ -57,6 +60,13 @@ extension VideoDetailViewModel {
             dialogThreads[key] = replies.isEmpty ? fallbackReplies : replies
             dialogThreadStates[key] = .loaded
         } catch {
+            if Self.isCommentLoadCancellation(error) {
+                if isCurrentDialogThreadLoad(key: key, rootID: root.id, token: token, target: target),
+                   dialogThreadStates[key]?.isLoading == true {
+                    dialogThreadStates[key] = .idle
+                }
+                return
+            }
             guard isCurrentDialogThreadLoad(key: key, rootID: root.id, token: token, target: target) else {
                 return
             }

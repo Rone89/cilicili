@@ -688,6 +688,112 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         return nil
     }
 
+    func testCancelledCommentReplyLoadResetsToIdleAndAutoLoadsOnRetry() async throws {
+        final class ReplyProbeURLProtocol: URLProtocol, @unchecked Sendable {
+            nonisolated(unsafe) static var requestCount = 0
+
+            override class func canInit(with request: URLRequest) -> Bool { true }
+            override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+            override func startLoading() {
+                Self.requestCount += 1
+                let attempt = Self.requestCount
+                guard let url = request.url else {
+                    client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+                    return
+                }
+                if attempt == 1 {
+                    client?.urlProtocol(self, didFailWithError: CancellationError())
+                    return
+                }
+                let payload = """
+                {
+                  "code": 0,
+                  "message": "0",
+                  "data": {
+                    "page": {"num": 1, "size": 20, "count": 1},
+                    "replies": [
+                      {
+                        "rpid": 2002,
+                        "oid": 12345,
+                        "type": 1,
+                        "mid": 88,
+                        "root": 1001,
+                        "parent": 1001,
+                        "rcount": 0,
+                        "like": 3,
+                        "ctime": 1700000000,
+                        "member": {"mid": "88", "uname": "测试回复者"},
+                        "content": {"message": "自动加载成功"}
+                      }
+                    ]
+                  }
+                }
+                """
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data(payload.utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            }
+
+            override func stopLoading() {}
+        }
+
+        ReplyProbeURLProtocol.requestCount = 0
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ReplyProbeURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let dependencies = AppDependencies()
+        let api = BiliAPIClient(
+            session: session,
+            sessionStore: dependencies.sessionStore,
+            libraryStore: dependencies.libraryStore,
+            homeRecommendDiagnosticsStore: .shared
+        )
+
+        let video = try JSONDecoder.bili.decode(VideoItem.self, from: Data("""
+            {"bvid":"BVReplyCancelProbe","aid":12345,"title":"Reply probe"}
+            """.utf8))
+        let rootComment = try JSONDecoder.bili.decode(Comment.self, from: Data("""
+            {
+              "rpid": 1001,
+              "oid": 12345,
+              "type": 1,
+              "mid": 77,
+              "root": 0,
+              "parent": 0,
+              "rcount": 1,
+              "like": 10,
+              "ctime": 1700000000,
+              "member": {"mid": "77", "uname": "主评论"},
+              "content": {"message": "这是一条主评论"}
+            }
+            """.utf8))
+
+        let viewModel = VideoDetailViewModel(
+            seedVideo: video,
+            api: api,
+            libraryStore: dependencies.libraryStore,
+            sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService
+        )
+
+        // First attempt gets cancelled (simulating SwiftUI .task cancellation during sheet transition).
+        await viewModel.loadReplies(for: rootComment)
+        XCTAssertEqual(viewModel.replyState(for: rootComment), .idle)
+        XCTAssertNil(viewModel.replyThreads[rootComment.id])
+
+        // Second automatic loadReplies call (e.g. re-appearing sheet .task) must NOT be skipped.
+        await viewModel.loadReplies(for: rootComment)
+        XCTAssertEqual(viewModel.replyState(for: rootComment), .loaded)
+        XCTAssertEqual(viewModel.replies(for: rootComment).map(\.rpid), [2002])
+    }
+
     private func makeLocalTestVideo() async throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("adaptive-layout-probe-\(UUID().uuidString).mov")
