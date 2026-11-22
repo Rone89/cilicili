@@ -293,9 +293,15 @@ enum FeedTypography {
 }
 
 private struct StandardPageHorizontalContentMarginsModifier: ViewModifier {
+    nonisolated private struct Metrics: Equatable, Sendable {
+        let contentWidth: CGFloat
+        let trailingChromeClearance: CGFloat
+    }
+
     @AppStorage("cc.bili.display.adaptiveLargeScreenLayoutExperimentEnabled.v1")
     private var adaptiveLargeScreenEnabled = true
     @State private var containerWidth: CGFloat = 0
+    @State private var trailingChromeClearance: CGFloat = 0
     let baseInset: CGFloat
     let maxContentWidth: CGFloat
 
@@ -310,14 +316,21 @@ private struct StandardPageHorizontalContentMarginsModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                AdaptiveLayoutPolicy.safeContentWidth(for: proxy)
-            } action: { width in
-                if abs(containerWidth - width) > 0.5 {
-                    containerWidth = width
+            .onGeometryChange(for: Metrics.self) { proxy in
+                Metrics(
+                    contentWidth: AdaptiveLayoutPolicy.safeContentWidth(for: proxy),
+                    trailingChromeClearance: AdaptiveLayoutPolicy.duoFoldedTrailingChromeClearance(for: proxy)
+                )
+            } action: { metrics in
+                if abs(containerWidth - metrics.contentWidth) > 0.5 {
+                    containerWidth = metrics.contentWidth
+                }
+                if abs(trailingChromeClearance - metrics.trailingChromeClearance) > 0.5 {
+                    trailingChromeClearance = metrics.trailingChromeClearance
                 }
             }
-            .contentMargins(.horizontal, resolvedMargin, for: .scrollContent)
+            .contentMargins(.leading, resolvedMargin, for: .scrollContent)
+            .contentMargins(.trailing, resolvedMargin + trailingChromeClearance, for: .scrollContent)
     }
 }
 

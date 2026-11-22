@@ -360,6 +360,55 @@ nonisolated enum AdaptiveLayoutPolicy {
         )
     }
 
+    /// Returns the trailing clearance reserved for iPhone Duo's folded right-hand
+    /// vertical chrome rail (e.g. `466 - 381 = 85pt`), or `0` outside folded Duo.
+    /// Needed when `.contentMargins(.horizontal, ..., for: .scrollContent)` would
+    /// otherwise override the automatic safe-area trailing margin on `Form`/`List`.
+    static func duoFoldedTrailingChromeClearance(
+        containerSize: CGSize,
+        safeAreaInsets: EdgeInsets,
+        windowBoundsSize: CGSize? = nil,
+        windowSafeAreaInsets: EdgeInsets? = nil
+    ) -> CGFloat {
+        let containerBounds = CGRect(origin: .zero, size: containerSize)
+        if let duoBounds = duoFoldedContentHorizontalBounds(
+            containerBounds: containerBounds,
+            safeAreaInsets: safeAreaInsets
+        ) {
+            return max(containerSize.width - (duoBounds.minX + duoBounds.width), 0)
+        }
+        if let windowBoundsSize,
+           let windowSafeAreaInsets,
+           let windowDuoBounds = duoFoldedContentHorizontalBounds(
+               containerBounds: CGRect(origin: .zero, size: windowBoundsSize),
+               safeAreaInsets: windowSafeAreaInsets
+           ),
+           containerSize.width > windowDuoBounds.width {
+            return max(containerSize.width - (windowDuoBounds.minX + windowDuoBounds.width), 0)
+        }
+        return 0
+    }
+
+    @MainActor
+    static func duoFoldedTrailingChromeClearance(for geometry: GeometryProxy) -> CGFloat {
+        let window = UIApplication.shared.playbackDetailForegroundKeyWindow
+        let windowSafeAreaInsets = window.map {
+            let insets = $0.safeAreaInsets
+            return EdgeInsets(
+                top: insets.top,
+                leading: insets.left,
+                bottom: insets.bottom,
+                trailing: insets.right
+            )
+        }
+        return duoFoldedTrailingChromeClearance(
+            containerSize: geometry.size,
+            safeAreaInsets: geometry.safeAreaInsets,
+            windowBoundsSize: window?.bounds.size,
+            windowSafeAreaInsets: windowSafeAreaInsets
+        )
+    }
+
     /// Whether the active container/window is the unfolded inner display of an
     /// iPhone Duo (phone idiom with short side >= 540pt, covering both portrait
     /// `669×951pt` and landscape `951×669pt`). Excludes the folded Duo cover

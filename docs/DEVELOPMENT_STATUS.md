@@ -3271,3 +3271,19 @@
   - Release 真机编译与深度签名校验（`codesign --verify --deep --strict`）：通过，使用共享 `Xcode-27` 缓存与命令行本地签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`，未修改项目签名配置）。
 - **未验证与待办（明确区分，不推测通过）**：
   - 已原位更新安装并启动至真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`），待用户在真机上确认「我的」页搜索框圆角与输入体验；未重跑模拟器 `MineTopBarUITests`；尚未推送远端或合入 `main`。
+
+### 2026-11-22（修复「我的」页及所有分组表单页在 Duo 折叠态进入右侧控件区）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `967f44e` 提交本轮修复，未推送远端、未合入 `main`）。
+- **根因与已实现改动**：
+  1. **根因**：`StandardPageHorizontalContentMarginsModifier` 的 `.contentMargins(.horizontal, resolvedMargin, for: .scrollContent)` 会直接覆盖系统在 `iPhone Duo` 折叠态外屏为 `Form`/`List` 预留的 `84pt` 右侧安全区，导致「我的」页及各设置/列表页的卡片伸入右侧竖向控件区域。
+  2. **修复**：
+     - [AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)：新增 `duoFoldedTrailingChromeClearance(containerSize:safeAreaInsets:windowBoundsSize:windowSafeAreaInsets:)` 与 `duoFoldedTrailingChromeClearance(for: GeometryProxy)`，在折叠态外屏下返回右侧控件区避让宽度（`466 - 381 = 85pt`），其他设备与形态返回 `0`。
+     - [FeedTypography.swift](bili/Sources/DesignSystem/FeedTypography.swift)：将 `StandardPageHorizontalContentMarginsModifier` 拆为 `.contentMargins(.leading, resolvedMargin, for: .scrollContent)` 与 `.contentMargins(.trailing, resolvedMargin + trailingChromeClearance, for: .scrollContent)`，在保持背景延伸至右侧控件下方的同时将「我的」页及全部设置/消息/收藏列表内容严格留在左侧 16:9 区域内。
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：补充 `duoFoldedTrailingChromeClearance` 在 Duo 折叠态（`85pt`）与普通 iPhone（`0pt`）上的单元测试断言。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：
+    - `AdaptiveLayoutAndPlayerIdentityTests`（`/tmp/duo-mine-margins-unit.xcresult`，`** TEST SUCCEEDED **`）：**16/16 通过（0 失败，0 跳过）**。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 已更新构建、安装并启动至 `iPhone Duo`（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，PID `61469`）；「我的」页与各设置页在 Duo 折叠态上的实景显示待用户确认。真机 `RCe2027` 当前停留在 `967f44e`；尚未推送远端或合入 `main`。

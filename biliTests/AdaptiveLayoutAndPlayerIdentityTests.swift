@@ -950,6 +950,24 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             ),
             381
         )
+
+        // Form/List horizontal contentMargins must reserve 85pt trailing clearance on
+        // folded Duo (466 - 381) so grouped sections never enter the right chrome rail,
+        // while staying 0 on standard iPhone.
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.duoFoldedTrailingChromeClearance(
+                containerSize: duoFoldedBounds.size,
+                safeAreaInsets: duoFoldedInsets
+            ),
+            85
+        )
+        XCTAssertEqual(
+            AdaptiveLayoutPolicy.duoFoldedTrailingChromeClearance(
+                containerSize: CGSize(width: 393, height: 852),
+                safeAreaInsets: EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
+            ),
+            0
+        )
     }
 
     private func makeLocalTestVideo() async throws -> URL {
