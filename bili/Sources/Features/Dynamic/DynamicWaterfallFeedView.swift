@@ -461,7 +461,10 @@ private struct DynamicWaterfallCard: View {
                 .padding(.bottom, 10)
         }
         .frame(width: cardWidth, alignment: .leading)
-        .videoCardBorderedSurface(cornerRadius: cardCornerRadius)
+        .videoCardBorderedSurface(
+            cornerRadius: cardCornerRadius,
+            showsShadow: libraryStore.showsDynamicMultiColumnCardShadow
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(
             uniformVideoCardHeight

@@ -3392,5 +3392,21 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests` **17/17 通过（0 失败，0 跳过）**（`/tmp/bili-dynamic-uniform-grid-1795411752.xcresult`，`** TEST SUCCEEDED **`）。
+  - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`）**：已安装并启动 `e3f91e8d` Debug 构建（`cc.bili`）。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）**：已通过共享 `Xcode-27` 缓存及本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译 `e3f91e8d` Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次改动安装到 `iPhone Duo` 模拟器或真机 `RCe2027` 实景验收；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
+  - `iPhone Duo` 模拟器与真机 `RCe2027` 的动态页「等高网格」实景视觉与排版效果待用户验收；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
+
+### 2026-11-23（为动态页瀑布流与等高网格新增「卡片阴影」独立开关）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `e3f91e8d` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [LibraryStore.swift](bili/Sources/Storage/LibraryStore.swift)：新增持久化开关 `showsDynamicMultiColumnCardShadow`（`cc.bili.dynamic.showsMultiColumnCardShadow.v1`，默认 `true`）及 `setShowsDynamicMultiColumnCardShadow(_:)`。
+  - [DynamicWaterfallFeedView.swift](bili/Sources/Features/Dynamic/DynamicWaterfallFeedView.swift)：`DynamicWaterfallCard`（同时服务于瀑布流与等高网格）将 `showsShadow: libraryStore.showsDynamicMultiColumnCardShadow` 传入 `.videoCardBorderedSurface(...)`。
+  - [DynamicView.swift](bili/Sources/Features/Dynamic/DynamicView.swift)、[DynamicTopBar.swift](bili/Sources/Features/Dynamic/DynamicTopBar.swift)、[DynamicFeedTabSettingsView.swift](bili/Sources/Features/Mine/DynamicFeedTabSettingsView.swift) & [MineSearchCatalog.swift](bili/Sources/Features/Mine/MineSearchCatalog.swift)：在动态页顶部布局菜单和「我的 → 界面显示 → 动态页顶部选项」设置页同时提供「卡片阴影」实时开关，并补齐设置页搜索关键词。
+  - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：扩展 `testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle` 覆盖阴影开关默认值与持久化。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle` 通过（`/tmp/bili-dynamic-shadow-toggle-1795414691.xcresult`，`** TEST SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次改动安装到 `iPhone Duo` 模拟器或真机 `RCe2027` 验收；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。

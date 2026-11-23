@@ -204,6 +204,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var visibleRootTabs: [AppTab]
     @Published private(set) var visibleDynamicFeedKinds: [DynamicFeedKind]
     @Published private(set) var dynamicFeedLayoutMode: DynamicFeedLayoutMode
+    @Published private(set) var showsDynamicMultiColumnCardShadow: Bool
     @Published private(set) var homeFeedLayout: HomeFeedLayout
     @Published private(set) var homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
     @Published private(set) var showsHotSearches: Bool
@@ -430,6 +431,7 @@ final class LibraryStore: ObservableObject {
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
     private static let visibleDynamicFeedKindsKey = "cc.bili.display.visibleDynamicFeedKinds.v1"
     private static let dynamicFeedLayoutModeKey = "cc.bili.dynamic.feedLayoutMode.v1"
+    private static let showsDynamicMultiColumnCardShadowKey = "cc.bili.dynamic.showsMultiColumnCardShadow.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let homeRecommendFeedSourcePreferenceKey = "cc.bili.home.recommendFeedSourcePreference.v1"
     private static let showsHotSearchesKey = "cc.bili.search.showsHotSearches.v1"
@@ -780,6 +782,8 @@ final class LibraryStore: ObservableObject {
             DynamicFeedLayoutMode(
                 rawValue: userDefaults.string(forKey: Self.dynamicFeedLayoutModeKey) ?? ""
             ) ?? .list
+        self.showsDynamicMultiColumnCardShadow =
+            userDefaults.object(forKey: Self.showsDynamicMultiColumnCardShadowKey) as? Bool ?? true
         self.homeFeedLayout =
             HomeFeedLayout(
                 rawValue: userDefaults.string(forKey: Self.homeFeedLayoutKey) ?? ""
@@ -1605,6 +1609,11 @@ final class LibraryStore: ObservableObject {
     func setDynamicFeedLayoutMode(_ mode: DynamicFeedLayoutMode) {
         dynamicFeedLayoutMode = mode
         userDefaults.set(mode.rawValue, forKey: Self.dynamicFeedLayoutModeKey)
+    }
+
+    func setShowsDynamicMultiColumnCardShadow(_ enabled: Bool) {
+        showsDynamicMultiColumnCardShadow = enabled
+        userDefaults.set(enabled, forKey: Self.showsDynamicMultiColumnCardShadowKey)
     }
 
     func setHomeFeedLayout(_ layout: HomeFeedLayout) {
