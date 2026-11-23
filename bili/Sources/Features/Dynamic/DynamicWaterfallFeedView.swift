@@ -128,15 +128,25 @@ final class DynamicWaterfallLayoutPlanner: ObservableObject {
     static func estimatedCardHeight(for item: DynamicFeedItem, cardWidth: CGFloat) -> CGFloat {
         let safeWidth = max(cardWidth, 140)
         let display = DynamicFeedCardDisplayModel(item: item)
+        let headline = headlineText(for: item, display: display)
         let visualHeight: CGFloat
+        let hasVisualCover: Bool
         if let ratio = visualAspectRatio(for: item, display: display), ratio > 0 {
             visualHeight = (safeWidth / ratio).rounded()
+            hasVisualCover = true
         } else {
-            let excerptLength = (display.topLevelDisplayText ?? "").count
-            visualHeight = excerptLength > 55 ? 128 : 104
+            hasVisualCover = false
+            let style = DynamicTextOnlyCardStyle.resolve(for: headline, isUniformGrid: false)
+            switch style.tier {
+            case .ultraShort, .short:
+                visualHeight = 76
+            case .medium:
+                visualHeight = 96
+            case .long:
+                visualHeight = 122
+            }
         }
-        let hasHeadline = !(headlineText(for: item, display: display).isEmpty)
-        let textHeight: CGFloat = hasHeadline ? 38 : 0
+        let textHeight: CGFloat = (hasVisualCover && !headline.isEmpty) ? 38 : 0
         let footerHeight: CGFloat = 34
         return visualHeight + textHeight + footerHeight + 14
     }
@@ -179,6 +189,104 @@ final class DynamicWaterfallLayoutPlanner: ObservableObject {
             return origTitle
         }
         return ""
+    }
+}
+
+enum DynamicTextOnlyCardStyle {
+    enum Tier: Equatable {
+        case ultraShort
+        case short
+        case medium
+        case long
+    }
+
+    struct Metrics {
+        let tier: Tier
+        let fontSize: CGFloat
+        let fontWeight: Font.Weight
+        let lineSpacing: CGFloat
+        let lineLimit: Int?
+        let textAlignment: TextAlignment
+        let textFrameAlignment: Alignment
+        let containerAlignment: Alignment
+        let horizontalPadding: CGFloat
+        let verticalPadding: CGFloat
+        let waterfallMinHeight: CGFloat
+        let showsQuoteOrnament: Bool
+    }
+
+    static func resolve(for text: String, isUniformGrid: Bool) -> Metrics {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let charCount = trimmed.count
+        let newlineCount = trimmed.reduce(into: 0) { count, character in
+            if character.isNewline { count += 1 }
+        }
+
+        if charCount <= 10 && newlineCount == 0 {
+            return Metrics(
+                tier: .ultraShort,
+                fontSize: 21,
+                fontWeight: .semibold,
+                lineSpacing: 3,
+                lineLimit: 3,
+                textAlignment: .center,
+                textFrameAlignment: .center,
+                containerAlignment: .center,
+                horizontalPadding: 14,
+                verticalPadding: 14,
+                waterfallMinHeight: 76,
+                showsQuoteOrnament: true
+            )
+        }
+
+        if charCount <= 24 && newlineCount <= 1 {
+            return Metrics(
+                tier: .short,
+                fontSize: 17.5,
+                fontWeight: .semibold,
+                lineSpacing: 3.5,
+                lineLimit: 4,
+                textAlignment: .center,
+                textFrameAlignment: .center,
+                containerAlignment: .center,
+                horizontalPadding: 14,
+                verticalPadding: 14,
+                waterfallMinHeight: 78,
+                showsQuoteOrnament: true
+            )
+        }
+
+        if charCount <= 56 && newlineCount <= 2 {
+            return Metrics(
+                tier: .medium,
+                fontSize: 15,
+                fontWeight: .medium,
+                lineSpacing: 3,
+                lineLimit: isUniformGrid ? nil : 5,
+                textAlignment: .leading,
+                textFrameAlignment: .leading,
+                containerAlignment: isUniformGrid ? .center : .topLeading,
+                horizontalPadding: 12,
+                verticalPadding: 12,
+                waterfallMinHeight: 82,
+                showsQuoteOrnament: isUniformGrid
+            )
+        }
+
+        return Metrics(
+            tier: .long,
+            fontSize: 13.5,
+            fontWeight: .regular,
+            lineSpacing: 2.5,
+            lineLimit: isUniformGrid ? nil : 5,
+            textAlignment: .leading,
+            textFrameAlignment: .leading,
+            containerAlignment: .topLeading,
+            horizontalPadding: 11,
+            verticalPadding: 11,
+            waterfallMinHeight: 88,
+            showsQuoteOrnament: false
+        )
     }
 }
 
@@ -520,32 +628,64 @@ private struct DynamicWaterfallCard: View {
             }
             .videoCardBorderedCover(in: coverShape)
         } else {
-            // Pure-text / forward-without-image card styled cleanly inside the bordered card shell.
-            VStack(alignment: .leading, spacing: 6) {
-                if item.isForward || item.original != nil {
+            let bodyText = headline.isEmpty ? "查看动态详情" : headline
+            let style = DynamicTextOnlyCardStyle.resolve(
+                for: bodyText,
+                isUniformGrid: uniformVideoCardHeight
+            )
+            let isForwardCard = item.isForward || item.original != nil
+
+            ZStack(alignment: style.containerAlignment) {
+                if style.showsQuoteOrnament {
+                    Image(systemName: "quote.opening")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.primary.opacity(0.08))
+                        .padding(.leading, 11)
+                        .padding(.top, isForwardCard ? 32 : 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .accessibilityHidden(true)
+                }
+
+                if isForwardCard {
                     Text("转发动态")
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        .padding(.leading, 11)
+                        .padding(.top, 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                Text(headline.isEmpty ? "查看动态详情" : headline)
-                    .font(.system(size: 13.5, weight: .regular))
+
+                Text(bodyText)
+                    .font(.system(size: style.fontSize, weight: style.fontWeight))
+                    .lineSpacing(style.lineSpacing)
                     .foregroundStyle(.primary)
-                    .lineLimit(uniformVideoCardHeight ? nil : 5)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(style.lineLimit)
+                    .multilineTextAlignment(style.textAlignment)
+                    .frame(maxWidth: .infinity, alignment: style.textFrameAlignment)
+                    .padding(.horizontal, style.horizontalPadding)
+                    .padding(.top, isForwardCard ? max(style.verticalPadding, 32) : style.verticalPadding)
+                    .padding(.bottom, style.verticalPadding)
             }
-            .padding(11)
             .frame(
                 width: cardWidth,
                 height: uniformVideoCardHeight ? DynamicUniformGridMetrics.textOnlyBodyHeight(forCardWidth: cardWidth) : nil,
-                alignment: .topLeading
+                alignment: style.containerAlignment
             )
-            .frame(minHeight: uniformVideoCardHeight ? nil : 96, alignment: .topLeading)
+            .frame(minHeight: uniformVideoCardHeight ? nil : style.waterfallMinHeight, alignment: style.containerAlignment)
             .clipped()
-            .background(Color(.tertiarySystemFill).opacity(0.55))
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(.tertiarySystemFill).opacity(0.68),
+                        Color(.tertiarySystemFill).opacity(0.32),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(Color(.separator).opacity(0.22))

@@ -1107,6 +1107,41 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         XCTAssertEqual(outerToolbarEvents, [true, false])
     }
 
+    func testDynamicTextOnlyCardStyleScalesTypographyAndAlignmentByLength() {
+        let ultraShort = DynamicTextOnlyCardStyle.resolve(for: "獐子岛：6", isUniformGrid: true)
+        XCTAssertEqual(ultraShort.tier, .ultraShort)
+        XCTAssertEqual(ultraShort.fontSize, 21)
+        XCTAssertEqual(ultraShort.textAlignment, .center)
+        XCTAssertEqual(ultraShort.containerAlignment, .center)
+        XCTAssertTrue(ultraShort.showsQuoteOrnament)
+        XCTAssertEqual(ultraShort.waterfallMinHeight, 76)
+
+        let shortQuote = DynamicTextOnlyCardStyle.resolve(for: "今晚十点准时开播，大家别忘了来看！", isUniformGrid: false)
+        XCTAssertEqual(shortQuote.tier, .short)
+        XCTAssertEqual(shortQuote.fontSize, 17.5)
+        XCTAssertEqual(shortQuote.textAlignment, .center)
+        XCTAssertTrue(shortQuote.showsQuoteOrnament)
+
+        let medium = DynamicTextOnlyCardStyle.resolve(
+            for: "这周的视频已经剪完一半了，预计周六晚上发出来，顺便整理了一下大家在评论区提的问题。",
+            isUniformGrid: true
+        )
+        XCTAssertEqual(medium.tier, .medium)
+        XCTAssertEqual(medium.fontSize, 15)
+        XCTAssertEqual(medium.textAlignment, .leading)
+        XCTAssertEqual(medium.containerAlignment, .center)
+
+        let long = DynamicTextOnlyCardStyle.resolve(
+            for: String(repeating: "这是一段较长的纯文本动态内容，用于测试多行左对齐常规字号排版。", count: 3),
+            isUniformGrid: false
+        )
+        XCTAssertEqual(long.tier, .long)
+        XCTAssertEqual(long.fontSize, 13.5)
+        XCTAssertEqual(long.textAlignment, .leading)
+        XCTAssertEqual(long.containerAlignment, .topLeading)
+        XCTAssertFalse(long.showsQuoteOrnament)
+    }
+
     private func makeLocalTestVideo() async throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("adaptive-layout-probe-\(UUID().uuidString).mov")

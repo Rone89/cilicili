@@ -3449,5 +3449,18 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：Debug 增量编译通过（`** BUILD SUCCEEDED **`）。
+  - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，共享 `Xcode-27` 缓存）**：已保留默认 ad-hoc 签名与 Keychain entitlements 编译 `0b041cef` Debug 包，原位安装并成功拉起（`cc.bili`）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次描边微调安装到 `iPhone Duo` 模拟器（停留在 `d14bf6fb`）或真机 `RCe2027`（停留在 `502af843`）实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+  - `iPhone Duo` 模拟器上最新描边不透明度与展开态竖屏弹窗交互的实景效果待用户验收；真机 `RCe2027` 与未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+
+### 2026-11-24（优化动态页瀑布流与等高网格纯文本动态的阶梯字号与居中引用排版）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `0b041cef` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [DynamicWaterfallFeedView.swift](bili/Sources/Features/Dynamic/DynamicWaterfallFeedView.swift)：新增 `DynamicTextOnlyCardStyle` 按正文长度与行数自动分级（极短文 ≤ 10 字 `21pt` semibold 居中、短文 11–24 字 `17.5pt` semibold 居中 + 极淡 `quote.opening` 引号角标与柔和微渐变底纹；中等长度 25–56 字 `15pt` medium，等高网格内垂直居中；长文 > 56 字保持 `13.5pt` 左对齐），同时收紧瀑布流短文本最小高度至 `76–82pt`，并修正 `DynamicWaterfallLayoutPlanner.estimatedCardHeight` 中纯文本卡片的高度估算。
+  - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：新增 `testDynamicTextOnlyCardStyleScalesTypographyAndAlignmentByLength` 校验四档字号、对齐、装饰角标与瀑布流最小高度。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testDynamicTextOnlyCardStyleScalesTypographyAndAlignmentByLength` 通过（`** TEST SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次纯文本引用卡排版安装到 `iPhone Duo` 模拟器（停留在 `0b041cef`）或真机 `RCe2027`（停留在 `502af843`）实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
