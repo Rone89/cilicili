@@ -110,9 +110,10 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
-            // Reveal the root TabBar synchronously at pop-start (before UIKit lays out
-            // the returning root controller) so `UISearchTab` keeps its search bar docked
-            // in the bottom TabBar and animates smoothly alongside the pop transition.
+            // Reveal the root TabBar inside `transitionCoordinator.animate(alongsideTransition:)`
+            // rather than directly inside `viewWillAppear` (where UIKit suppresses animations
+            // during pre-transition layout) so `UISearchTab` keeps its search bar docked in the
+            // bottom TabBar while playing the official system reveal animation.
             guard !hidesRootTabBar,
                   let nav = selectedNavigationController(),
                   let coordinator = transitionCoordinator ?? nav.transitionCoordinator,
@@ -125,8 +126,11 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
             }
             reconcileTask?.cancel()
             isRevealingForPopTransition = true
-            setRootTabBarHidden(false, animated: animated || coordinator.isAnimated)
-            coordinator.animate(alongsideTransition: nil) { [weak self] context in
+            let shouldAnimate = animated || coordinator.isAnimated
+            coordinator.animate(alongsideTransition: { [weak self] _ in
+                guard let self else { return }
+                self.setRootTabBarHidden(false, animated: shouldAnimate)
+            }, completion: { [weak self] context in
                 guard let self else { return }
                 self.isRevealingForPopTransition = false
                 if context.isCancelled {
@@ -134,7 +138,7 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
                 } else {
                     self.reconcile(animated: false)
                 }
-            }
+            })
         }
 
         override func viewDidAppear(_ animated: Bool) {
