@@ -3422,5 +3422,20 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle` 通过（`/tmp/bili-remove-card-shadows-1795428997.xcresult`，`** TEST SUCCEEDED **`）。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）**：已通过共享 `Xcode-27` 缓存及本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译 `502af843` Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
+  - **未签名 Release IPA**：已基于 `502af843` 通过 `Scripts/build-release-unsigned-ipa.sh` 生成 `build/release-unsigned-ipa/bili-release-unsigned.ipa`（`com.rayc.cilicili`，版本 `1.1.7` / Build `232`，大小 `24M`，SHA-256 `4418fc7fc30bc56f6dfa046f6efe029a777b93ec04a966c05963e3010a1744e2`，已校验无 `_CodeSignature` 与 `embedded.mobileprovision`）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次改动安装到真机 `RCe2027` 或 `iPhone Duo` 模拟器实景验收；未签名 IPA 停留在 `0057cb5`；尚未推送远端或合入 `main`。
+  - 真机 `RCe2027` 去除阴影后的实景视觉效果待用户验收；`iPhone Duo` 模拟器仍停留在 `e3f91e8d`；尚未推送远端或合入 `main`。
+
+### 2026-11-23（修复展开态 Duo/iPad 竖屏内嵌弹窗被外层底部栏遮挡及关闭后容器交互残留）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `502af843` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **打通外层底部工具栏隐藏联动**：`VideoDetailViewContent` 实际接管了 `.bottomBar`（`videoDetailHasOuterBottomBar = true`），此前仅监听全屏态 `hidesSystemChrome` 而未消费内层 `contentState.hidesBottomToolbar`。现通过 [VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift) → [VideoDetailRotationBridgeViewController.swift](bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift) → [VideoDetailShellRepresentable.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellRepresentable.swift) → [VideoDetailViewContentResolver.swift](bili/Sources/Features/VideoDetail/VideoDetailViewContentResolver.swift) → [VideoDetailViewContent.swift](bili/Sources/Features/VideoDetail/VideoDetailViewContent.swift) 新增 `hidesBottomToolbarForInlineOverlay` 链路，在展开态 Duo / iPad 竖屏弹出分P、合集、分集或评论回复等内嵌 Liquid Glass 弹窗时隐藏外层底部栏，关闭后恢复。
+  2. **加固分栏弹窗关闭后的触摸释放**：在 [VideoDetailSplitColumnSheetHost.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailSplitColumnSheetHost.swift) 中将 `PassthroughSplitOverlayView` 默认及无可见浮层时的 `isUserInteractionEnabled` 同步置为 `false`，并将 `SplitLiquidGlassSheetPresenter.dismiss(animated:)` 改为即时禁用全部子层交互 + 使用不依赖已释放对象生命周期的 `UIView.animate` 完成退场与移除，避免关闭分P/合集弹窗后拦截简介页与评论页滚动。
+  3. **单元测试**：在 [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift) 扩展 `testSplitColumnSheetDismissRemovesOverlayContainerAndNotifiesVisibilityChange` 校验 `container.view.isUserInteractionEnabled` 的切换，并新增 `testVideoDetailContainerNotifiesOuterBottomToolbarHiddenForUnfoldedPortraitInlineOverlay`。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testSplitColumnSheetDismissRemovesOverlayContainerAndNotifiesVisibilityChange` 与 `testVideoDetailContainerNotifiesOuterBottomToolbarHiddenForUnfoldedPortraitInlineOverlay` 均通过（`** TEST SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次修复安装到 `iPhone Duo` 模拟器（仍停留在 `e3f91e8d`）或真机 `RCe2027`（停留在 `502af843`）做展开态竖屏分P/合集弹窗实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。

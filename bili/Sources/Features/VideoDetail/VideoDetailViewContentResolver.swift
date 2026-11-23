@@ -11,6 +11,7 @@ struct VideoDetailViewContentResolver: View {
     @Binding var sheetRoute: VideoDetailSheetRoute?
     @Binding var pendingCommentAnchor: VideoCommentAnchor?
     @Binding var hidesSystemChrome: Bool
+    @Binding var hidesBottomToolbarForInlineOverlay: Bool
     @Binding var isShowingDanmakuSettings: Bool
     @Binding var isShowingFavoriteFolders: Bool
     @Binding var isShowingCoinPicker: Bool
@@ -29,6 +30,7 @@ struct VideoDetailViewContentResolver: View {
             selectedContentTab: $selectedContentTab,
             sheetRoute: $sheetRoute,
             hidesSystemChrome: $hidesSystemChrome,
+            hidesBottomToolbarForInlineOverlay: $hidesBottomToolbarForInlineOverlay,
             isShowingDanmakuSettings: $isShowingDanmakuSettings,
             isShowingFavoriteFolders: $isShowingFavoriteFolders,
             isShowingCoinPicker: $isShowingCoinPicker,

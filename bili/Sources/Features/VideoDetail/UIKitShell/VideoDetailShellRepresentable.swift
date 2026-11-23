@@ -15,6 +15,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
     @Binding var hidesSystemChrome: Bool
+    @Binding var hidesBottomToolbarForInlineOverlay: Bool
     @Binding var isShowingDanmakuSettings: Bool
     @Binding var isShowingFavoriteFolders: Bool
     @Binding var isShowingCoinPicker: Bool
@@ -29,6 +30,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
         // 否则内容区设置（诊断按钮/进度条等）取默认值。
         runtimeSettings.bind(dependencies.libraryStore)
         let systemChromeVisibility = $hidesSystemChrome
+        let inlineOverlayBottomToolbarHidden = $hidesBottomToolbarForInlineOverlay
         let controller = VideoDetailRotationBridgeViewController(
             initialVideo: seedVideo,
             viewModel: viewModel,
@@ -72,6 +74,9 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
             },
             onSystemChromeVisibilityChange: { isHidden in
                 systemChromeVisibility.wrappedValue = isHidden
+            },
+            onInlineOverlayBottomToolbarHiddenChange: { isHidden in
+                inlineOverlayBottomToolbarHidden.wrappedValue = isHidden
             },
             usesTransparentNavigationBar: usesTransparentNavigationBar,
             onNavigateBack: onNavigateBack

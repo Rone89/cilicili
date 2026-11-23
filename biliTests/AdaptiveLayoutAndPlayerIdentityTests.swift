@@ -1029,6 +1029,10 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         host.view.addSubview(container.view)
         container.didMove(toParent: host)
         container.view.layoutIfNeeded()
+        XCTAssertFalse(
+            container.view.isUserInteractionEnabled,
+            "无内嵌弹窗时容器视图应关闭交互，避免拦截底层简介与评论滚动"
+        )
 
         overlay.utilitySheet = VideoDetailSplitUtilitySheetPayload(
             content: AnyView(Text("Test Sheet")),
@@ -1036,19 +1040,71 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         )
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(container.hasVisibleOverlay)
+        XCTAssertTrue(container.view.isUserInteractionEnabled)
         XCTAssertEqual(visibilityEvents, [true])
         XCTAssertEqual(container.view.subviews.count, 1)
 
-        // Dismiss immediately releases the presenter reference; its completion teardown
-        // must still remove containerView so touches/scrolling underneath are never blocked.
+        // Dismiss immediately releases the presenter reference; container interaction
+        // must turn off right away and completion teardown must remove containerView.
         overlay.utilitySheet = nil
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertFalse(container.hasVisibleOverlay)
+        XCTAssertFalse(
+            container.view.isUserInteractionEnabled,
+            "关闭内嵌弹窗后容器视图必须立即停止接收触摸，保证简介与评论均可滑动"
+        )
         XCTAssertEqual(visibilityEvents, [true, false])
         XCTAssertTrue(
             container.view.subviews.isEmpty,
             "关闭内嵌弹窗后必须彻底移除透明容器视图，否则会持续拦截底层评论区滚动事件"
         )
+    }
+
+    @MainActor
+    func testVideoDetailContainerNotifiesOuterBottomToolbarHiddenForUnfoldedPortraitInlineOverlay() throws {
+        let dependencies = AppDependencies()
+        let video = try JSONDecoder.bili.decode(VideoItem.self, from: Data("""
+            {"bvid":"BV1outerbar1","aid":901,"cid":902,"title":"Outer Bottom Toolbar Sync Test"}
+            """.utf8))
+        let viewModel = VideoDetailViewModel(
+            seedVideo: video,
+            api: dependencies.api,
+            libraryStore: dependencies.libraryStore,
+            sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService
+        )
+        let runtimeSettings = VideoDetailRuntimeSettingsStore()
+        let rotationCoordinator = PlaybackRotationCoordinator()
+        let model = VideoDetailSwiftUIContainerModel(
+            viewModel: viewModel,
+            initialVideo: video,
+            runtimeSettings: runtimeSettings,
+            rotationCoordinator: rotationCoordinator,
+            initialContentTab: .detail
+        )
+        var outerToolbarEvents: [Bool] = []
+        model.onInlineOverlayBottomToolbarHiddenChange = { outerToolbarEvents.append($0) }
+
+        // Unfolded Duo / iPad portrait (`compactStacked` + `.regular`, no folded horizontal bounds).
+        let unfoldedPortraitLayout = model.layout(
+            in: CGSize(width: 760, height: 1024),
+            safeAreaTop: 24,
+            safeAreaBottom: 20,
+            horizontalSizeClass: .regular,
+            rotationCoordinator: rotationCoordinator
+        )
+        model.synchronize(layout: unfoldedPortraitLayout)
+        XCTAssertEqual(unfoldedPortraitLayout.adaptiveMode, VideoDetailAdaptiveMode.compactStacked)
+        XCTAssertFalse(unfoldedPortraitLayout.usesDuoFoldedHorizontalBounds)
+        XCTAssertEqual(outerToolbarEvents, [])
+
+        model.setHasActiveInlineOverlay(true)
+        XCTAssertTrue(model.contentState.hidesBottomToolbar)
+        XCTAssertEqual(outerToolbarEvents, [true])
+
+        model.setHasActiveInlineOverlay(false)
+        XCTAssertFalse(model.contentState.hidesBottomToolbar)
+        XCTAssertEqual(outerToolbarEvents, [true, false])
     }
 
     private func makeLocalTestVideo() async throws -> URL {

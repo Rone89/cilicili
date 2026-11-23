@@ -151,6 +151,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
 
     private func notifyOverlayVisibilityIfNeeded() {
         let visible = hasVisibleOverlay
+        viewIfLoaded?.isUserInteractionEnabled = visible
         guard visible != lastReportedOverlayVisible else { return }
         lastReportedOverlayVisible = visible
         onOverlayVisibilityChange?(visible)
@@ -180,6 +181,7 @@ final class VideoDetailSplitColumnSheetContainerController: UIViewController {
         let passthroughView = PassthroughSplitOverlayView()
         passthroughView.backgroundColor = .clear
         passthroughView.clipsToBounds = true
+        passthroughView.isUserInteractionEnabled = false
         view = passthroughView
     }
 
@@ -645,17 +647,17 @@ private final class SplitLiquidGlassSheetPresenter: NSObject, UIGestureRecognize
     func dismiss(animated: Bool) {
         guard !isDismissing else { return }
         isDismissing = true
-        // Immediately stop intercepting touches so the underlying comments list
-        // becomes scrollable the moment dismissal begins.
+        // Immediately stop intercepting touches so the underlying detail/comments
+        // scroll views become interactive the moment dismissal begins.
         containerView.isUserInteractionEnabled = false
         backdropView.isUserInteractionEnabled = false
+        shadowWrapperView.isUserInteractionEnabled = false
+        glassView.isUserInteractionEnabled = false
         activeAnimator?.stopAnimation(true)
         activeAnimator = nil
 
-        // Capture `container` and `host` strongly rather than `[weak self]`:
-        // the caller immediately drops its reference to `self` right after
-        // calling `dismiss(animated: true)`, so a `[weak self]` completion would
-        // never run and would leak an invisible `containerView` blocking scroll.
+        // Capture views strongly rather than `[weak self]`: the caller drops its
+        // reference to `self` right after calling `dismiss(animated: true)`.
         let container = containerView
         let host = hostingController
         let shadowWrapper = shadowWrapperView
@@ -672,15 +674,18 @@ private final class SplitLiquidGlassSheetPresenter: NSObject, UIGestureRecognize
         }
 
         let targetOffset = cardHeight + 32
-        let animator = UIViewPropertyAnimator(duration: 0.24, dampingRatio: 0.94) {
+        UIView.animate(
+            withDuration: 0.24,
+            delay: 0,
+            usingSpringWithDamping: 0.94,
+            initialSpringVelocity: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
             shadowWrapper.transform = CGAffineTransform(translationX: 0, y: targetOffset)
             backdrop.alpha = 0
-        }
-        animator.addCompletion { _ in
+        } completion: { _ in
             teardown()
         }
-        activeAnimator = animator
-        animator.startAnimation()
     }
 
     @objc private func handleBackdropTap() {

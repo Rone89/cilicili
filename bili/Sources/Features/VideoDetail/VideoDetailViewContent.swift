@@ -2,6 +2,7 @@ import SwiftUI
 
 struct VideoDetailViewContent: View {
     @State private var commentComposerRequestID = 0
+    @State private var hidesBottomToolbarForInlineOverlay = false
     let seedVideo: VideoItem
     @ObservedObject var holder: VideoDetailViewModelHolder
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -29,6 +30,7 @@ struct VideoDetailViewContent: View {
                 sheetRoute: $sheetRoute,
                 pendingCommentAnchor: $pendingCommentAnchor,
                 hidesSystemChrome: $hidesSystemChrome,
+                hidesBottomToolbarForInlineOverlay: $hidesBottomToolbarForInlineOverlay,
                 isShowingDanmakuSettings: $isShowingDanmakuSettings,
                 isShowingFavoriteFolders: $isShowingFavoriteFolders,
                 isShowingCoinPicker: $isShowingCoinPicker,
@@ -46,7 +48,7 @@ struct VideoDetailViewContent: View {
         }
         .environment(\.videoDetailHasOuterBottomBar, true)
         .modifier(VideoDetailBottomToolbarModifier(
-            isHidden: hidesSystemChrome,
+            isHidden: hidesSystemChrome || hidesBottomToolbarForInlineOverlay,
             selection: $selectedContentTab,
             onOpenCommentComposer: { commentComposerRequestID += 1 }
         ))

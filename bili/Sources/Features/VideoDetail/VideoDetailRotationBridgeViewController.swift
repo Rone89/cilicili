@@ -42,6 +42,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         onDismissPlayerMoreControls: @escaping () -> Void,
         onReply: @escaping (Comment) -> Void,
         onSystemChromeVisibilityChange: @escaping (Bool) -> Void,
+        onInlineOverlayBottomToolbarHiddenChange: @escaping (Bool) -> Void = { _ in },
         usesTransparentNavigationBar: Bool = false,
         onNavigateBack: @escaping () -> Void
     ) {
@@ -69,6 +70,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             onDismissPlayerMoreControls: onDismissPlayerMoreControls,
             onReply: onReply,
             onToggleDanmaku: viewModel.toggleDanmaku,
+            onInlineOverlayBottomToolbarHiddenChange: onInlineOverlayBottomToolbarHiddenChange,
             usesTransparentNavigationBar: usesTransparentNavigationBar,
             onNavigateBack: onNavigateBack
         )

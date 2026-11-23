@@ -30,7 +30,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     private var lastAdaptiveMode: VideoDetailAdaptiveMode = .compactStacked
     private var lastUsesFullscreenLayout = false
     private var lastUsesDuoFoldedHorizontalBounds = false
+    private var lastHidesBottomToolbarForInlineOverlay = false
     var onSplitContentGeometryChange: ((CGRect, Bool, CGFloat, CGFloat?) -> Void)?
+    var onInlineOverlayBottomToolbarHiddenChange: ((Bool) -> Void)?
     #if DEBUG
         let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
     #endif
@@ -371,6 +373,10 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         let shouldHide = lastUsesFullscreenLayout || hidesForInlineOverlay
         if contentState.hidesBottomToolbar != shouldHide {
             contentState.hidesBottomToolbar = shouldHide
+        }
+        if lastHidesBottomToolbarForInlineOverlay != hidesForInlineOverlay {
+            lastHidesBottomToolbarForInlineOverlay = hidesForInlineOverlay
+            onInlineOverlayBottomToolbarHiddenChange?(hidesForInlineOverlay)
         }
     }
 
@@ -1187,6 +1193,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         onDismissPlayerMoreControls: @escaping () -> Void,
         onReply: @escaping (Comment) -> Void,
         onToggleDanmaku: @escaping () -> Void,
+        onInlineOverlayBottomToolbarHiddenChange: @escaping (Bool) -> Void = { _ in },
         usesTransparentNavigationBar: Bool,
         onNavigateBack: @escaping () -> Void
     ) {
@@ -1219,6 +1226,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             rotationCoordinator: rotationCoordinator,
             initialContentTab: selectedContentTab.wrappedValue
         )
+        contentModel.onInlineOverlayBottomToolbarHiddenChange = onInlineOverlayBottomToolbarHiddenChange
         super.init(nibName: nil, bundle: nil)
     }
 
