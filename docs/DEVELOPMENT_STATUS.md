@@ -3513,5 +3513,7 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - 继承自 `aba51b05` 的 `AdaptiveLayoutAndPlayerIdentityTests` 19 项单元测试通过（`1.1.8` 仅变更版本号与状态文档）。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`，共享 `Xcode-27` 缓存）**：已使用本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译 `01334aae`（`1.1.8` / Build `233`）Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
+  - **未签名 Release IPA**：已基于 `01334aae` 通过 `Scripts/build-release-unsigned-ipa.sh` 生成 `build/release-unsigned-ipa/bili-release-unsigned.ipa`（`com.rayc.cilicili`，版本 `1.1.8` / Build `233`，大小 `24M`，SHA-256 `03109c17f6a16eee9d3ec175059ec917c78c4a14d7290bcd787f52de227f4434`，已校验无 `_CodeSignature` 与 `embedded.mobileprovision`）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 本地 `main` 已包含 `v1.1.8 (build 233)` 全量改动，尚未推送远端或打包 `1.1.8` 未签名 Release IPA；真机 `RCe2027` 停留在 `aba51b05`（`1.1.7`），`iPhone Duo` 模拟器停留在 `a6d4aa4a`（`1.1.7`）。
+  - 真机 `RCe2027` 上 `1.1.8 (233)` 的实景体验待用户验收；`iPhone Duo` 模拟器停留在 `a6d4aa4a`；本地 `main` 尚未推送到远端。
