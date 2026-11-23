@@ -42,8 +42,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             mode: .doubleColumn,
             containerWidth: 390,
             viewportHeight: 844,
-            horizontalSizeClass: .compact,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .compact
         )
         XCTAssertEqual(compact.doubleColumns.count, 2)
         XCTAssertEqual(compact.feedHorizontalPadding, 20)
@@ -53,8 +52,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             mode: .doubleColumn,
             containerWidth: 744,
             viewportHeight: 1133,
-            horizontalSizeClass: .regular,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .regular
         )
         XCTAssertEqual(duoUnfolded.doubleColumns.count, 3)
         XCTAssertEqual(duoUnfolded.feedHorizontalPadding, 24)
@@ -63,21 +61,11 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             mode: .doubleColumn,
             containerWidth: 1366,
             viewportHeight: 1024,
-            horizontalSizeClass: .regular,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .regular
         )
         XCTAssertEqual(ipadLandscape.doubleColumns.count, 5)
         XCTAssertEqual(ipadLandscape.feedHorizontalPadding, 32)
         XCTAssertEqual(ipadLandscape.maxContentWidth, AdaptiveLayoutPolicy.multiColumnFeedMaxWidth)
-
-        let disabled = HomeFeedLayoutMetrics(
-            mode: .doubleColumn,
-            containerWidth: 1366,
-            viewportHeight: 1024,
-            horizontalSizeClass: .regular,
-            adaptiveLargeScreenEnabled: false
-        )
-        XCTAssertEqual(disabled.doubleColumns.count, 2)
     }
 
     func testVideoDetailShellLayoutResolvesTwoColumnSplitAndRevertsToCompact() {
@@ -90,8 +78,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             isPlaybackActive: true,
             isLandscape: false,
             isPortraitFullscreen: false,
-            horizontalSizeClass: .compact,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .compact
         )
         XCTAssertEqual(compact.adaptiveMode, .compactStacked)
         XCTAssertEqual(compact.playerFrame.width, 390)
@@ -107,8 +94,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             isPlaybackActive: true,
             isLandscape: false,
             isPortraitFullscreen: false,
-            horizontalSizeClass: .regular,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .regular
         )
         XCTAssertEqual(ipadPortrait.adaptiveMode, .compactStacked)
         XCTAssertEqual(ipadPortrait.playerFrame.width, 1024)
@@ -122,8 +108,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             isPlaybackActive: true,
             isLandscape: false,
             isPortraitFullscreen: false,
-            horizontalSizeClass: .regular,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .regular
         )
         XCTAssertEqual(split.adaptiveMode, .twoColumnSplit)
         XCTAssertFalse(split.usesFullscreenLayout)
@@ -145,8 +130,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             isPlaybackActive: true,
             isLandscape: false,
             isPortraitFullscreen: false,
-            horizontalSizeClass: .regular,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .regular
         )
         XCTAssertEqual(duoInnerLandscape.adaptiveMode, .twoColumnSplit)
         XCTAssertEqual(duoInnerLandscape.contentFrame.minY, 0)
@@ -162,8 +146,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             isPlaybackActive: true,
             isLandscape: false,
             isPortraitFullscreen: false,
-            horizontalSizeClass: .compact,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .compact
         )
         XCTAssertEqual(narrowSplit.adaptiveMode, .compactStacked)
     }
@@ -173,9 +156,6 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: mediaURL) }
 
         let dependencies = AppDependencies()
-        let previousAdaptive = dependencies.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
-        dependencies.libraryStore.setAdaptiveLargeScreenLayoutExperimentEnabled(true)
-        defer { dependencies.libraryStore.setAdaptiveLargeScreenLayoutExperimentEnabled(previousAdaptive) }
 
         let video = try JSONDecoder.bili.decode(VideoItem.self, from: Data("""
             {"bvid":"BVAdaptiveIdentityProbe","title":"Adaptive identity probe","cid":101,"dimension":{"width":1920,"height":1080,"rotate":0}}
@@ -901,8 +881,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             isPlaybackActive: true,
             isLandscape: false,
             isPortraitFullscreen: false,
-            horizontalSizeClass: .compact,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .compact
         )
         XCTAssertEqual(detailLayout.adaptiveMode, .compactStacked)
         XCTAssertTrue(detailLayout.usesDuoFoldedHorizontalBounds)
@@ -925,8 +904,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             isPlaybackActive: true,
             isLandscape: false,
             isPortraitFullscreen: true,
-            horizontalSizeClass: .compact,
-            adaptiveLargeScreenEnabled: true
+            horizontalSizeClass: .compact
         )
         XCTAssertFalse(fullscreenLayout.usesDuoFoldedHorizontalBounds)
         XCTAssertEqual(fullscreenLayout.playerFrame.width, 466)

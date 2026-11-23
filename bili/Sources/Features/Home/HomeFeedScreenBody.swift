@@ -18,8 +18,7 @@ struct HomeFeedScreenBody: View {
         let layoutMetrics = viewportState.layoutMetrics(
             for: layout,
             standardHorizontalInset: libraryStore.standardPageHorizontalInset,
-            horizontalSizeClass: horizontalSizeClass,
-            adaptiveLargeScreenEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
+            horizontalSizeClass: horizontalSizeClass
         )
         let imagePrefetchProfile = HomeFeedCoverPrefetchProfile.make(
             layout: layout,

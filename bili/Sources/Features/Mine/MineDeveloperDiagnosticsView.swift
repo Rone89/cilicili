@@ -124,22 +124,6 @@ struct MineDeveloperDiagnosticsView: View {
 
             Toggle(
                 isOn: Binding(
-                    get: { libraryStore.adaptiveLargeScreenLayoutExperimentEnabled },
-                    set: { libraryStore.setAdaptiveLargeScreenLayoutExperimentEnabled($0) }
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("大屏自适应布局（iPad / Duo）", systemImage: "rectangle.split.2x1")
-                    Text("在宽屏、iPad、iPhone Duo 展开态及分屏窗口中启用多栏网格、自适应导航与双栏视频详情。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.diagnostics.adaptiveLargeScreenLayout")
-
-            Toggle(
-                isOn: Binding(
                     get: { libraryStore.playbackPlayableFallbackDeadlineExperimentEnabled },
                     set: { libraryStore.setPlaybackPlayableFallbackDeadlineExperimentEnabled($0) }
                 )

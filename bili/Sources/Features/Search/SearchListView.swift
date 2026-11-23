@@ -19,12 +19,8 @@ struct SearchListView: View {
         var saved: CGFloat?
     }
 
-    private var adaptiveEnabled: Bool {
-        libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
-    }
-
     private var horizontalInset: CGFloat {
-        adaptiveEnabled && containerSize.width > 0
+        containerSize.width > 0
             ? AdaptiveLayoutPolicy.horizontalInset(
                 for: containerSize.width,
                 horizontalSizeClass: horizontalSizeClass,
@@ -35,7 +31,7 @@ struct SearchListView: View {
     }
 
     private var discoveryColumnCount: Int {
-        adaptiveEnabled && containerSize.width > 0
+        containerSize.width > 0
             ? AdaptiveLayoutPolicy.searchDiscoveryColumnCount(
                 containerWidth: containerSize.width,
                 containerHeight: containerSize.height,
@@ -46,7 +42,7 @@ struct SearchListView: View {
     }
 
     private var resultColumnCount: Int {
-        adaptiveEnabled && containerSize.width > 0
+        containerSize.width > 0
             ? AdaptiveLayoutPolicy.listCardColumnCount(
                 containerWidth: containerSize.width,
                 containerHeight: containerSize.height,
@@ -81,7 +77,7 @@ struct SearchListView: View {
                     resultsContent
                 }
             }
-            .frame(maxWidth: adaptiveEnabled ? AdaptiveLayoutPolicy.searchResultsMaxWidth : .infinity, alignment: .leading)
+            .frame(maxWidth: AdaptiveLayoutPolicy.searchResultsMaxWidth, alignment: .leading)
             .padding(.horizontal, horizontalInset)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.bottom, 18)

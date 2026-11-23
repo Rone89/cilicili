@@ -7,14 +7,13 @@ struct LiveRoomContentLayout {
     let fullscreenMode: PlayerFullscreenMode?
     let isCompletingFullscreenExit: Bool
     var horizontalSizeClass: UserInterfaceSizeClass? = nil
-    var adaptiveLargeScreenEnabled: Bool = false
 
     var isInlineFullscreen: Bool {
         fullscreenMode != nil || isCompletingFullscreenExit
     }
 
     var isSplitTwoColumn: Bool {
-        guard !isInlineFullscreen, adaptiveLargeScreenEnabled else { return false }
+        guard !isInlineFullscreen else { return false }
         return AdaptiveLayoutPolicy.videoDetailMode(
             containerSize: proxySize,
             horizontalSizeClass: horizontalSizeClass,
@@ -25,7 +24,7 @@ struct LiveRoomContentLayout {
 
     var isLandscape: Bool {
         guard !isSplitTwoColumn else { return false }
-        if adaptiveLargeScreenEnabled, horizontalSizeClass == .regular {
+        if horizontalSizeClass == .regular {
             return false
         }
         return sceneIsLandscape && !isInlineFullscreen

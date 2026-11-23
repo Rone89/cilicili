@@ -244,7 +244,7 @@ struct RootTabView: View {
                     }
                 }
                 .tabViewSearchActivation(.searchTabSelection)
-                .adaptiveRootTabViewStyle(isEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled)
+                .tabViewStyle(.sidebarAdaptable)
             }
         }
         .toolbarVisibility(visibleRootTabs.count == 1 ? .hidden : .automatic, for: .tabBar)
@@ -612,17 +612,6 @@ struct RootTabView: View {
             return
         }
         await accountMessageViewModel.refreshUnread()
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func adaptiveRootTabViewStyle(isEnabled: Bool) -> some View {
-        if isEnabled {
-            tabViewStyle(.sidebarAdaptable)
-        } else {
-            self
-        }
     }
 }
 

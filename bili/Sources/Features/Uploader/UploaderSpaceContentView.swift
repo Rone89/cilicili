@@ -12,12 +12,8 @@ struct UploaderSpaceContentView: View {
     @State private var selectedSection: UploaderSpaceSection = .home
     @State private var contentWidth: CGFloat = 0
 
-    private var adaptiveEnabled: Bool {
-        libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
-    }
-
     private var effectiveHorizontalInset: CGFloat {
-        adaptiveEnabled && contentWidth > 0
+        contentWidth > 0
             ? AdaptiveLayoutPolicy.horizontalInset(
                 for: contentWidth,
                 horizontalSizeClass: horizontalSizeClass,
@@ -31,19 +27,16 @@ struct UploaderSpaceContentView: View {
             mode: .doubleColumn,
             containerWidth: contentWidth,
             horizontalSizeClass: horizontalSizeClass,
-            standardHorizontalInset: effectiveHorizontalInset,
-            adaptiveLargeScreenEnabled: adaptiveEnabled
+            standardHorizontalInset: effectiveHorizontalInset
         )
     }
 
     private var dynamicsContentWidth: CGFloat {
-        adaptiveEnabled
-            ? AdaptiveLayoutPolicy.centeredContentWidth(
-                containerWidth: contentWidth,
-                maxContentWidth: AdaptiveLayoutPolicy.readingColumnMaxWidth,
-                horizontalInset: effectiveHorizontalInset
-            )
-            : max(contentWidth - effectiveHorizontalInset * 2, 0)
+        AdaptiveLayoutPolicy.centeredContentWidth(
+            containerWidth: contentWidth,
+            maxContentWidth: AdaptiveLayoutPolicy.readingColumnMaxWidth,
+            horizontalInset: effectiveHorizontalInset
+        )
     }
 
     private let visibleBannerHeight: CGFloat = 120

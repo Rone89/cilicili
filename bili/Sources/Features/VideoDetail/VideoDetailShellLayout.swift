@@ -117,15 +117,14 @@ struct VideoDetailShellLayout: Equatable {
         isLandscape: Bool,
         isPortraitFullscreen: Bool,
         fullscreenContentFrameSize: CGSize? = nil,
-        horizontalSizeClass: UserInterfaceSizeClass? = nil,
-        adaptiveLargeScreenEnabled: Bool = false
+        horizontalSizeClass: UserInterfaceSizeClass? = nil
     ) -> Self {
         let usesFullscreenLayout = isLandscape || isPortraitFullscreen
         let adaptiveMode = AdaptiveLayoutPolicy.videoDetailMode(
             containerSize: bounds.size,
             horizontalSizeClass: horizontalSizeClass,
             isFullscreenActive: usesFullscreenLayout,
-            adaptiveEnabled: adaptiveLargeScreenEnabled
+            adaptiveEnabled: true
         )
 
         if usesFullscreenLayout {

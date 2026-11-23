@@ -29,7 +29,6 @@ struct DynamicFeedScreenContent: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let adaptiveEnabled = libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
             let layoutMode = libraryStore.dynamicFeedLayoutMode
             let horizontalInset: CGFloat = {
                 if layoutMode.usesMultiColumnFeed {
@@ -42,14 +41,12 @@ struct DynamicFeedScreenContent: View {
                         return 20
                     }
                 }
-                return adaptiveEnabled
-                    ? AdaptiveLayoutPolicy.horizontalInset(
-                        for: proxy.size.width,
-                        horizontalSizeClass: horizontalSizeClass,
-                        containerHeight: proxy.size.height,
-                        adaptiveEnabled: true
-                    )
-                    : libraryStore.standardPageHorizontalInset
+                return AdaptiveLayoutPolicy.horizontalInset(
+                    for: proxy.size.width,
+                    horizontalSizeClass: horizontalSizeClass,
+                    containerHeight: proxy.size.height,
+                    adaptiveEnabled: true
+                )
             }()
             let contentWidth: CGFloat = {
                 if layoutMode.usesMultiColumnFeed {
@@ -59,13 +56,11 @@ struct DynamicFeedScreenContent: View {
                         horizontalInset: horizontalInset
                     )
                 }
-                return adaptiveEnabled
-                    ? AdaptiveLayoutPolicy.centeredContentWidth(
-                        containerWidth: proxy.size.width,
-                        maxContentWidth: AdaptiveLayoutPolicy.readingColumnMaxWidth,
-                        horizontalInset: horizontalInset
-                    )
-                    : max(floor(proxy.size.width - horizontalInset * 2), 0)
+                return AdaptiveLayoutPolicy.centeredContentWidth(
+                    containerWidth: proxy.size.width,
+                    maxContentWidth: AdaptiveLayoutPolicy.readingColumnMaxWidth,
+                    horizontalInset: horizontalInset
+                )
             }()
             let waterfallColumnCount = AdaptiveLayoutPolicy.dynamicWaterfallColumnCount(
                 containerWidth: proxy.size.width,

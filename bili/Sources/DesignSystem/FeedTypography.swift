@@ -298,8 +298,6 @@ private struct StandardPageHorizontalContentMarginsModifier: ViewModifier {
         let trailingChromeClearance: CGFloat
     }
 
-    @AppStorage("cc.bili.display.adaptiveLargeScreenLayoutExperimentEnabled.v1")
-    private var adaptiveLargeScreenEnabled = true
     @State private var containerWidth: CGFloat = 0
     @State private var trailingChromeClearance: CGFloat = 0
     let baseInset: CGFloat
@@ -310,7 +308,7 @@ private struct StandardPageHorizontalContentMarginsModifier: ViewModifier {
             containerWidth: containerWidth,
             baseInset: baseInset,
             maxContentWidth: maxContentWidth,
-            adaptiveEnabled: adaptiveLargeScreenEnabled
+            adaptiveEnabled: true
         )
     }
 

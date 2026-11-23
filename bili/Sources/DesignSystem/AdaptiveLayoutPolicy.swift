@@ -477,18 +477,12 @@ nonisolated enum AdaptiveLayoutPolicy {
 /// Optional SwiftUI modifier to constrain reading-heavy columns (Dynamic feed, Article reader)
 /// while keeping full-width edge-to-edge scrolling and pull-to-refresh intact.
 struct AdaptiveReadableWidthModifier: ViewModifier {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @EnvironmentObject private var libraryStore: LibraryStore
     let maxWidth: CGFloat
 
     func body(content: Content) -> some View {
-        if libraryStore.adaptiveLargeScreenLayoutExperimentEnabled {
-            content
-                .frame(maxWidth: maxWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
-        } else {
-            content
-        }
+        content
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

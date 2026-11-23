@@ -193,12 +193,11 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         rotationCoordinator: PlaybackRotationCoordinator
     ) -> VideoDetailShellLayout {
         lastHorizontalSizeClass = horizontalSizeClass
-        let adaptiveEnabled = runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
         let targetMode = AdaptiveLayoutPolicy.videoDetailMode(
             containerSize: size,
             horizontalSizeClass: horizontalSizeClass,
             isFullscreenActive: rotationCoordinator.layoutLandscape || rotationCoordinator.isPortraitFullscreen,
-            adaptiveEnabled: adaptiveEnabled
+            adaptiveEnabled: true
         )
         let effectiveCompactWidth = AdaptiveLayoutPolicy.duoFoldedContentHorizontalBounds(
             containerBounds: CGRect(origin: .zero, size: size),
@@ -230,8 +229,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             isLandscape: rotationCoordinator.layoutLandscape,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen,
             fullscreenContentFrameSize: lastEmbeddedContentSize,
-            horizontalSizeClass: horizontalSizeClass,
-            adaptiveLargeScreenEnabled: adaptiveEnabled
+            horizontalSizeClass: horizontalSizeClass
         )
         if !layout.usesFullscreenLayout {
             lastEmbeddedContentSize = layout.contentFrame.size
@@ -949,14 +947,12 @@ struct VideoDetailSwiftUIContainer: View {
             )
             let isInteractiveScrollCollapseEnabled =
                 layout.adaptiveMode == .compactStacked && model.isInteractiveScrollCollapseActive
-            let contentHorizontalInset = runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
-                ? AdaptiveLayoutPolicy.horizontalInset(
-                    for: layout.contentFrame.width,
-                    horizontalSizeClass: horizontalSizeClass,
-                    containerHeight: layout.contentFrame.height,
-                    adaptiveEnabled: true
-                )
-                : dependencies.libraryStore.standardPageHorizontalInset
+            let contentHorizontalInset = AdaptiveLayoutPolicy.horizontalInset(
+                for: layout.contentFrame.width,
+                horizontalSizeClass: horizontalSizeClass,
+                containerHeight: layout.contentFrame.height,
+                adaptiveEnabled: true
+            )
             let contentBounds = layout.contentFrame.size
 
             ZStack(alignment: .topLeading) {
@@ -1353,7 +1349,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         return AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
             containerSize: view.bounds.size,
             traitCollection: traitCollection,
-            adaptiveEnabled: runtimeSettings.adaptiveLargeScreenLayoutExperimentEnabled
+            adaptiveEnabled: true
         )
     }
 

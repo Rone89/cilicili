@@ -82,8 +82,7 @@ extension LiveRoomContentView {
 
     func updateLiveFullscreenOrientation(_ orientation: UIDeviceOrientation) {
         let keyWindow = UIApplication.shared.playbackDetailForegroundKeyWindow
-        if libraryStore.adaptiveLargeScreenLayoutExperimentEnabled,
-           AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: keyWindow) {
+        if AdaptiveLayoutPolicy.allowsUnrestrictedRootOrientation(for: keyWindow) {
             return
         }
         switch orientation {

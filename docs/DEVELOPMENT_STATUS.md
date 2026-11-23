@@ -3487,5 +3487,19 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：Debug 增量编译通过（`** BUILD SUCCEEDED **`）。
+  - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，共享 `Xcode-27` 缓存）**：已保留默认 ad-hoc 签名与 Keychain entitlements 编译 `a6d4aa4a` Debug 包，原位安装并成功拉起（`cc.bili`）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次 UP 主关注角标改动安装到 `iPhone Duo` 模拟器（停留在 `7813d834`）或真机 `RCe2027`（停留在 `0b6b94a5`）实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+  - `iPhone Duo` 模拟器上视频详情页 UP 主右下角关注微角标的实景视觉与切换动画待用户验收；真机 `RCe2027` 停留在 `0b6b94a5`；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+
+### 2026-11-24（正式转正大屏自适应布局并移除实验开关与旧单栏回退分支）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `a6d4aa4a` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **移除实验开关与诊断 UI**：删除 [LibraryStore.swift](bili/Sources/Storage/LibraryStore.swift) 的 `adaptiveLargeScreenLayoutExperimentEnabled` 属性、持久化键及 setter，删除 [LibrarySettingsSnapshots.swift](bili/Sources/Storage/LibrarySettingsSnapshots.swift) 三个运行时快照中的对应字段，并移除 [MineDeveloperDiagnosticsView.swift](bili/Sources/Features/Mine/MineDeveloperDiagnosticsView.swift) 中的「大屏自适应布局（iPad / Duo）」实验开关。
+  2. **固化全端大屏自适应为正式行为**：清理 [RootTabView.swift](bili/Sources/App/RootTabView.swift)、[FeedTypography.swift](bili/Sources/DesignSystem/FeedTypography.swift)、[AdaptiveLayoutPolicy.swift](bili/Sources/DesignSystem/AdaptiveLayoutPolicy.swift)、[HomeFeedLayoutMetrics.swift](bili/Sources/Features/Home/HomeFeedLayoutMetrics.swift)、[HomeFeedViewportState.swift](bili/Sources/Features/Home/HomeFeedViewportState.swift)、[HomeFeedScreenBody.swift](bili/Sources/Features/Home/HomeFeedScreenBody.swift)、[DynamicFeedScreenContent.swift](bili/Sources/Features/Dynamic/DynamicFeedScreenContent.swift)、[DynamicFeedCard.swift](bili/Sources/Features/Dynamic/DynamicFeedCard.swift)、[LiveRoomContentLayout.swift](bili/Sources/Features/Live/LiveRoomContentLayout.swift)、[LiveRoomContentView.swift](bili/Sources/Features/Live/LiveRoomContentView.swift)、[LiveRoomContentActions.swift](bili/Sources/Features/Live/LiveRoomContentActions.swift)、[LiveFeedView.swift](bili/Sources/Features/Live/LiveFeedView.swift)、[UploaderSpaceContentView.swift](bili/Sources/Features/Uploader/UploaderSpaceContentView.swift)、[SearchListView.swift](bili/Sources/Features/Search/SearchListView.swift)、[VideoDetailShellLayout.swift](bili/Sources/Features/VideoDetail/VideoDetailShellLayout.swift)、[VideoDetailSwiftUIContainer.swift](bili/Sources/Features/VideoDetail/VideoDetailSwiftUIContainer.swift) 与 [VideoDetailRotationBridgeViewController.swift](bili/Sources/Features/VideoDetail/VideoDetailRotationBridgeViewController.swift) 中的开关门控与旧单栏回退路径。
+  3. **同步更新单元测试**：更新 [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift) 移除已删除的实验开关参数与旧关闭态断言。
+- **已验证（于最后一次代码改动后执行）**：
+  - 全仓引用检查与 `git diff --check`：通过（零残留引用，exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests` 全部 19 项单元测试通过（`** TEST SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次转正提交重新安装到 `iPhone Duo` 模拟器（停留在 `a6d4aa4a`）、真机 `RCe2027`（停留在 `0b6b94a5`）或 iPad 模拟器实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。

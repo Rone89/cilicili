@@ -9,23 +9,17 @@ struct LiveFeedView: View {
     var showsNativeRefreshButton = true
     @State private var containerSize: CGSize = .zero
 
-    private var adaptiveEnabled: Bool {
-        libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
-    }
-
     private var horizontalInset: CGFloat {
-        adaptiveEnabled
-            ? AdaptiveLayoutPolicy.horizontalInset(
-                for: containerSize.width,
-                horizontalSizeClass: horizontalSizeClass,
-                containerHeight: containerSize.height,
-                adaptiveEnabled: true
-            )
-            : libraryStore.standardPageHorizontalInset
+        AdaptiveLayoutPolicy.horizontalInset(
+            for: containerSize.width,
+            horizontalSizeClass: horizontalSizeClass,
+            containerHeight: containerSize.height,
+            adaptiveEnabled: true
+        )
     }
 
     private var columnCount: Int {
-        adaptiveEnabled && containerSize.width > 0
+        containerSize.width > 0
             ? AdaptiveLayoutPolicy.feedGridColumnCount(
                 containerWidth: containerSize.width,
                 containerHeight: containerSize.height,
@@ -41,7 +35,7 @@ struct LiveFeedView: View {
         ScrollView {
             VStack(spacing: 0) {
                 LiveFeedContent(viewModel: viewModel, columnCount: columnCount)
-                    .frame(maxWidth: adaptiveEnabled ? AdaptiveLayoutPolicy.multiColumnFeedMaxWidth : .infinity)
+                    .frame(maxWidth: AdaptiveLayoutPolicy.multiColumnFeedMaxWidth)
                     .padding(.horizontal, horizontalInset)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 22)

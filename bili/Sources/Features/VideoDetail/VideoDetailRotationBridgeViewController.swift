@@ -474,7 +474,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         if AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
             containerSize: size,
             traitCollection: traitCollection,
-            adaptiveEnabled: contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+            adaptiveEnabled: true
         ) {
             toLandscape = rotationCoordinator.isLandscape
         } else {
@@ -537,7 +537,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         if AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
             containerSize: view.bounds.size,
             traitCollection: traitCollection,
-            adaptiveEnabled: contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+            adaptiveEnabled: true
         ) {
             setImmersivePlayback(true)
             rotationCoordinator.setInPlaceFullscreen(true)
@@ -664,14 +664,13 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             || rotationCoordinator.isInPlaceFullscreen {
             return true
         }
-        let adaptiveEnabled = contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
         let resolvedHorizontalSizeClass: UserInterfaceSizeClass? =
             traitCollection.horizontalSizeClass == .compact ? .compact : .regular
         return AdaptiveLayoutPolicy.videoDetailMode(
             containerSize: containerSize,
             horizontalSizeClass: resolvedHorizontalSizeClass,
             isFullscreenActive: false,
-            adaptiveEnabled: adaptiveEnabled
+            adaptiveEnabled: true
         ) == .twoColumnSplit
     }
 
@@ -820,7 +819,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         if AdaptiveLayoutPolicy.treatsLandscapeRotationAsSplitDetail(
             containerSize: view.bounds.size,
             traitCollection: traitCollection,
-            adaptiveEnabled: contentController.viewModel.libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+            adaptiveEnabled: true
         ) {
             return rotationCoordinator.isLandscape
         }

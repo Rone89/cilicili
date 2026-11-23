@@ -19,31 +19,26 @@ struct HomeFeedLayoutMetrics {
         containerWidth: CGFloat,
         viewportHeight: CGFloat = 900,
         horizontalSizeClass: UserInterfaceSizeClass? = nil,
-        standardHorizontalInset: CGFloat = 20,
-        adaptiveLargeScreenEnabled: Bool = false
+        standardHorizontalInset: CGFloat = 20
     ) {
         self.mode = mode
-        let effectiveInset = adaptiveLargeScreenEnabled
-            ? AdaptiveLayoutPolicy.horizontalInset(
-                for: containerWidth,
-                horizontalSizeClass: horizontalSizeClass,
-                containerHeight: viewportHeight,
-                adaptiveEnabled: true
-            )
-            : standardHorizontalInset
+        let effectiveInset = AdaptiveLayoutPolicy.horizontalInset(
+            for: containerWidth,
+            horizontalSizeClass: horizontalSizeClass,
+            containerHeight: viewportHeight,
+            adaptiveEnabled: true
+        )
 
         let doubleColumnSpacing: CGFloat = mode == .borderedDoubleColumn ? 12 : 14
         let doubleColumnCoverHeightRatio: CGFloat = mode == .borderedDoubleColumn ? 10 / 16 : 9 / 16
-        let doubleColumnCount = adaptiveLargeScreenEnabled
-            ? AdaptiveLayoutPolicy.feedGridColumnCount(
-                containerWidth: containerWidth,
-                containerHeight: viewportHeight,
-                horizontalSizeClass: horizontalSizeClass,
-                horizontalInset: effectiveInset,
-                columnSpacing: doubleColumnSpacing,
-                adaptiveEnabled: true
-            )
-            : 2
+        let doubleColumnCount = AdaptiveLayoutPolicy.feedGridColumnCount(
+            containerWidth: containerWidth,
+            containerHeight: viewportHeight,
+            horizontalSizeClass: horizontalSizeClass,
+            horizontalInset: effectiveInset,
+            columnSpacing: doubleColumnSpacing,
+            adaptiveEnabled: true
+        )
         doubleColumns = Array(
             repeating: GridItem(.flexible(), spacing: doubleColumnSpacing),
             count: doubleColumnCount
@@ -51,28 +46,24 @@ struct HomeFeedLayoutMetrics {
         singleColumnHorizontalPadding = effectiveInset
 
         let resolvedSingleColumnsCount: Int
-        if adaptiveLargeScreenEnabled {
-            switch mode {
-            case .borderedSingleColumn:
-                resolvedSingleColumnsCount = AdaptiveLayoutPolicy.listCardColumnCount(
-                    containerWidth: containerWidth,
-                    containerHeight: viewportHeight,
+        switch mode {
+        case .borderedSingleColumn:
+            resolvedSingleColumnsCount = AdaptiveLayoutPolicy.listCardColumnCount(
+                containerWidth: containerWidth,
+                containerHeight: viewportHeight,
+                horizontalSizeClass: horizontalSizeClass,
+                adaptiveEnabled: true
+            )
+        case .singleColumn:
+            resolvedSingleColumnsCount = containerWidth >= 920
+                && AdaptiveLayoutPolicy.widthTier(
+                    containerSize: CGSize(width: containerWidth, height: viewportHeight),
                     horizontalSizeClass: horizontalSizeClass,
                     adaptiveEnabled: true
-                )
-            case .singleColumn:
-                resolvedSingleColumnsCount = containerWidth >= 920
-                    && AdaptiveLayoutPolicy.widthTier(
-                        containerSize: CGSize(width: containerWidth, height: viewportHeight),
-                        horizontalSizeClass: horizontalSizeClass,
-                        adaptiveEnabled: true
-                    ) >= .expanded
-                    ? 2
-                    : 1
-            case .doubleColumn, .borderedDoubleColumn:
-                resolvedSingleColumnsCount = 1
-            }
-        } else {
+                ) >= .expanded
+                ? 2
+                : 1
+        case .doubleColumn, .borderedDoubleColumn:
             resolvedSingleColumnsCount = 1
         }
 
@@ -86,9 +77,9 @@ struct HomeFeedLayoutMetrics {
         let tier = AdaptiveLayoutPolicy.widthTier(
             containerSize: CGSize(width: containerWidth, height: viewportHeight),
             horizontalSizeClass: horizontalSizeClass,
-            adaptiveEnabled: adaptiveLargeScreenEnabled
+            adaptiveEnabled: true
         )
-        if adaptiveLargeScreenEnabled, tier != .compact {
+        if tier != .compact {
             switch mode {
             case .doubleColumn, .borderedDoubleColumn:
                 maxContentWidth = AdaptiveLayoutPolicy.multiColumnFeedMaxWidth

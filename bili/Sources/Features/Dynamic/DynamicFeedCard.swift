@@ -349,9 +349,7 @@ private struct DynamicDetailView: View {
         .nativeBottomScrollEdgeBlurVisibility(isHidden: richCommentComposerTarget != nil)
         .onGeometryChange(for: CGFloat.self) { geometry in
             let availableWidth = AdaptiveLayoutPolicy.safeContentWidth(for: geometry)
-            let maxWidth = libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
-                ? min(availableWidth, AdaptiveLayoutPolicy.readingColumnMaxWidth)
-                : availableWidth
+            let maxWidth = min(availableWidth, AdaptiveLayoutPolicy.readingColumnMaxWidth)
             return max(floor(maxWidth - detailInset * 2), 0)
         } action: { _, width in
             guard width > 1 else { return }

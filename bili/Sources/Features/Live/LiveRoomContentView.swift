@@ -17,8 +17,7 @@ struct LiveRoomContentView: View {
                 fullscreenGeometry: proxy.liveDetailFullscreenContainerGeometry,
                 fullscreenMode: fullscreenMode,
                 isCompletingFullscreenExit: isCompletingFullscreenExit,
-                horizontalSizeClass: horizontalSizeClass,
-                adaptiveLargeScreenEnabled: libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
+                horizontalSizeClass: horizontalSizeClass
             )
 
             liveStageContent(layout: layout, proxySize: proxy.size)
