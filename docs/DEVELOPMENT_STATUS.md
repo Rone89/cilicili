@@ -3437,5 +3437,17 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testSplitColumnSheetDismissRemovesOverlayContainerAndNotifiesVisibilityChange` 与 `testVideoDetailContainerNotifiesOuterBottomToolbarHiddenForUnfoldedPortraitInlineOverlay` 均通过（`** TEST SUCCEEDED **`）。
+  - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，共享 `Xcode-27` 缓存）**：已保留默认 ad-hoc 签名与 Keychain entitlements 编译 `d14bf6fb` Debug 包，原位安装并成功拉起（`cc.bili`）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次修复安装到 `iPhone Duo` 模拟器（仍停留在 `e3f91e8d`）或真机 `RCe2027`（停留在 `502af843`）做展开态竖屏分P/合集弹窗实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+  - `iPhone Duo` 模拟器展开态竖屏分P/合集弹窗的实景交互效果待用户验收；真机 `RCe2027` 与未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+
+### 2026-11-24（调低有边框卡片描边不透明度）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `d14bf6fb` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [VideoCardBodies.swift](bili/Sources/DesignSystem/VideoCardBodies.swift)：将 `VideoCardBorderedSurfaceModifier.borderColor` 从浅色 `Color.black.opacity(0.12)` / 深色 `Color.white.opacity(0.18)` 调低为浅色 `0.06` / 深色 `0.10`（保持 `1pt`），同步生效于首页有边框自适应布局卡片及动态页瀑布流/等高网格卡片。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：Debug 增量编译通过（`** BUILD SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次描边微调安装到 `iPhone Duo` 模拟器（停留在 `d14bf6fb`）或真机 `RCe2027`（停留在 `502af843`）实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。

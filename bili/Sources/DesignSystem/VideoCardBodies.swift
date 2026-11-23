@@ -300,9 +300,9 @@ private struct VideoCardBorderedSurfaceModifier: ViewModifier {
     private var borderColor: Color {
         switch colorScheme {
         case .dark:
-            return Color.white.opacity(0.18)
+            return Color.white.opacity(0.10)
         default:
-            return Color.black.opacity(0.12)
+            return Color.black.opacity(0.06)
         }
     }
 
