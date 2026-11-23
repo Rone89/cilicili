@@ -32,12 +32,9 @@ struct VideoDetailActionStripOwnerMenu: View {
                 showsShadow: false,
                 showsBorder: false
             )
-            .overlay {
-                if isFollowing {
-                    Circle()
-                        .inset(by: -1)
-                        .stroke(appTintColor, lineWidth: 2)
-                }
+            .overlay(alignment: .bottomTrailing) {
+                followStatusBadge
+                    .offset(x: 2, y: 2)
             }
         }
         .buttonStyle(.plain)
@@ -47,5 +44,25 @@ struct VideoDetailActionStripOwnerMenu: View {
         .accessibilityValue(isFollowing ? "已关注" : "未关注")
         .accessibilityHint("查看个人空间或更改关注状态")
         .accessibilityIdentifier("video.detail.ownerMenu")
+    }
+
+    private var followStatusBadge: some View {
+        ZStack {
+            Circle()
+                .fill(VideoDetailTheme.background)
+            Circle()
+                .fill(isFollowing ? Color.primary.opacity(0.16) : appTintColor)
+            Image(systemName: isFollowing ? "checkmark" : "plus")
+                .font(.system(size: 8.5, weight: .bold))
+                .foregroundStyle(isFollowing ? Color.primary.opacity(0.82) : Color.white)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .frame(width: 16, height: 16)
+        .overlay {
+            Circle()
+                .stroke(VideoDetailTheme.background, lineWidth: 2)
+        }
+        .animation(.smooth(duration: 0.2), value: isFollowing)
+        .accessibilityHidden(true)
     }
 }

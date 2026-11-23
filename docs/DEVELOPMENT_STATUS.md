@@ -3477,4 +3477,15 @@
   - `git diff --check`：通过（exit 0）。
   - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，共享 `Xcode-27` 缓存）**：保留默认 ad-hoc 签名与 Keychain entitlements 编译 Debug 包，原位安装并成功拉起（`cc.bili`）。
 - **未验证与待办（明确区分，不推测通过）**：
-  - `iPhone Duo` 模拟器展开态竖屏评论回复/分P/合集弹窗的底部工具栏隐藏实景效果待用户验收；真机 `RCe2027` 停留在 `0b6b94a5`；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+  - `iPhone Duo` 模拟器展开态竖屏评论回复/分P/合集弹窗的底部工具栏隐藏已由用户确认修复；真机 `RCe2027` 停留在 `0b6b94a5`；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+
+### 2026-11-24（视频详情页 UP 主关注状态由头像外圈改为右下角镂空微角标）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `7813d834` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [VideoDetailActionStripOwnerMenu.swift](bili/Sources/Features/VideoDetail/VideoDetailActionStripOwnerMenu.swift)：移除 UP 主头像外围 `2pt` 主题色圆圈描边，改为头像右下角 `16pt` 带背景色 `2pt` 镂空环的微角标（未关注显示主题色底 + 白色 `plus`，已关注切换为柔和中性底 + `checkmark`，带 `.symbolEffect(.replace)` 平滑过渡）。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：Debug 增量编译通过（`** BUILD SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次 UP 主关注角标改动安装到 `iPhone Duo` 模拟器（停留在 `7813d834`）或真机 `RCe2027`（停留在 `0b6b94a5`）实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
