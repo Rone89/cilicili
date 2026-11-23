@@ -10,7 +10,7 @@ struct DynamicTopBar: View {
     let currentKind: DynamicFeedKind
     var layoutMode: DynamicFeedLayoutMode = .list
     let onSelect: (DynamicFeedKind) -> Void
-    var onToggleLayoutMode: (() -> Void)? = nil
+    var onSelectLayoutMode: ((DynamicFeedLayoutMode) -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -18,18 +18,28 @@ struct DynamicTopBar: View {
                 DynamicTopBarTitle(state: titleState)
             }
             Spacer(minLength: 8)
-            if let onToggleLayoutMode {
-                Button(action: onToggleLayoutMode) {
-                    Image(
-                        systemName: layoutMode == .waterfall
-                            ? DynamicFeedLayoutMode.list.systemImage
-                            : DynamicFeedLayoutMode.waterfall.systemImage
-                    )
-                    .frame(width: DynamicTopBarLayout.controlHeight, height: DynamicTopBarLayout.controlHeight)
+            if let onSelectLayoutMode {
+                Menu {
+                    Picker(
+                        "信息流布局",
+                        selection: Binding(
+                            get: { layoutMode },
+                            set: { onSelectLayoutMode($0) }
+                        )
+                    ) {
+                        ForEach(DynamicFeedLayoutMode.allCases) { mode in
+                            Label(mode.title, systemImage: mode.systemImage)
+                                .tag(mode)
+                        }
+                    }
+                } label: {
+                    Image(systemName: layoutMode.systemImage)
+                        .frame(width: DynamicTopBarLayout.controlHeight, height: DynamicTopBarLayout.controlHeight)
                 }
                 .tint(.primary)
                 .glassEffect(.regular.interactive(), in: Circle())
-                .accessibilityLabel(layoutMode == .waterfall ? "切换为经典列表" : "切换为瀑布流")
+                .accessibilityLabel("切换信息流布局")
+                .accessibilityValue(layoutMode.title)
                 .accessibilityIdentifier("dynamic.layoutMode.toggle")
             }
             if kinds.count > 1 {

@@ -32,7 +32,7 @@ struct DynamicFeedScreenContent: View {
             let adaptiveEnabled = libraryStore.adaptiveLargeScreenLayoutExperimentEnabled
             let layoutMode = libraryStore.dynamicFeedLayoutMode
             let horizontalInset: CGFloat = {
-                if layoutMode == .waterfall {
+                if layoutMode.usesMultiColumnFeed {
                     switch proxy.size.width {
                     case ..<560:
                         return 10
@@ -52,7 +52,7 @@ struct DynamicFeedScreenContent: View {
                     : libraryStore.standardPageHorizontalInset
             }()
             let contentWidth: CGFloat = {
-                if layoutMode == .waterfall {
+                if layoutMode.usesMultiColumnFeed {
                     return AdaptiveLayoutPolicy.centeredContentWidth(
                         containerWidth: proxy.size.width,
                         maxContentWidth: AdaptiveLayoutPolicy.multiColumnFeedMaxWidth,

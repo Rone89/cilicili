@@ -663,6 +663,23 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
         store.setDynamicFeedLayoutMode(.waterfall)
         XCTAssertEqual(store.dynamicFeedLayoutMode, .waterfall)
         XCTAssertEqual(LibraryStore().dynamicFeedLayoutMode, .waterfall)
+        XCTAssertTrue(DynamicFeedLayoutMode.waterfall.usesMultiColumnFeed)
+
+        store.setDynamicFeedLayoutMode(.uniformGrid)
+        XCTAssertEqual(store.dynamicFeedLayoutMode, .uniformGrid)
+        XCTAssertEqual(LibraryStore().dynamicFeedLayoutMode, .uniformGrid)
+        XCTAssertTrue(DynamicFeedLayoutMode.uniformGrid.usesMultiColumnFeed)
+        XCTAssertFalse(DynamicFeedLayoutMode.list.usesMultiColumnFeed)
+
+        // Uniform grid locks preview media to 16:9 and matches text-only card height
+        // exactly to video card media + 2-line headline area.
+        let cardWidth: CGFloat = 240
+        let mediaHeight = DynamicUniformGridMetrics.mediaHeight(forCardWidth: cardWidth)
+        XCTAssertEqual(mediaHeight, 135)
+        XCTAssertEqual(
+            DynamicUniformGridMetrics.textOnlyBodyHeight(forCardWidth: cardWidth),
+            mediaHeight + DynamicUniformGridMetrics.headlineTotalHeight
+        )
     }
 
     private func waitForSurfaceHost(in root: UIView) async throws -> DirectUIKitPlayerSurfaceHostView {

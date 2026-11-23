@@ -135,7 +135,8 @@ private struct DynamicFeedBodyContent: View {
                     DynamicFeedFooter(viewModel: viewModel)
                 }
             } else {
-                if layoutMode == .waterfall {
+                switch layoutMode {
+                case .waterfall:
                     DynamicWaterfallFeedView(
                         api: api,
                         viewModel: viewModel,
@@ -143,7 +144,15 @@ private struct DynamicFeedBodyContent: View {
                         contentWidth: contentWidth,
                         columnCount: waterfallColumnCount
                     )
-                } else {
+                case .uniformGrid:
+                    DynamicUniformGridFeedView(
+                        api: api,
+                        viewModel: viewModel,
+                        items: viewModel.items,
+                        contentWidth: contentWidth,
+                        columnCount: waterfallColumnCount
+                    )
+                case .list:
                     DynamicFeedItemsList(
                         api: api,
                         viewModel: viewModel,

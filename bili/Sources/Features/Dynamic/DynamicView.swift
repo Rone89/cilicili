@@ -95,7 +95,7 @@ struct DynamicContentRoot: View {
                     currentKind: selectedFeed,
                     layoutMode: libraryStore.dynamicFeedLayoutMode,
                     onSelect: { selectedFeed = $0 },
-                    onToggleLayoutMode: toggleDynamicLayoutMode
+                    onSelectLayoutMode: { libraryStore.setDynamicFeedLayoutMode($0) }
                 )
             }
         }
@@ -113,19 +113,25 @@ struct DynamicContentRoot: View {
             }
             if usesRootNavigationToolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: toggleDynamicLayoutMode) {
-                        Image(
-                            systemName: libraryStore.dynamicFeedLayoutMode == .waterfall
-                                ? DynamicFeedLayoutMode.list.systemImage
-                                : DynamicFeedLayoutMode.waterfall.systemImage
-                        )
+                    Menu {
+                        Picker(
+                            "信息流布局",
+                            selection: Binding(
+                                get: { libraryStore.dynamicFeedLayoutMode },
+                                set: { libraryStore.setDynamicFeedLayoutMode($0) }
+                            )
+                        ) {
+                            ForEach(DynamicFeedLayoutMode.allCases) { mode in
+                                Label(mode.title, systemImage: mode.systemImage)
+                                    .tag(mode)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: libraryStore.dynamicFeedLayoutMode.systemImage)
                     }
                     .tint(.primary)
-                    .accessibilityLabel(
-                        libraryStore.dynamicFeedLayoutMode == .waterfall
-                            ? "切换为经典列表"
-                            : "切换为瀑布流"
-                    )
+                    .accessibilityLabel("切换信息流布局")
+                    .accessibilityValue(libraryStore.dynamicFeedLayoutMode.title)
                     .accessibilityIdentifier("dynamic.layoutMode.toggle")
                 }
             }
@@ -178,11 +184,6 @@ struct DynamicContentRoot: View {
             }
             .scrollEdgeEffectStyle(.soft, for: .top)
         }
-    }
-
-    private func toggleDynamicLayoutMode() {
-        let next: DynamicFeedLayoutMode = libraryStore.dynamicFeedLayoutMode == .waterfall ? .list : .waterfall
-        libraryStore.setDynamicFeedLayoutMode(next)
     }
 
     private func selectFeed(_ kind: DynamicFeedKind) {

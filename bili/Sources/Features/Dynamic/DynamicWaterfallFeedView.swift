@@ -235,6 +235,66 @@ struct DynamicWaterfallFeedView: View {
     }
 }
 
+enum DynamicUniformGridMetrics {
+    static let videoAspectRatio: CGFloat = 16.0 / 9.0
+    static let headlineLineAreaHeight: CGFloat = 36
+    static let headlineTopPadding: CGFloat = 9
+    static let headlineBottomPadding: CGFloat = 5
+    static let headlineTotalHeight: CGFloat = headlineLineAreaHeight + headlineTopPadding + headlineBottomPadding
+
+    static func mediaHeight(forCardWidth cardWidth: CGFloat) -> CGFloat {
+        (max(cardWidth, 1) / videoAspectRatio).rounded()
+    }
+
+    static func textOnlyBodyHeight(forCardWidth cardWidth: CGFloat) -> CGFloat {
+        mediaHeight(forCardWidth: cardWidth) + headlineTotalHeight
+    }
+}
+
+struct DynamicUniformGridFeedView: View {
+    let api: BiliAPIClient
+    @ObservedObject var viewModel: DynamicViewModel
+    let items: [DynamicFeedItem]
+    let contentWidth: CGFloat
+    let columnCount: Int
+
+    private let columnSpacing: CGFloat = 10
+
+    private var safeColumnCount: Int {
+        max(1, columnCount)
+    }
+
+    private var cardWidth: CGFloat {
+        let totalSpacing = columnSpacing * CGFloat(max(safeColumnCount - 1, 0))
+        return max(floor((contentWidth - totalSpacing) / CGFloat(safeColumnCount)), 120)
+    }
+
+    private var gridColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(cardWidth), spacing: columnSpacing, alignment: .top),
+            count: safeColumnCount
+        )
+    }
+
+    var body: some View {
+        LazyVGrid(columns: gridColumns, alignment: .center, spacing: 10) {
+            ForEach(items) { item in
+                DynamicWaterfallCard(
+                    item: item,
+                    api: api,
+                    cardWidth: cardWidth,
+                    uniformVideoCardHeight: true
+                )
+                .onAppear {
+                    Task { await viewModel.loadMoreIfNeeded(current: item) }
+                }
+            }
+        }
+        .padding(.top, 8)
+        .accessibilityIdentifier("dynamic.feed.uniformGrid")
+    }
+}
+
 private struct DynamicWaterfallCard: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
@@ -250,15 +310,22 @@ private struct DynamicWaterfallCard: View {
     let item: DynamicFeedItem
     let api: BiliAPIClient
     let cardWidth: CGFloat
+    let uniformVideoCardHeight: Bool
 
     private let display: DynamicFeedCardDisplayModel
     @State private var likeState: DynamicLikeDisplayState
     @State private var isMutatingLike = false
 
-    init(item: DynamicFeedItem, api: BiliAPIClient, cardWidth: CGFloat) {
+    init(
+        item: DynamicFeedItem,
+        api: BiliAPIClient,
+        cardWidth: CGFloat,
+        uniformVideoCardHeight: Bool = false
+    ) {
         self.item = item
         self.api = api
         self.cardWidth = cardWidth
+        self.uniformVideoCardHeight = uniformVideoCardHeight
         let display = DynamicFeedCardDisplayModel(item: item)
         self.display = display
         _likeState = State(initialValue: DynamicLikeDisplayState(
@@ -300,7 +367,10 @@ private struct DynamicWaterfallCard: View {
     }
 
     private var mediaAspectRatio: CGFloat? {
-        DynamicWaterfallLayoutPlanner.visualAspectRatio(for: item, display: display)
+        if uniformVideoCardHeight {
+            return coverURL != nil ? DynamicUniformGridMetrics.videoAspectRatio : nil
+        }
+        return DynamicWaterfallLayoutPlanner.visualAspectRatio(for: item, display: display)
     }
 
     private var topRightBadgeText: String? {
@@ -352,7 +422,24 @@ private struct DynamicWaterfallCard: View {
                 VStack(alignment: .leading, spacing: 0) {
                     mediaHeader
 
-                    if !headline.isEmpty, coverURL != nil {
+                    if uniformVideoCardHeight {
+                        if coverURL != nil {
+                            Text(headline.isEmpty ? " " : headline)
+                                .font(.system(size: 13.5, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .frame(
+                                    maxWidth: .infinity,
+                                    minHeight: DynamicUniformGridMetrics.headlineLineAreaHeight,
+                                    maxHeight: DynamicUniformGridMetrics.headlineLineAreaHeight,
+                                    alignment: .topLeading
+                                )
+                                .padding(.horizontal, 10)
+                                .padding(.top, DynamicUniformGridMetrics.headlineTopPadding)
+                                .padding(.bottom, DynamicUniformGridMetrics.headlineBottomPadding)
+                        }
+                    } else if !headline.isEmpty, coverURL != nil {
                         Text(headline)
                             .font(.system(size: 13.5, weight: .medium))
                             .foregroundStyle(.primary)
@@ -370,13 +457,17 @@ private struct DynamicWaterfallCard: View {
 
             footerRow
                 .padding(.horizontal, 10)
-                .padding(.top, coverURL == nil ? 8 : 4)
+                .padding(.top, uniformVideoCardHeight ? 4 : (coverURL == nil ? 8 : 4))
                 .padding(.bottom, 10)
         }
         .frame(width: cardWidth, alignment: .leading)
         .videoCardBorderedSurface(cornerRadius: cardCornerRadius)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("dynamic.waterfall.card.\(display.dynamicID)")
+        .accessibilityIdentifier(
+            uniformVideoCardHeight
+                ? "dynamic.uniformGrid.card.\(display.dynamicID)"
+                : "dynamic.waterfall.card.\(display.dynamicID)"
+        )
     }
 
     @ViewBuilder
@@ -442,13 +533,18 @@ private struct DynamicWaterfallCard: View {
                 Text(headline.isEmpty ? "查看动态详情" : headline)
                     .font(.system(size: 13.5, weight: .regular))
                     .foregroundStyle(.primary)
-                    .lineLimit(5)
+                    .lineLimit(uniformVideoCardHeight ? nil : 5)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(11)
-            .frame(width: cardWidth, alignment: .topLeading)
-            .frame(minHeight: 96, alignment: .topLeading)
+            .frame(
+                width: cardWidth,
+                height: uniformVideoCardHeight ? DynamicUniformGridMetrics.textOnlyBodyHeight(forCardWidth: cardWidth) : nil,
+                alignment: .topLeading
+            )
+            .frame(minHeight: uniformVideoCardHeight ? nil : 96, alignment: .topLeading)
+            .clipped()
             .background(Color(.tertiarySystemFill).opacity(0.55))
             .overlay(alignment: .bottom) {
                 Rectangle()

@@ -98,6 +98,7 @@ nonisolated struct StoredPlaybackProgress: Codable, Equatable, Sendable {
 nonisolated enum DynamicFeedLayoutMode: String, CaseIterable, Identifiable, Sendable {
     case list
     case waterfall
+    case uniformGrid
 
     var id: String { rawValue }
 
@@ -107,6 +108,8 @@ nonisolated enum DynamicFeedLayoutMode: String, CaseIterable, Identifiable, Send
             return "经典列表"
         case .waterfall:
             return "瀑布流"
+        case .uniformGrid:
+            return "等高网格"
         }
     }
 
@@ -116,7 +119,13 @@ nonisolated enum DynamicFeedLayoutMode: String, CaseIterable, Identifiable, Send
             return "list.bullet"
         case .waterfall:
             return "rectangle.3.group"
+        case .uniformGrid:
+            return "square.grid.2x2"
         }
+    }
+
+    var usesMultiColumnFeed: Bool {
+        self == .waterfall || self == .uniformGrid
     }
 }
 

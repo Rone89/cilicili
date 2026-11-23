@@ -3375,3 +3375,22 @@
   - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）**：已通过共享 `Xcode-27` 缓存及本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译最新 Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
 - **未验证与待办（明确区分，不推测通过）**：
   - 真机 `RCe2027` 浅色/深色模式下从视频页返回搜索页的右上角图标自动反色效果待用户实机验收；`SearchTopBarUITests` 未单独重跑；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
+
+### 2026-11-23（动态页新增「等高网格」布局模式：自适应多列 + 16:9 统一视频卡片尺寸）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `cac72849` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **新增第三种动态流布局模式**：
+     - [LibraryStore.swift](bili/Sources/Storage/LibraryStore.swift)：`DynamicFeedLayoutMode` 新增 `case uniformGrid`（标题「等高网格」，图标 `square.grid.2x2`）及 `usesMultiColumnFeed` 计算属性。
+  2. **16:9 等高网格视图与统一卡片尺寸**：
+     - [DynamicWaterfallFeedView.swift](bili/Sources/Features/Dynamic/DynamicWaterfallFeedView.swift)：新增 `DynamicUniformGridMetrics` 与 `DynamicUniformGridFeedView`（自适应多列 `LazyVGrid`，按时间顺序从左到右排列，支持滚到底部分页 `loadMoreIfNeeded`）；复用 `DynamicWaterfallCard` 并新增 `uniformVideoCardHeight` 开关：所有带图/视频/直播/番剧/专栏/转发动态的预览图统一锁定为 `16:9`（超出比例居中 `scaledToFill().clipped()` 裁切）+ 固定 2 行标题占位区；纯文本/无图转发动态内容区高度严格对齐 `16:9 封面 + 2 行标题区` 总高，整卡高度与视频卡 1:1 一致。
+  3. **自适应宽度列数、顶部菜单切换与设置入口**：
+     - [DynamicFeedScreenContent.swift](bili/Sources/Features/Dynamic/DynamicFeedScreenContent.swift) & [DynamicFeedScrollContent.swift](bili/Sources/Features/Dynamic/DynamicFeedScrollContent.swift)：`.uniformGrid` 复用多列边距与 `AdaptiveLayoutPolicy.dynamicWaterfallColumnCount`（按屏幕宽度自动适配 2 至 5 列，覆盖 iPhone / iPhone Duo / iPad）。
+     - [DynamicView.swift](bili/Sources/Features/Dynamic/DynamicView.swift)、[DynamicTopBar.swift](bili/Sources/Features/Dynamic/DynamicTopBar.swift) & [DynamicFeedTabSettingsView.swift](bili/Sources/Features/Mine/DynamicFeedTabSettingsView.swift)：顶部布局切换按钮升级为原生 `Menu` 选择器（经典列表 / 瀑布流 / 等高网格一键直达），设置页同步更新说明文案。
+  4. **单元测试**：
+     - [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift)：扩展 `testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle`，验证 `.uniformGrid` 持久化、`usesMultiColumnFeed` 与 `DynamicUniformGridMetrics` 16:9 尺寸及纯文本卡等高一致性。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests` **17/17 通过（0 失败，0 跳过）**（`/tmp/bili-dynamic-uniform-grid-1795411752.xcresult`，`** TEST SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次改动安装到 `iPhone Duo` 模拟器或真机 `RCe2027` 实景验收；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
