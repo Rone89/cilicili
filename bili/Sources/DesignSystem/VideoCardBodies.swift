@@ -77,7 +77,7 @@ struct VideoCardBorderedBody<Cover: View>: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
         }
-        .videoCardBorderedSurface(cornerRadius: cornerRadius)
+        .videoCardBorderedSurface(cornerRadius: cornerRadius, showsShadow: false)
     }
 }
 

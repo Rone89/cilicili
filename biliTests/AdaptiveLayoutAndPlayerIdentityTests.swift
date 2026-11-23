@@ -655,11 +655,7 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
     func testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle() {
         let store = LibraryStore()
         let previous = store.dynamicFeedLayoutMode
-        let previousShadow = store.showsDynamicMultiColumnCardShadow
-        defer {
-            store.setDynamicFeedLayoutMode(previous)
-            store.setShowsDynamicMultiColumnCardShadow(previousShadow)
-        }
+        defer { store.setDynamicFeedLayoutMode(previous) }
 
         store.setDynamicFeedLayoutMode(.list)
         XCTAssertEqual(LibraryStore().dynamicFeedLayoutMode, .list)
@@ -684,14 +680,6 @@ final class AdaptiveLayoutAndPlayerIdentityTests: XCTestCase {
             DynamicUniformGridMetrics.textOnlyBodyHeight(forCardWidth: cardWidth),
             mediaHeight + DynamicUniformGridMetrics.headlineTotalHeight
         )
-
-        store.setShowsDynamicMultiColumnCardShadow(false)
-        XCTAssertFalse(store.showsDynamicMultiColumnCardShadow)
-        XCTAssertFalse(LibraryStore().showsDynamicMultiColumnCardShadow)
-
-        store.setShowsDynamicMultiColumnCardShadow(true)
-        XCTAssertTrue(store.showsDynamicMultiColumnCardShadow)
-        XCTAssertTrue(LibraryStore().showsDynamicMultiColumnCardShadow)
     }
 
     private func waitForSurfaceHost(in root: UIView) async throws -> DirectUIKitPlayerSurfaceHostView {

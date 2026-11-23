@@ -3408,5 +3408,19 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle` 通过（`/tmp/bili-dynamic-shadow-toggle-1795414691.xcresult`，`** TEST SUCCEEDED **`）。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）**：已通过共享 `Xcode-27` 缓存及本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译 `106ee5d4` Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次改动安装到 `iPhone Duo` 模拟器或真机 `RCe2027` 验收；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
+  - 真机 `RCe2027` 的瀑布流/等高网格卡片阴影实时开关效果待用户实机验收；`iPhone Duo` 模拟器停留在 `e3f91e8d`；未签名 IPA 停留在 `0057cb5`；尚未推送远端或合入 `main`。
+
+### 2026-11-23（移除卡片阴影开关，并去除首页有边框自适应布局及动态页瀑布流/等高网格卡片阴影）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `106ee5d4` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  1. **移除卡片阴影开关**：清理 [LibraryStore.swift](bili/Sources/Storage/LibraryStore.swift) 的 `showsDynamicMultiColumnCardShadow` 与持久化键，以及 [DynamicView.swift](bili/Sources/Features/Dynamic/DynamicView.swift)、[DynamicTopBar.swift](bili/Sources/Features/Dynamic/DynamicTopBar.swift)、[DynamicFeedTabSettingsView.swift](bili/Sources/Features/Mine/DynamicFeedTabSettingsView.swift)、[MineSearchCatalog.swift](bili/Sources/Features/Mine/MineSearchCatalog.swift) 中的开关入口与关键词。
+  2. **统一去除三处卡片阴影**：将首页有边框自适应布局（[VideoCardBodies.swift](bili/Sources/DesignSystem/VideoCardBodies.swift) `VideoCardBorderedBody`、[HomeFeedLastSeenMarkerCard.swift](bili/Sources/Features/Home/HomeFeedLastSeenMarkerCard.swift)）与动态页瀑布流/等高网格（[DynamicWaterfallFeedView.swift](bili/Sources/Features/Dynamic/DynamicWaterfallFeedView.swift) `DynamicWaterfallCard`）的 `.videoCardBorderedSurface` 全部设为 `showsShadow: false`。
+  3. **单元测试**：同步清理 [AdaptiveLayoutAndPlayerIdentityTests.swift](biliTests/AdaptiveLayoutAndPlayerIdentityTests.swift) 中已移除开关的断言。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testDynamicFeedLayoutModeDefaultsToListAndPersistsToggle` 通过（`/tmp/bili-remove-card-shadows-1795428997.xcresult`，`** TEST SUCCEEDED **`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 尚未将本次改动安装到真机 `RCe2027` 或 `iPhone Duo` 模拟器实景验收；未签名 IPA 停留在 `0057cb5`；尚未推送远端或合入 `main`。

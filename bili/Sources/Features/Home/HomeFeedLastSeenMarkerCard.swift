@@ -121,7 +121,7 @@ struct HomeFeedLastSeenMarkerCard: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
         }
-        .videoCardBorderedSurface(cornerRadius: 18)
+        .videoCardBorderedSurface(cornerRadius: 18, showsShadow: false)
         .contentShape(Rectangle())
     }
 

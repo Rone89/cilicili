@@ -9,10 +9,8 @@ struct DynamicTopBar: View {
     let kinds: [DynamicFeedKind]
     let currentKind: DynamicFeedKind
     var layoutMode: DynamicFeedLayoutMode = .list
-    var showsMultiColumnCardShadow: Bool = true
     let onSelect: (DynamicFeedKind) -> Void
     var onSelectLayoutMode: ((DynamicFeedLayoutMode) -> Void)? = nil
-    var onSetMultiColumnCardShadow: ((Bool) -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -32,19 +30,6 @@ struct DynamicTopBar: View {
                         ForEach(DynamicFeedLayoutMode.allCases) { mode in
                             Label(mode.title, systemImage: mode.systemImage)
                                 .tag(mode)
-                        }
-                    }
-
-                    if let onSetMultiColumnCardShadow {
-                        Section {
-                            Toggle(
-                                "卡片阴影",
-                                systemImage: "shadow",
-                                isOn: Binding(
-                                    get: { showsMultiColumnCardShadow },
-                                    set: { onSetMultiColumnCardShadow($0) }
-                                )
-                            )
                         }
                     }
                 } label: {

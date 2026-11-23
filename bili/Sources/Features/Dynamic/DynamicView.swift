@@ -94,10 +94,8 @@ struct DynamicContentRoot: View {
                     kinds: visibleFeedKinds,
                     currentKind: selectedFeed,
                     layoutMode: libraryStore.dynamicFeedLayoutMode,
-                    showsMultiColumnCardShadow: libraryStore.showsDynamicMultiColumnCardShadow,
                     onSelect: { selectedFeed = $0 },
-                    onSelectLayoutMode: { libraryStore.setDynamicFeedLayoutMode($0) },
-                    onSetMultiColumnCardShadow: { libraryStore.setShowsDynamicMultiColumnCardShadow($0) }
+                    onSelectLayoutMode: { libraryStore.setDynamicFeedLayoutMode($0) }
                 )
             }
         }
@@ -127,17 +125,6 @@ struct DynamicContentRoot: View {
                                 Label(mode.title, systemImage: mode.systemImage)
                                     .tag(mode)
                             }
-                        }
-
-                        Section {
-                            Toggle(
-                                "卡片阴影",
-                                systemImage: "shadow",
-                                isOn: Binding(
-                                    get: { libraryStore.showsDynamicMultiColumnCardShadow },
-                                    set: { libraryStore.setShowsDynamicMultiColumnCardShadow($0) }
-                                )
-                            )
                         }
                     } label: {
                         Image(systemName: libraryStore.dynamicFeedLayoutMode.systemImage)

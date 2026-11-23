@@ -34,19 +34,10 @@ struct DynamicFeedTabSettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("settings.dynamicFeedTabs.layoutMode")
-
-                Toggle(
-                    "卡片阴影",
-                    isOn: Binding(
-                        get: { libraryStore.showsDynamicMultiColumnCardShadow },
-                        set: { libraryStore.setShowsDynamicMultiColumnCardShadow($0) }
-                    )
-                )
-                .accessibilityIdentifier("settings.dynamicFeedTabs.cardShadow")
             } header: {
                 Text("布局模式")
             } footer: {
-                Text("瀑布流与等高网格模式在 iPhone、iPhone Duo 与 iPad 上均可开启，会根据屏幕宽度自动调整为 2 至 5 列；等高网格统一按 16:9 视频卡片尺寸排布，超出比例的预览图居中裁切。卡片阴影仅作用于瀑布流与等高网格。")
+                Text("瀑布流与等高网格模式在 iPhone、iPhone Duo 与 iPad 上均可开启，会根据屏幕宽度自动调整为 2 至 5 列；等高网格统一按 16:9 视频卡片尺寸排布，超出比例的预览图居中裁切。")
             }
 
             Section {
