@@ -76,7 +76,10 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
                 systemChromeVisibility.wrappedValue = isHidden
             },
             onInlineOverlayBottomToolbarHiddenChange: { isHidden in
-                inlineOverlayBottomToolbarHidden.wrappedValue = isHidden
+                DispatchQueue.main.async {
+                    guard inlineOverlayBottomToolbarHidden.wrappedValue != isHidden else { return }
+                    inlineOverlayBottomToolbarHidden.wrappedValue = isHidden
+                }
             },
             usesTransparentNavigationBar: usesTransparentNavigationBar,
             onNavigateBack: onNavigateBack

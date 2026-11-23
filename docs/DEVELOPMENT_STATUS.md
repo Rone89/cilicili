@@ -3462,5 +3462,19 @@
 - **已验证（于最后一次代码改动后执行）**：
   - `git diff --check`：通过（exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests/testDynamicTextOnlyCardStyleScalesTypographyAndAlignmentByLength` 通过（`** TEST SUCCEEDED **`）。
+  - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，共享 `Xcode-27` 缓存）**：已保留默认 ad-hoc 签名与 Keychain entitlements 编译 `0b6b94a5` Debug 包，原位安装并成功拉起（`cc.bili`）。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`，共享 `Xcode-27` 缓存）**：已使用本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译 `0b6b94a5` Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次纯文本引用卡排版安装到 `iPhone Duo` 模拟器（停留在 `0b041cef`）或真机 `RCe2027`（停留在 `502af843`）实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+  - `iPhone Duo` 模拟器与真机 `RCe2027` 上纯文本引用卡排版、柔和描边及展开态竖屏弹窗交互的实景效果待用户验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+
+### 2026-11-24（修复 Duo 展开态竖屏弹窗时底部工具栏项未移除及评论回复路由同步写状态问题）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `0b6b94a5` 提交本轮改动，未推送远端、未合入 `main`）。
+- **已实现改动**：
+  - [VideoDetailNativeContentTabView.swift](bili/Sources/Features/VideoDetail/VideoDetailNativeContentTabView.swift)：在 `VideoDetailBottomToolbarModifier` 的 `.toolbar { ... }` 中增加 `if !isHidden` 条件（对齐 `ArticleDetailView` / `DynamicFeedCard`），确保隐藏 `.bottomBar` 时同步移除底栏按钮项，避免 iOS 27 Liquid Glass 底栏胶囊持续浮在弹窗上方。
+  - [VideoDetailShellRepresentable.swift](bili/Sources/Features/VideoDetail/UIKitShell/VideoDetailShellRepresentable.swift)：将 `onInlineOverlayBottomToolbarHiddenChange` 对 `@Binding hidesBottomToolbarForInlineOverlay` 的写入放入 `DispatchQueue.main.async`，避免评论回复弹窗通过 `updateUIViewController` → `updateSheetRoute` 同步修改 SwiftUI `@State` 触发视图更新期丢弃。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone Duo` 模拟器（iOS 27.1，UDID `04780036-FD65-4893-BEC1-1401DD821C06`，共享 `Xcode-27` 缓存）**：保留默认 ad-hoc 签名与 Keychain entitlements 编译 Debug 包，原位安装并成功拉起（`cc.bili`）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - `iPhone Duo` 模拟器展开态竖屏评论回复/分P/合集弹窗的底部工具栏隐藏实景效果待用户验收；真机 `RCe2027` 停留在 `0b6b94a5`；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。

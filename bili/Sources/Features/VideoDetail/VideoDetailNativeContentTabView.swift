@@ -563,60 +563,62 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                     usesVerticalRightRail = nextValue
                 }
                 .toolbar {
-                    if let navigationHistory {
-                        ToolbarItem(placement: .bottomBar) {
-                            VideoDetailHistoryBackMenu(history: navigationHistory)
-                        }
-                    }
-                    if usesVerticalRightRail {
-                        ToolbarSpacer(.flexible, placement: .bottomBar)
-                        ToolbarItem(placement: .bottomBar) {
-                            VideoDetailVerticalToolbarTabButton(
-                                tab: .detail,
-                                isSelected: selection == .detail
-                            ) {
-                                selection = .detail
+                    if !isHidden {
+                        if let navigationHistory {
+                            ToolbarItem(placement: .bottomBar) {
+                                VideoDetailHistoryBackMenu(history: navigationHistory)
                             }
                         }
-                        ToolbarItem(placement: .bottomBar) {
-                            VideoDetailVerticalToolbarTabButton(
-                                tab: .comments,
-                                isSelected: selection == .comments
-                            ) {
-                                selection = .comments
+                        if usesVerticalRightRail {
+                            ToolbarSpacer(.flexible, placement: .bottomBar)
+                            ToolbarItem(placement: .bottomBar) {
+                                VideoDetailVerticalToolbarTabButton(
+                                    tab: .detail,
+                                    isSelected: selection == .detail
+                                ) {
+                                    selection = .detail
+                                }
                             }
-                        }
-                        if let onOpenCommentComposer {
-                            ToolbarSpacer(.fixed, placement: .bottomBar)
+                            ToolbarItem(placement: .bottomBar) {
+                                VideoDetailVerticalToolbarTabButton(
+                                    tab: .comments,
+                                    isSelected: selection == .comments
+                                ) {
+                                    selection = .comments
+                                }
+                            }
+                            if let onOpenCommentComposer {
+                                ToolbarSpacer(.fixed, placement: .bottomBar)
+                                ToolbarItem(placement: .bottomBar) {
+                                    VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
+                                }
+                                .sharedBackgroundVisibility(.automatic)
+                            }
+                        } else if let onOpenCommentComposer {
+                            ToolbarSpacer(.flexible, placement: .bottomBar)
+                            ToolbarItem(placement: .bottomBar) {
+                                VideoDetailToolbarSegmentedPickerView(
+                                    selection: $selection
+                                )
+                                    .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
+                            }
+                            .sharedBackgroundVisibility(.hidden)
+                            ToolbarSpacer(.flexible, placement: .bottomBar)
                             ToolbarItem(placement: .bottomBar) {
                                 VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
                             }
                             .sharedBackgroundVisibility(.automatic)
+                        } else {
+                            ToolbarItemGroup(placement: .bottomBar) {
+                                Spacer(minLength: 0)
+                                VideoDetailToolbarSegmentedPickerView(
+                                    selection: $selection
+                                )
+                                    .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
+                                Spacer(minLength: 0)
+                            }
+                            .sharedBackgroundVisibility(.hidden)
                         }
-                    } else if let onOpenCommentComposer {
-                        ToolbarSpacer(.flexible, placement: .bottomBar)
-                        ToolbarItem(placement: .bottomBar) {
-                            VideoDetailToolbarSegmentedPickerView(
-                                selection: $selection
-                            )
-                                .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
-                        }
-                        .sharedBackgroundVisibility(.hidden)
-                        ToolbarSpacer(.flexible, placement: .bottomBar)
-                        ToolbarItem(placement: .bottomBar) {
-                            VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
-                        }
-                        .sharedBackgroundVisibility(.automatic)
-                    } else {
-                        ToolbarItemGroup(placement: .bottomBar) {
-                            Spacer(minLength: 0)
-                            VideoDetailToolbarSegmentedPickerView(
-                                selection: $selection
-                            )
-                                .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
-                            Spacer(minLength: 0)
-                        }
-                        .sharedBackgroundVisibility(.hidden)
                     }
                 }
                 .toolbarBackground(.automatic, for: .bottomBar)
