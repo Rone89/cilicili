@@ -3363,3 +3363,15 @@
   - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）**：已通过共享 `Xcode-27` 缓存及本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译最新 Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
 - **未验证与待办（明确区分，不推测通过）**：
   - 真机 `RCe2027` 与 `iPhone Duo` 模拟器的搜索页返回官方过渡动画观感待用户实机复测；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
+
+### 2026-11-23（修复浅色模式下从视频页返回搜索页后右上角筛选图标未自动反色）
+
+- **当前分支与基线**：`codex/adaptive-ipad-duo`（独立工作树 `/Users/rayc/Desktop/cilicili-adaptive-ipad-duo`，基于 `ab2c499f` 提交本轮修复，未推送远端、未合入 `main`）。
+- **根因与已实现改动**：
+  - [SearchContentView.swift](bili/Sources/Features/Search/SearchContentView.swift)：此前 `SearchFilterToolbarMenu` 使用 SwiftUI `Menu` 搭配 `.foregroundStyle(.primary)` 与 `.tint(.primary)`，在视频详情页开启深色导航栏/状态栏对比（`.preferredColorScheme(.dark)`）后返回浅色搜索页时，SwiftUI 工具栏按钮未重新求值而沿用深色态缓存的白色图标。现改为与 `RootHiddenPageSwitcherButton` / `DynamicFeedKindMenuButton` 一致的原生 `UIButton(type: .system)` + `UIColor.label` 菜单按钮，保留原有 `"search.filters.menu"` 无障碍标识与「排序方式」菜单行为，由 UIKit 随浅/深色及 Liquid Glass 自动反色。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：Debug 模拟器构建通过。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`）**：已通过共享 `Xcode-27` 缓存及本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译最新 Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 真机 `RCe2027` 浅色/深色模式下从视频页返回搜索页的右上角图标自动反色效果待用户实机验收；`SearchTopBarUITests` 未单独重跑；未签名 IPA 仍停留在 `0057cb5`；尚未推送远端或合入 `main`。
