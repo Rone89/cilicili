@@ -3501,5 +3501,17 @@
 - **已验证（于最后一次代码改动后执行）**：
   - 全仓引用检查与 `git diff --check`：通过（零残留引用，exit 0）。
   - **`iPhone 18 Pro Max`（iOS 27.0，UDID `F0B4287D-8633-4CC1-B7C2-0A37F353FE7C`，共享 `Xcode-27` 缓存）**：`AdaptiveLayoutAndPlayerIdentityTests` 全部 19 项单元测试通过（`** TEST SUCCEEDED **`）。
+  - **真机 `RCe2027`（iPhone 18 Pro Max，UDID `00008160-001C311028434036`，共享 `Xcode-27` 缓存）**：已使用本地命令行签名覆盖（`G933USCY46` / `app.bamboo2779.brussels691`）编译 `aba51b05` Release 包，`codesign --verify --deep --strict` 通过，原位安装并成功拉起。
 - **未验证与待办（明确区分，不推测通过）**：
-  - 尚未将本次转正提交重新安装到 `iPhone Duo` 模拟器（停留在 `a6d4aa4a`）、真机 `RCe2027`（停留在 `0b6b94a5`）或 iPad 模拟器实景验收；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+  - 真机 `RCe2027` 实景体验待用户验收；`iPhone Duo` 模拟器停留在 `a6d4aa4a`；未签名 IPA 停留在 `502af843`；尚未推送远端或合入 `main`。
+
+### 2026-11-24（升级版本至 v1.1.8 Build 233 并合入本地 main）
+
+- **当前分支与基线**：`main`（快进合入 `codex/adaptive-ipad-duo`，未推送远端）。
+- **已实现改动**：
+  - [project.pbxproj](bili.xcodeproj/project.pbxproj)：将全部 target 的 `MARKETING_VERSION` 从 `1.1.7` 升级至 `1.1.8`，`CURRENT_PROJECT_VERSION` 从 `232` 递增至 `233`。
+- **已验证（于最后一次代码改动后执行）**：
+  - `git diff --check`：通过（exit 0）。
+  - 继承自 `aba51b05` 的 `AdaptiveLayoutAndPlayerIdentityTests` 19 项单元测试通过（`1.1.8` 仅变更版本号与状态文档）。
+- **未验证与待办（明确区分，不推测通过）**：
+  - 本地 `main` 已包含 `v1.1.8 (build 233)` 全量改动，尚未推送远端或打包 `1.1.8` 未签名 Release IPA；真机 `RCe2027` 停留在 `aba51b05`（`1.1.7`），`iPhone Duo` 模拟器停留在 `a6d4aa4a`（`1.1.7`）。
