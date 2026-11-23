@@ -112,20 +112,20 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
             super.viewWillAppear(animated)
             // Reveal the root TabBar synchronously at pop-start (before UIKit lays out
             // the returning root controller) so `UISearchTab` keeps its search bar docked
-            // in the bottom TabBar instead of falling back to the top navigation bar or
-            // flashing a plain TabBar first.
+            // in the bottom TabBar and animates smoothly alongside the pop transition.
             guard !hidesRootTabBar,
-                  let coordinator = transitionCoordinator,
+                  let nav = selectedNavigationController(),
+                  let coordinator = transitionCoordinator ?? nav.transitionCoordinator,
                   let toVC = coordinator.viewController(forKey: .to),
                   isDescendant(of: toVC),
-                  let nav = selectedNavigationController(),
                   nav.viewControllers.first === toVC,
                   let tabBarController = enclosingTabBarController(),
                   tabBarController.isTabBarHidden else {
                 return
             }
+            reconcileTask?.cancel()
             isRevealingForPopTransition = true
-            setRootTabBarHidden(false, animated: animated)
+            setRootTabBarHidden(false, animated: animated || coordinator.isAnimated)
             coordinator.animate(alongsideTransition: nil) { [weak self] context in
                 guard let self else { return }
                 self.isRevealingForPopTransition = false
@@ -180,10 +180,10 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
             let shouldHide = isDetailPresented || hidesRootTabBar
             if !shouldHide,
                viewIfLoaded?.window != nil,
-               let navigationController = selectedNavigationController() {
+               let navigationController = selectedNavigationController(),
+               navigationController.transitionCoordinator != nil {
                 reconcileTask?.cancel()
-                let animated = navigationController.transitionCoordinator != nil
-                setRootTabBarHidden(false, animated: animated)
+                setRootTabBarHidden(false, animated: true)
                 return
             }
             reconcileSoon()
